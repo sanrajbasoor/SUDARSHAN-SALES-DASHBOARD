@@ -1,0 +1,2185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Hero MotoCorp — Dealership Sales Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :root {
+    --bg: #0b1020; --panel: #121935; --panel-2: #1a2347; --line: #232c52;
+    --text: #e7ecf7; --muted: #94a0c8; --accent: #ff2e2e; --accent-2: #ffb02e;
+    --ok: #2bd47d; --warn: #ffb02e; --danger: #ff5c5c; --info: #5b9eff;
+    --shadow: 0 6px 24px rgba(0,0,0,0.35);
+    --r: 12px;
+  }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; }
+  a { color: var(--info); text-decoration: none; }
+  button { font-family: inherit; }
+  input, select, textarea { font-family: inherit; font-size: 14px; }
+  .app { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+
+  /* LOCK SCREEN */
+  .lock-screen { position: fixed; inset: 0; background: linear-gradient(135deg, #0c1230, #1a0c2e); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 20px; }
+  .lock-card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 32px 28px; width: 100%; max-width: 360px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); text-align: center; }
+  .lock-emoji { font-size: 48px; margin-bottom: 4px; }
+  .lock-card h2 { color: var(--text); }
+  body.unlocked .lock-screen { display: none; }
+  body:not(.unlocked) .app { visibility: hidden; }
+
+  /* SIDEBAR */
+  .sidebar { background: linear-gradient(180deg, #0e1530 0%, #0b1020 100%); border-right: 1px solid var(--line); padding: 18px 12px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 6px 8px 18px; border-bottom: 1px solid var(--line); margin-bottom: 14px; font-weight: 700; font-size: 16px; }
+  .brand-logo { width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, var(--accent) 0%, #b80000 100%); display: flex; align-items: center; justify-content: center; color: white; font-weight: 800; font-size: 18px; }
+  .nav { display: flex; flex-direction: column; gap: 2px; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; background: transparent; border: none; color: var(--muted); cursor: pointer; text-align: left; font-size: 14px; }
+  .nav-item:hover { background: var(--panel); color: var(--text); }
+  .nav-item.active { background: var(--panel-2); color: var(--text); border-left: 3px solid var(--accent); padding-left: 9px; }
+  .nav-item .icon { width: 18px; height: 18px; flex-shrink: 0; }
+  .nav-section { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; padding: 14px 12px 6px; }
+
+  /* TOPBAR */
+  .topbar { display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; background: var(--bg); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+  .topbar h1 { font-size: 18px; margin: 0; }
+  .topbar .actions { display: flex; gap: 8px; align-items: center; }
+
+  /* MAIN */
+  .main { padding: 0 0 40px; }
+  .view { display: none; padding: 20px 24px; }
+  .view.active { display: block; }
+
+  /* CARDS / KPIs */
+  .grid { display: grid; gap: 14px; }
+  .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  @media (max-width: 1100px) { .grid-4 { grid-template-columns: repeat(2, 1fr); } .grid-3 { grid-template-columns: 1fr; } }
+  @media (max-width: 700px) {
+    .grid-2 { grid-template-columns: 1fr; }
+    .grid-4 { grid-template-columns: 1fr; }
+    .app { grid-template-columns: 1fr; }
+    .sidebar { position: relative; height: auto; padding: 10px; }
+    .main { padding: 12px; }
+    .topbar { flex-wrap: wrap; gap: 8px; padding: 10px 12px; }
+    .topbar h2 { font-size: 16px; margin: 0; }
+    .filters-row { flex-wrap: wrap; gap: 6px; }
+    .filter-input { min-width: 120px; flex: 1; }
+    .table { font-size: 12px; }
+    .table th, .table td { padding: 6px 4px; }
+    .card { padding: 12px; }
+    .kpi-value { font-size: 22px; }
+    .chart-wrap { height: 220px; }
+    .nav-item { padding: 10px 12px; font-size: 14px; }
+    #bulk-bar { flex-direction: column; align-items: stretch; }
+    #bulk-bar .btn { width: 100%; }
+    #bulk-bar > span { display: none; }
+    .modal-content { width: 95% !important; max-width: 95% !important; padding: 14px !important; }
+  }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; box-shadow: var(--shadow); }
+  .card h3 { margin: 0 0 12px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .kpi { display: flex; flex-direction: column; gap: 4px; }
+  .kpi-value { font-size: 28px; font-weight: 700; }
+  .kpi-trend { font-size: 12px; color: var(--muted); }
+  .kpi-trend.up { color: var(--ok); }
+  .kpi-trend.down { color: var(--danger); }
+
+  /* BUTTONS */
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; font-size: 13px; }
+  .btn:hover { background: var(--panel-2); }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: white; }
+  .btn-primary:hover { background: #d62525; }
+  .btn-ghost { background: transparent; }
+  .btn-danger { background: var(--danger); border-color: var(--danger); color: white; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .icon-btn { width: 28px; height: 28px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; }
+  .icon-btn.danger { color: var(--danger); }
+
+  /* MENUS */
+  .menu-wrap { position: relative; display: inline-block; }
+  .menu { position: absolute; right: 0; top: calc(100% + 4px); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 4px; min-width: 200px; box-shadow: var(--shadow); display: none; z-index: 50; }
+  .menu.open { display: block; }
+  .menu-item { display: block; width: 100%; text-align: left; padding: 8px 12px; border-radius: 6px; background: transparent; border: none; color: var(--text); cursor: pointer; font-size: 13px; }
+  .menu-item:hover { background: var(--panel); }
+  .menu-divider { height: 1px; background: var(--line); margin: 4px 0; }
+
+  /* TABLE */
+  .table { width: 100%; border-collapse: collapse; }
+  .table th, .table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .table th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; cursor: pointer; user-select: none; }
+  .table tbody tr:hover { background: rgba(255, 255, 255, 0.02); }
+  .badge { display: inline-block; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; }
+  .badge-new { background: rgba(91, 158, 255, 0.18); color: var(--info); }
+  .badge-contacted { background: rgba(255, 176, 46, 0.18); color: var(--warn); }
+  .badge-qualified { background: rgba(91, 158, 255, 0.25); color: var(--info); }
+  .badge-test-drive { background: rgba(255, 176, 46, 0.25); color: var(--warn); }
+  .badge-negotiation { background: rgba(255, 46, 46, 0.18); color: var(--accent); }
+  .badge-won { background: rgba(43, 212, 125, 0.2); color: var(--ok); }
+  .badge-lost { background: rgba(255, 92, 92, 0.18); color: var(--danger); }
+  .badge-yes { background: rgba(43, 212, 125, 0.2); color: var(--ok); }
+  .badge-no { background: rgba(148, 160, 200, 0.2); color: var(--muted); }
+
+  /* FILTERS */
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
+  .filter-input, .filter-select { background: var(--panel); border: 1px solid var(--line); color: var(--text); padding: 8px 10px; border-radius: 8px; font-size: 13px; }
+  .filter-input { min-width: 200px; }
+  .leak-row { background: rgba(255, 92, 92, 0.05) !important; }
+
+  /* FORM / MODAL */
+  .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; z-index: 100; }
+  .modal-bg.open { display: flex; }
+  .modal { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 22px; width: min(96vw, 720px); max-height: 92vh; overflow-y: auto; }
+  .modal h2 { margin: 0 0 16px; font-size: 18px; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
+  .form-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  .form-grid label.full { grid-column: 1 / -1; }
+  .form-grid input, .form-grid select, .form-grid textarea { background: var(--panel-2); border: 1px solid var(--line); color: var(--text); padding: 8px 10px; border-radius: 8px; }
+  .form-grid textarea { min-height: 64px; resize: vertical; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+  /* SETTINGS LISTS */
+  .crud-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+  .crud-list li { display: flex; gap: 6px; align-items: center; }
+  .crud-list input { flex: 1; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); padding: 6px 10px; border-radius: 6px; }
+  .add-row { display: flex; gap: 6px; margin-top: 10px; }
+  .add-row input { flex: 1; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); padding: 6px 10px; border-radius: 6px; }
+
+  /* CHARTS */
+  .chart-wrap { position: relative; height: 280px; }
+  .leaderboard { display: flex; flex-direction: column; gap: 8px; }
+  .lb-row { display: grid; grid-template-columns: 24px 1fr auto auto; gap: 10px; align-items: center; padding: 8px 4px; border-bottom: 1px solid var(--line); }
+  .lb-rank { color: var(--muted); font-weight: 600; }
+  .lb-name { font-weight: 500; }
+  .lb-stats { color: var(--muted); font-size: 12px; }
+  .lb-conv { font-weight: 600; color: var(--ok); }
+
+  .help-text { color: var(--muted); font-size: 12px; margin-top: 4px; }
+
+  /* PROGRESS BARS */
+  .pb { background: var(--panel-2); height: 8px; border-radius: 4px; overflow: hidden; margin-top: 4px; }
+  .pb-fill { height: 100%; background: var(--accent); transition: width 0.3s; }
+  .pb-fill.ok { background: var(--ok); }
+  .pb-fill.warn { background: var(--warn); }
+
+  /* COUNTER GRID */
+  .counter-card { padding: 14px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; }
+  .counter-name { font-weight: 600; font-size: 14px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; }
+  .counter-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+  .counter-stat { font-size: 12px; color: var(--muted); }
+  .counter-stat strong { display: block; color: var(--text); font-size: 16px; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<!-- ========== PASSWORD GATE ==========
+     To change the password, scroll down to the JS section and edit:
+       const DASHBOARD_PASSWORD = 'hero2026';
+     (You can also change it later from Settings → Dashboard Password.)
+-->
+<div id="lock-screen" class="lock-screen">
+  <div class="lock-card">
+    <div class="lock-emoji">🔒</div>
+    <h2 style="margin:8px 0 4px 0">Sudarshan Motors</h2>
+    <p style="color:var(--muted); margin:0 0 16px 0">Enter passcode to access the dashboard</p>
+    <input type="password" id="lock-input" placeholder="Passcode" autocomplete="off" autofocus
+      style="width:100%; padding:12px 14px; border-radius:8px; border:1px solid var(--line); background:var(--panel-2); color:var(--text); font-size:15px; margin-bottom:10px;"
+      onkeydown="if(event.key==='Enter') tryUnlock()" />
+    <button class="btn" onclick="tryUnlock()" style="width:100%; padding:12px; font-size:15px;">Unlock</button>
+    <div id="lock-error" style="color:var(--danger); font-size:13px; margin-top:10px; min-height:18px;"></div>
+    <p style="color:var(--muted); font-size:11px; margin-top:18px; text-align:center;">Hero MotoCorp · Jabalpur · Internal use only</p>
+  </div>
+</div>
+
+<div class="app">
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-logo">H</div>
+      <div>Hero MotoCorp</div>
+    </div>
+    <nav class="nav" id="nav">
+      <button class="nav-item active" data-view="dashboard">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+        Dashboard
+      </button>
+      <button class="nav-item" data-view="enquiries">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Enquiries
+      </button>
+      <button class="nav-item" data-view="counters">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg>
+        Counters
+      </button>
+      <button class="nav-item" data-view="finance">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v12"/><path d="M9 9h6"/><path d="M9 15h6"/></svg>
+        Finance
+      </button>
+      <button class="nav-item" data-view="performance">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Performance
+      </button>
+      <button class="nav-item" data-view="leakage">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        Leakage Alerts
+      </button>
+      <div class="nav-section">Setup</div>
+      <button class="nav-item" data-view="settings">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings
+      </button>
+    </nav>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main">
+    <div class="topbar">
+      <h1 id="view-title">Dashboard</h1>
+      <div class="actions">
+        <select class="filter-select" id="global-period" onchange="setPeriod(this.value)" title="Filter all dashboard metrics by month" style="min-width:160px"><option value="">All time</option></select>
+        <input type="file" id="csv-input" accept=".csv,.txt" style="display:none" onchange="importCSV(event)" />
+        <input type="file" id="json-input" accept=".json" style="display:none" onchange="importJSON(event)" />
+        <div class="menu-wrap">
+          <button class="btn" onclick="toggleMenu('import-menu')">Import ▾</button>
+          <div class="menu" id="import-menu">
+            <button class="menu-item" onclick="closeMenus(); openPasteModal();">📋 Paste from Google Sheet</button>
+            <button class="menu-item" onclick="closeMenus(); document.getElementById('csv-input').click();">CSV File</button>
+            <button class="menu-item" onclick="closeMenus(); document.getElementById('json-input').click();">JSON Backup</button>
+          </div>
+        </div>
+        <div class="menu-wrap">
+          <button class="btn" onclick="toggleMenu('export-menu')">Export ▾</button>
+          <div class="menu" id="export-menu">
+            <button class="menu-item" onclick="closeMenus(); exportCSV();">CSV (for Google Sheets)</button>
+            <button class="menu-item" onclick="closeMenus(); exportJSON();">JSON Backup (full)</button>
+          </div>
+        </div>
+        <button class="btn" id="sync-btn" onclick="syncFromSheet()" title="Pull latest from Google Sheet" style="display:none">🔄 Sync</button>
+        <button class="btn btn-primary" onclick="openModal()">+ New Enquiry</button>
+        <button class="btn" onclick="lockDashboard()" title="Sign out / lock the dashboard">🔒 Lock</button>
+      </div>
+    </div>
+
+    <!-- ============ DASHBOARD ============ -->
+    <section class="view active" id="view-dashboard">
+      <div class="filters" style="margin-bottom: 14px;">
+        <label style="display:flex; align-items:center; gap:8px; color:var(--muted); font-size:13px;">📅 Month:
+          <select class="filter-select view-month" id="vm-dashboard" onchange="setPeriod(this.value)"><option value="">All time</option></select>
+        </label>
+      </div>
+      <div class="grid grid-4">
+        <div class="card kpi"><h3>Total Enquiries</h3><div class="kpi-value" id="kpi-total">0</div><div class="kpi-trend" id="kpi-total-trend">&nbsp;</div></div>
+        <div class="card kpi"><h3>Active Pipeline</h3><div class="kpi-value" id="kpi-active">0</div><div class="kpi-trend" id="kpi-active-trend">&nbsp;</div></div>
+        <div class="card kpi"><h3>Conversion Rate</h3><div class="kpi-value" id="kpi-conv">0%</div><div class="kpi-trend" id="kpi-conv-trend">&nbsp;</div></div>
+        <div class="card kpi"><h3>Finance Share</h3><div class="kpi-value" id="kpi-fin">0%</div><div class="kpi-trend" id="kpi-fin-trend">&nbsp;</div></div>
+      </div>
+
+      <div class="grid grid-2" style="margin-top: 14px;">
+        <div class="card"><h3>Pipeline by Stage</h3><div class="chart-wrap"><canvas id="chart-stage"></canvas></div></div>
+        <div class="card"><h3>Enquiries by Source</h3><div class="chart-wrap"><canvas id="chart-source"></canvas></div></div>
+      </div>
+
+      <div class="grid grid-2" style="margin-top: 14px;">
+        <div class="card"><h3>Counter Performance</h3><div id="counter-summary" class="grid grid-2" style="gap: 10px;"></div></div>
+        <div class="card"><h3>Sales Rep Leaderboard</h3><div class="leaderboard" id="leaderboard"></div></div>
+      </div>
+    </section>
+
+    <!-- ============ ENQUIRIES ============ -->
+    <section class="view" id="view-enquiries">
+      <div class="filters">
+        <input class="filter-input" id="f-search" placeholder="Search customer / phone / email..." oninput="renderTable()" />
+        <select class="filter-select" id="f-stage" onchange="renderTable()"><option value="">All stages</option></select>
+        <select class="filter-select" id="f-source" onchange="renderTable()"><option value="">All sources</option></select>
+        <select class="filter-select" id="f-rep" onchange="renderTable()"><option value="">All reps</option></select>
+        <select class="filter-select" id="f-counter" onchange="renderTable()"><option value="">All counters</option></select>
+        <select class="filter-select" id="f-finance" onchange="renderTable()"><option value="">Finance: any</option><option value="Yes">Yes</option><option value="No">No</option></select>
+        <select class="filter-select" id="f-financier" onchange="renderTable()"><option value="">All financiers</option></select>
+        <select class="filter-select" id="f-month" onchange="renderTable()" title="Filter enquiries by month"><option value="">All months</option></select>
+        <button class="btn btn-sm" onclick="clearFilters()">Clear</button>
+      </div>
+      <div id="bulk-bar" style="display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:10px 14px; margin-bottom:10px; background:var(--panel-2); border:1px solid var(--accent); border-radius:10px;">
+        <strong id="bulk-count">0 selected</strong>
+        <button class="btn btn-sm" onclick="selectAllVisible()" title="Select all rows currently shown by your filters">☑ Select all visible</button>
+        <button class="btn btn-sm" onclick="selectAllEnquiries()" title="Select every enquiry in the database, even hidden by filters">☑ Select ALL enquiries</button>
+        <span style="margin-left:auto"></span>
+        <button class="btn btn-sm" onclick="clearSelection()">Clear selection</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteSelected()">🗑 Delete selected</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteAllEnquiries()" title="Permanently delete every enquiry">🗑 Delete ALL</button>
+      </div>
+      <div class="card" style="padding: 0; overflow-x: auto;">
+        <table class="table" id="enquiry-table">
+          <thead><tr>
+            <th style="width:36px"><input type="checkbox" id="select-all" onclick="toggleSelectAll(this.checked)" /></th>
+            <th>ID</th><th>Customer</th><th>Counter</th><th>Source</th><th>Model</th><th>Budget (₹'000)</th><th>Rep</th><th>Stage</th><th>Finance</th><th>Last Contact</th><th>Next FU</th><th></th>
+          </tr></thead>
+          <tbody id="enquiry-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ COUNTERS ============ -->
+    <section class="view" id="view-counters">
+      <div class="filters" style="margin-bottom: 14px;">
+        <label style="display:flex; align-items:center; gap:8px; color:var(--muted); font-size:13px;">📅 Month:
+          <select class="filter-select view-month" id="vm-counters" onchange="setPeriod(this.value)"><option value="">All time</option></select>
+        </label>
+      </div>
+      <div class="card"><h3>Counter-wise Performance — Jabalpur</h3><div id="counter-detail"></div></div>
+      <div class="grid grid-2" style="margin-top: 14px;">
+        <div class="card"><h3>Enquiries by Counter</h3><div class="chart-wrap"><canvas id="chart-counter"></canvas></div></div>
+        <div class="card"><h3>Conversion by Counter</h3><div class="chart-wrap"><canvas id="chart-counter-conv"></canvas></div></div>
+      </div>
+    </section>
+
+    <!-- ============ FINANCE ============ -->
+    <section class="view" id="view-finance">
+      <div class="filters" style="margin-bottom: 14px;">
+        <label style="display:flex; align-items:center; gap:8px; color:var(--muted); font-size:13px;">📅 Month:
+          <select class="filter-select view-month" id="vm-finance" onchange="setPeriod(this.value)"><option value="">All time</option></select>
+        </label>
+      </div>
+      <div class="grid grid-3">
+        <div class="card kpi"><h3>Finance Enquiries</h3><div class="kpi-value" id="fin-total">0</div><div class="kpi-trend" id="fin-share">&nbsp;</div></div>
+        <div class="card kpi"><h3>Finance Won</h3><div class="kpi-value" id="fin-won">0</div><div class="kpi-trend">&nbsp;</div></div>
+        <div class="card kpi"><h3>Cash Won</h3><div class="kpi-value" id="cash-won">0</div><div class="kpi-trend">&nbsp;</div></div>
+      </div>
+      <div class="grid grid-2" style="margin-top: 14px;">
+        <div class="card"><h3>Enquiries by Financier</h3><div class="chart-wrap"><canvas id="chart-financier"></canvas></div></div>
+        <div class="card"><h3>Financier Conversion</h3><div id="financier-table"></div></div>
+      </div>
+    </section>
+
+    <!-- ============ PERFORMANCE ============ -->
+    <section class="view" id="view-performance">
+      <div class="filters" style="margin-bottom: 14px;">
+        <label style="display:flex; align-items:center; gap:8px; color:var(--muted); font-size:13px;">📅 Month:
+          <select class="filter-select view-month" id="vm-performance" onchange="setPeriod(this.value)"><option value="">All time</option></select>
+        </label>
+      </div>
+      <div class="card"><h3>Sales Rep Performance</h3><div id="rep-detail"></div></div>
+      <div class="grid grid-2" style="margin-top: 14px;">
+        <div class="card"><h3>Won Enquiries — Last 30 Days</h3><div class="chart-wrap"><canvas id="chart-trend"></canvas></div></div>
+        <div class="card"><h3>Top Models</h3><div id="model-table"></div></div>
+      </div>
+    </section>
+
+    <!-- ============ LEAKAGE ============ -->
+    <section class="view" id="view-leakage">
+      <div class="filters" style="margin-bottom: 14px;">
+        <label style="display:flex; align-items:center; gap:8px; color:var(--muted); font-size:13px;">📅 Month:
+          <select class="filter-select view-month" id="vm-leakage" onchange="setPeriod(this.value)"><option value="">All time</option></select>
+        </label>
+      </div>
+      <div class="card">
+        <h3>Stale Enquiries (no contact in &gt; 7 days while still active)</h3>
+        <p class="help-text">These are enquiries at risk of being lost. Reach out today.</p>
+        <div style="overflow-x:auto"><table class="table"><thead><tr>
+          <th>ID</th><th>Customer</th><th>Counter</th><th>Stage</th><th>Rep</th><th>Days Since Contact</th><th>Next FU</th>
+        </tr></thead><tbody id="leak-tbody"></tbody></table></div>
+      </div>
+      <div class="card" style="margin-top: 14px;">
+        <h3>Overdue Follow-ups</h3>
+        <p class="help-text">Follow-up scheduled in the past, still pending.</p>
+        <div style="overflow-x:auto"><table class="table"><thead><tr>
+          <th>ID</th><th>Customer</th><th>Counter</th><th>Stage</th><th>Rep</th><th>Scheduled</th><th>Days Overdue</th>
+        </tr></thead><tbody id="overdue-tbody"></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- ============ SETTINGS ============ -->
+    <section class="view" id="view-settings">
+      <div class="grid grid-2">
+        <div class="card">
+          <h3>Sales Counters (Jabalpur)</h3>
+          <p class="help-text">Edit the counter name inline; deletes prompt for reassignment of existing enquiries.</p>
+          <ul class="crud-list" id="counter-list"></ul>
+          <div class="add-row">
+            <input id="new-counter" placeholder="New counter name" />
+            <button class="btn btn-primary" onclick="addCounter()">Add Counter</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Sales Representatives</h3>
+          <p class="help-text">Edit, add, or remove reps. Renames cascade through every enquiry.</p>
+          <ul class="crud-list" id="rep-list"></ul>
+          <div class="add-row">
+            <input id="new-rep" placeholder="New sales rep name" />
+            <button class="btn btn-primary" onclick="addRep()">Add Rep</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Bike Models</h3>
+          <p class="help-text">Hero MotoCorp lineup. Add new launches; renames cascade.</p>
+          <ul class="crud-list" id="model-list"></ul>
+          <div class="add-row">
+            <input id="new-model" placeholder="New model name" />
+            <button class="btn btn-primary" onclick="addModel()">Add Model</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Financiers</h3>
+          <p class="help-text">Banks &amp; NBFCs you partner with for retail finance.</p>
+          <ul class="crud-list" id="financier-list"></ul>
+          <div class="add-row">
+            <input id="new-financier" placeholder="New financier name" />
+            <button class="btn btn-primary" onclick="addFinancier()">Add Financier</button>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="margin-top: 14px;">
+        <h3>Column Mapping (last import)</h3>
+        <p class="help-text">If a dashboard field got the wrong sheet column (or didn't get one at all), pick the correct column here and click <strong>🔄 Sync Now</strong> below to re-process. Overrides are remembered for future syncs.</p>
+        <div id="column-mapping" style="margin-top: 10px;"></div>
+        <div style="display:flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;">
+          <button class="btn" onclick="clearColumnOverrides()">Clear all overrides</button>
+        </div>
+      </div>
+      <div class="card" style="margin-top: 14px;">
+        <h3>Google Sheet Live Link</h3>
+        <p class="help-text">Paste a published Google Sheet URL. The dashboard will pull data from it on demand or automatically. <strong>The sheet becomes the source of truth — sync replaces local enquiries.</strong></p>
+        <p class="help-text" style="margin-top:6px"><strong>Setup once:</strong> in your Sheet, File → Share → Publish to web → choose <em>Comma-separated values (.csv)</em> → copy the URL → paste below. Or paste a normal sharing URL of a sheet shared "Anyone with the link can view".</p>
+        <label style="display:block; margin-top:10px;">
+          <span style="display:block; color:var(--muted); font-size:12px; margin-bottom:4px;">Google Sheet URL</span>
+          <input id="sheet-url" placeholder="https://docs.google.com/spreadsheets/d/.../pub?output=csv" style="width:100%; background:var(--panel-2); border:1px solid var(--line); color:var(--text); padding:8px 10px; border-radius:8px;" />
+        </label>
+        <div style="display:flex; gap:14px; align-items:center; margin-top:10px; flex-wrap:wrap;">
+          <label style="display:flex; align-items:center; gap:6px; color:var(--muted); font-size:13px;">
+            <input type="checkbox" id="sheet-auto-open" /> Auto-sync when I open the dashboard
+          </label>
+          <label style="display:flex; align-items:center; gap:6px; color:var(--muted); font-size:13px;">
+            <input type="checkbox" id="sheet-auto-interval" /> Auto-sync every
+            <input type="number" id="sheet-interval-min" value="15" min="1" max="1440" style="width:60px; background:var(--panel-2); border:1px solid var(--line); color:var(--text); padding:4px 6px; border-radius:6px;" />
+            min while tab is open
+          </label>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:12px; align-items:center; flex-wrap:wrap;">
+          <button class="btn btn-primary" onclick="saveSheetConfig()">Save</button>
+          <button class="btn" onclick="syncFromSheet()">🔄 Sync Now</button>
+          <button class="btn btn-ghost" onclick="clearSheetConfig()">Disconnect</button>
+          <span id="sheet-last-sync" class="help-text" style="margin-left:auto"></span>
+        </div>
+      </div>
+      <div class="card" style="margin-top: 14px;">
+        <h3>Data Management</h3>
+        <p class="help-text">Backup or wipe all data. CSV is for Google Sheets round-trips. JSON keeps the full state including reps/counters/financiers. "Re-detect dates" re-parses dates on existing rows (use this if the month filter shows wrong months).</p>
+        <div style="display:flex; gap: 8px; flex-wrap: wrap;">
+          <button class="btn" onclick="exportCSV()">Download CSV</button>
+          <button class="btn" onclick="exportJSON()">Download JSON Backup</button>
+          <button class="btn" onclick="redetectDates()">🔄 Re-detect dates</button>
+          <button class="btn btn-danger" onclick="resetAllData()">Reset All Data</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ============ MODAL: NEW / EDIT ENQUIRY ============ -->
+<div class="modal-bg" id="modal-bg">
+  <div class="modal">
+    <h2 id="modal-title">New Enquiry</h2>
+    <div class="form-grid">
+      <label>Customer Name<input id="f-customer" /></label>
+      <label>Phone<input id="f-phone" /></label>
+      <label>Email<input id="f-email" /></label>
+      <label>Counter<select id="f-counter-in"></select></label>
+      <label>Source<select id="f-source-in"></select></label>
+      <label>Model<select id="f-model"></select></label>
+      <label>Variant<input id="f-variant" /></label>
+      <label>Budget (₹ '000)<input id="f-budget" type="number" min="0" /></label>
+      <label>Sales Rep<select id="f-rep-in"></select></label>
+      <label>Stage<select id="f-stage-in"></select></label>
+      <label>Finance Required<select id="f-finance-in"><option>No</option><option>Yes</option></select></label>
+      <label>Financier<select id="f-financier-in"></select></label>
+      <label>Last Contact<input id="f-last" type="date" /></label>
+      <label>Next Follow-up<input id="f-next" type="date" /></label>
+      <label class="full">Notes<textarea id="f-notes"></textarea></label>
+      <label class="full" id="drop-wrap" style="display:none">Drop Reason<input id="f-drop" /></label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-danger" id="del-btn" onclick="deleteEnquiry()" style="display:none; margin-right:auto">Delete</button>
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveEnquiry()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: PASTE FROM GOOGLE SHEET ============ -->
+<div class="modal-bg" id="paste-modal">
+  <div class="modal">
+    <h2>Paste from Google Sheet</h2>
+    <p class="help-text">Two ways to use this:</p>
+    <p class="help-text" style="margin: 6px 0 12px 18px;"><strong>1.</strong> In your Google Sheet, select the rows (including the header row), press <kbd>Ctrl+C</kbd>, then paste them in the box below. Tab-separated or comma-separated both work.</p>
+    <p class="help-text" style="margin: 6px 0 12px 18px;"><strong>2.</strong> Or paste a published Google Sheet link (File → Share → Publish to web → CSV) into the URL field — the dashboard will fetch the data.</p>
+    <label style="display:block; margin-bottom:10px;">
+      <span style="display:block; color:var(--muted); font-size:12px; margin-bottom:4px;">Google Sheet URL (optional, must be a published CSV link or public sheet)</span>
+      <input id="paste-url" placeholder="https://docs.google.com/spreadsheets/d/.../pub?output=csv" style="width:100%; background:var(--panel-2); border:1px solid var(--line); color:var(--text); padding:8px 10px; border-radius:8px;" />
+    </label>
+    <label style="display:block;">
+      <span style="display:block; color:var(--muted); font-size:12px; margin-bottom:4px;">Or paste rows directly (header row required)</span>
+      <textarea id="paste-data" placeholder="Customer&#9;Phone&#9;Counter&#9;Model&#9;Stage&#9;Rep&#9;Finance&#9;Financier&#10;Aarav Sharma&#9;+91 98...&#9;Napier Town&#9;Splendor Plus&#9;New&#9;Priya Shah&#9;Yes&#9;Hero Fin Corp" style="width:100%; min-height:180px; background:var(--panel-2); border:1px solid var(--line); color:var(--text); padding:8px 10px; border-radius:8px; font-family:monospace; font-size:12px;"></textarea>
+    </label>
+    <div class="modal-actions">
+      <button class="btn" onclick="closePasteModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="processPaste()">Continue →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: CSV IMPORT PREVIEW ============ -->
+<div class="modal-bg" id="import-modal">
+  <div class="modal">
+    <h2>CSV Import Preview</h2>
+    <p class="help-text" id="import-summary"></p>
+    <div style="max-height: 300px; overflow: auto; border:1px solid var(--line); border-radius:8px; margin-top:8px;">
+      <table class="table" id="import-table"></table>
+    </div>
+    <p class="help-text" style="margin-top:10px">Choose how to apply this import. <strong>Replace</strong> wipes existing enquiries. <strong>Append</strong> adds them keeping current data.</p>
+    <div class="modal-actions">
+      <button class="btn" onclick="cancelImport()">Cancel</button>
+      <button class="btn" onclick="confirmImport('append')">Append</button>
+      <button class="btn btn-primary" onclick="confirmImport('replace')">Replace</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ====================== PASSWORD GATE ======================
+ * To change the password: edit the value below and re-upload the file to GitHub.
+ * Case-insensitive, trims whitespace. Stored auth lasts 30 days per device.
+ */
+const DASHBOARD_PASSWORD = 'hero2026';
+const AUTH_KEY = 'hero-dashboard-auth-v1';
+const AUTH_DAYS = 30;
+
+(function checkAuth() {
+  try {
+    const raw = localStorage.getItem(AUTH_KEY);
+    if (raw) {
+      const obj = JSON.parse(raw);
+      if (obj && obj.until && Date.now() < obj.until) {
+        document.body.classList.add('unlocked');
+        return;
+      }
+    }
+  } catch (e) {}
+  // Otherwise stay locked — focus the input once DOM is ready
+  setTimeout(() => { const i = document.getElementById('lock-input'); if (i) i.focus(); }, 100);
+})();
+
+function tryUnlock() {
+  const input = document.getElementById('lock-input');
+  const err = document.getElementById('lock-error');
+  const val = (input.value || '').trim().toLowerCase();
+  if (val === DASHBOARD_PASSWORD.toLowerCase()) {
+    const until = Date.now() + AUTH_DAYS * 86400 * 1000;
+    localStorage.setItem(AUTH_KEY, JSON.stringify({ until }));
+    document.body.classList.add('unlocked');
+    err.textContent = '';
+    input.value = '';
+  } else {
+    err.textContent = 'Wrong passcode. Try again.';
+    input.value = '';
+    input.focus();
+  }
+}
+
+function lockDashboard() {
+  localStorage.removeItem(AUTH_KEY);
+  document.body.classList.remove('unlocked');
+  setTimeout(() => { const i = document.getElementById('lock-input'); if (i) i.focus(); }, 100);
+}
+
+/* ====================== CONFIG & STATE ====================== */
+const STORAGE_KEY = 'hero-sales-enquiries-v1';
+const CONFIG_KEY = 'hero-sales-config-v1';
+
+const SOURCES = ['Walk-in', 'Website', 'Phone Call', 'WhatsApp', 'Facebook/Meta Ads', 'Google Ads', 'Referral', 'Auto Expo', 'Existing Customer'];
+const STAGES = ['New', 'Contacted', 'Qualified', 'Test Drive', 'Negotiation', 'Won', 'Lost'];
+const ACTIVE_STAGES = ['New', 'Contacted', 'Qualified', 'Test Drive', 'Negotiation'];
+const STALE_DAYS = 7;
+
+const DEFAULT_COUNTERS = ['Napier Town', 'Madan Mahal', 'Damoh Naka', 'Adhartal'];
+const DEFAULT_REPS = ['Priya Shah', 'Rahul Mehta', 'Anjali Verma', 'Vikram Singh', 'Sneha Iyer', 'Arjun Kapoor'];
+const DEFAULT_MODELS = ['Splendor Plus', 'HF Deluxe', 'Passion Pro', 'Glamour', 'Xtreme 125R', 'Xtreme 160R', 'Xpulse 200', 'Karizma XMR', 'Maestro Edge 125', 'Pleasure Plus', 'Destini 125', 'Vida V1 (EV)'];
+const DEFAULT_FINANCIERS = ['Hero Fin Corp', 'IDFC', 'L&T', 'Shree Ram', 'HDFC', 'Hinduja', 'Kotak'];
+
+let config = {
+  counters: [...DEFAULT_COUNTERS],
+  reps: [...DEFAULT_REPS],
+  models: [...DEFAULT_MODELS],
+  financiers: [...DEFAULT_FINANCIERS],
+  sheet: { url: '', autoOpen: false, autoIntervalEnabled: false, intervalMin: 15, lastSync: '' },
+  lastImportHeaders: [],
+  lastImportMap: {},
+  columnOverrides: {}
+};
+let sheetTimer = null;
+let enquiries = [];
+let editingId = null;
+let pendingImport = null;
+let charts = {};
+let selectedIds = new Set();
+let lastFilteredIds = [];
+
+/* ====================== UTILITIES ====================== */
+function todayISO() { return new Date().toISOString().slice(0, 10); }
+function daysAgo(n) { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0,10); }
+function daysAhead(n) { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0,10); }
+function dateDiff(d) { if (!d) return null; const ms = new Date(todayISO()) - new Date(d); return Math.round(ms / 86400000); }
+
+/**
+ * Parse a wide range of date strings and return ISO 'YYYY-MM-DD' (or '' if unparseable).
+ * Handles: ISO (2026-04-15), DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY, MM/DD/YYYY, D/M/YY,
+ *          DD-MMM-YYYY (15-Apr-2026), Excel serial numbers, JS-parseable strings.
+ * Defaults to DD/MM/YYYY (Indian convention) when ambiguous, since this dealership
+ * is in Jabalpur and Google Sheets exports follow the locale.
+ */
+function parseDate(raw) {
+  if (raw == null || raw === '') return '';
+  if (raw instanceof Date && !isNaN(raw)) return raw.toISOString().slice(0, 10);
+  let s = String(raw).trim();
+  if (!s) return '';
+
+  // Already ISO YYYY-MM-DD or YYYY/MM/DD
+  let m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  if (m) {
+    const y = m[1], mo = m[2].padStart(2,'0'), d = m[3].padStart(2,'0');
+    return y + '-' + mo + '-' + d;
+  }
+
+  // Excel serial number (e.g., 45413 = 2024-04-22). Days since 1899-12-30.
+  if (/^\d+(\.\d+)?$/.test(s) && Number(s) > 20000 && Number(s) < 80000) {
+    const epoch = new Date(Date.UTC(1899, 11, 30));
+    const dt = new Date(epoch.getTime() + Math.floor(Number(s)) * 86400000);
+    if (!isNaN(dt)) return dt.toISOString().slice(0, 10);
+  }
+
+  // DD-MMM-YYYY  (e.g., 15-Apr-2026 / 1 Apr 26 / Apr 15 2026)
+  const months = { jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',sept:'09',oct:'10',nov:'11',dec:'12' };
+  m = s.toLowerCase().match(/(\d{1,2})[\s\-\/]+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s\-\/]+(\d{2,4})/);
+  if (m) {
+    const d = m[1].padStart(2,'0'), mo = months[m[2]], y = m[3].length === 2 ? '20' + m[3] : m[3];
+    return y + '-' + mo + '-' + d;
+  }
+  m = s.toLowerCase().match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s\-\/]+(\d{1,2})[\s,\-\/]+(\d{2,4})/);
+  if (m) {
+    const mo = months[m[1]], d = m[2].padStart(2,'0'), y = m[3].length === 2 ? '20' + m[3] : m[3];
+    return y + '-' + mo + '-' + d;
+  }
+
+  // DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY (also 2-digit year)
+  m = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
+  if (m) {
+    let a = parseInt(m[1], 10), b = parseInt(m[2], 10), y = m[3];
+    if (y.length === 2) y = '20' + y;
+    let day, mon;
+    // If first component > 12, it must be the day (so format is DD/MM)
+    if (a > 12) { day = a; mon = b; }
+    // If second component > 12, first is the month (MM/DD)
+    else if (b > 12) { day = b; mon = a; }
+    // Ambiguous → default to DD/MM/YYYY (Indian)
+    else { day = a; mon = b; }
+    if (mon < 1 || mon > 12 || day < 1 || day > 31) return '';
+    return y + '-' + String(mon).padStart(2,'0') + '-' + String(day).padStart(2,'0');
+  }
+
+  // Fallback: let JS try
+  const dt = new Date(s);
+  if (!isNaN(dt)) return dt.toISOString().slice(0, 10);
+  return '';
+}
+function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
+function uid() { return 'E' + String(Date.now()).slice(-6) + Math.floor(Math.random()*100); }
+function nextId() {
+  let n = 1;
+  while (enquiries.some(e => e.id === 'E' + String(n).padStart(3,'0'))) n++;
+  return 'E' + String(n).padStart(3,'0');
+}
+
+/* ====================== PERSISTENCE ====================== */
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) enquiries = JSON.parse(raw);
+    const rawC = localStorage.getItem(CONFIG_KEY);
+    if (rawC) {
+      const c = JSON.parse(rawC);
+      if (c.counters) config.counters = c.counters;
+      if (c.reps) config.reps = c.reps;
+      if (c.models) config.models = c.models;
+      if (c.financiers) config.financiers = c.financiers;
+      if (c.sheet) config.sheet = Object.assign(config.sheet, c.sheet);
+      if (c.lastImportHeaders) config.lastImportHeaders = c.lastImportHeaders;
+      if (c.lastImportMap) config.lastImportMap = c.lastImportMap;
+      if (c.columnOverrides) config.columnOverrides = c.columnOverrides;
+    }
+  } catch (e) { console.warn('Load failed', e); }
+  if (!enquiries.length) seedData();
+  migrateDates();
+}
+
+/**
+ * One-time data fix-up: re-parse any enquiry dates that aren't already ISO 'YYYY-MM-DD'.
+ * Runs every load — cheap (regex check) and idempotent. Catches data imported before the
+ * date parser was added.
+ */
+function migrateDates() {
+  let fixed = 0;
+  const isoOk = /^\d{4}-\d{2}-\d{2}$/;
+  enquiries.forEach(e => {
+    // Step 1: Convert any non-ISO date strings to ISO using parseDate
+    ['createdAt','lastContactAt','nextFollowUp'].forEach(k => {
+      const v = e[k];
+      if (v && !isoOk.test(v)) {
+        const parsed = parseDate(v);
+        if (parsed) { e[k] = parsed; fixed++; }
+        else if (k !== 'createdAt') { e[k] = ''; }
+      }
+    });
+    // Step 2: If lastContactAt is older than createdAt, use it as createdAt.
+    // This catches the case where the import set createdAt = "today" as a fallback
+    // but the real date lived in the lastContactAt/Date column.
+    if (e.lastContactAt && isoOk.test(e.lastContactAt) && e.createdAt && isoOk.test(e.createdAt)) {
+      if (e.lastContactAt < e.createdAt) {
+        e.createdAt = e.lastContactAt;
+        fixed++;
+      }
+    } else if (e.lastContactAt && isoOk.test(e.lastContactAt) && !isoOk.test(e.createdAt || '')) {
+      e.createdAt = e.lastContactAt;
+      fixed++;
+    }
+  });
+  if (fixed) {
+    console.log('[Migrate] Fixed ' + fixed + ' date fields.');
+    saveData();
+  }
+}
+function saveData() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(enquiries));
+  localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+}
+
+/* ====================== SEED DATA ====================== */
+function seedData() {
+  enquiries = [
+    { id: 'E001', customer: 'Aarav Sharma', phone: '+91 98201 12345', email: 'aarav@gmail.com', counter: 'Napier Town', source: 'Walk-in', model: 'Splendor Plus', variant: 'Self Start Drum Alloy', budget: 80, rep: 'Priya Shah', stage: 'Negotiation', financeRequired: 'Yes', financier: 'Hero Fin Corp', createdAt: daysAgo(3), lastContactAt: daysAgo(1), nextFollowUp: daysAhead(1), notes: 'First-time buyer. Wants delivery by month-end. Asking about EMI tenure.', dropReason: '' },
+    { id: 'E002', customer: 'Diya Patel', phone: '+91 98765 43210', email: 'diya.p@yahoo.com', counter: 'Madan Mahal', source: 'Website', model: 'Xtreme 160R', variant: 'Stealth Edition', budget: 140, rep: 'Rahul Mehta', stage: 'Test Drive', financeRequired: 'Yes', financier: 'IDFC', createdAt: daysAgo(5), lastContactAt: daysAgo(2), nextFollowUp: daysAhead(0), notes: 'Test ride scheduled tomorrow at Madan Mahal counter.', dropReason: '' },
+    { id: 'E003', customer: 'Rohan Gupta', phone: '+91 99887 76543', email: '', counter: 'Damoh Naka', source: 'Facebook/Meta Ads', model: 'Glamour', variant: 'XTec', budget: 95, rep: 'Anjali Verma', stage: 'Qualified', financeRequired: 'Yes', financier: 'HDFC', createdAt: daysAgo(8), lastContactAt: daysAgo(2), nextFollowUp: daysAhead(2), notes: 'Comparing with Pulsar 125. Needs HDFC pre-approval check.', dropReason: '' },
+    { id: 'E004', customer: 'Kavya Nair', phone: '+91 87654 32109', email: 'kavya@outlook.com', counter: 'Adhartal', source: 'Referral', model: 'Pleasure Plus', variant: 'Platinum', budget: 75, rep: 'Vikram Singh', stage: 'Won', financeRequired: 'No', financier: '', createdAt: daysAgo(20), lastContactAt: daysAgo(2), nextFollowUp: '', notes: 'Booking confirmed. Cash deal. Delivery this weekend.', dropReason: '' },
+    { id: 'E005', customer: 'Mihir Joshi', phone: '+91 90123 45678', email: 'mihir.j@gmail.com', counter: 'Napier Town', source: 'Google Ads', model: 'Passion Pro', variant: 'Drum BS6', budget: 78, rep: 'Sneha Iyer', stage: 'Lost', financeRequired: 'Yes', financier: 'Shree Ram', createdAt: daysAgo(15), lastContactAt: daysAgo(5), nextFollowUp: '', notes: 'Went with Bajaj Platina due to lower EMI.', dropReason: 'Bought competitor' },
+    { id: 'E006', customer: 'Ananya Reddy', phone: '+91 91234 56789', email: 'ananya.r@gmail.com', counter: 'Madan Mahal', source: 'WhatsApp', model: 'Vida V1 (EV)', variant: 'Pro', budget: 145, rep: 'Priya Shah', stage: 'Contacted', financeRequired: 'Yes', financier: 'Hero Fin Corp', createdAt: daysAgo(2), lastContactAt: daysAgo(1), nextFollowUp: daysAhead(2), notes: 'Asked for brochure and EV subsidy details.', dropReason: '' },
+    { id: 'E007', customer: 'Karan Malhotra', phone: '+91 93456 78901', email: '', counter: 'Adhartal', source: 'Walk-in', model: 'Xpulse 200', variant: '4V Rally Edition', budget: 155, rep: 'Arjun Kapoor', stage: 'New', financeRequired: 'Yes', financier: 'L&T', createdAt: daysAgo(0), lastContactAt: '', nextFollowUp: daysAhead(1), notes: 'Adventure rider — keen on off-road capability.', dropReason: '' },
+    { id: 'E008', customer: 'Riya Bhatt', phone: '+91 94567 89012', email: 'riya.b@yahoo.com', counter: 'Damoh Naka', source: 'Phone Call', model: 'HF Deluxe', variant: 'Kick Start', budget: 65, rep: 'Anjali Verma', stage: 'Lost', financeRequired: 'Yes', financier: 'Hinduja', createdAt: daysAgo(25), lastContactAt: daysAgo(12), nextFollowUp: '', notes: 'Could not reach for 10+ days. Hinduja file went stale.', dropReason: 'Not contacted in time' },
+    { id: 'E009', customer: 'Yash Khanna', phone: '+91 95678 90123', email: 'yash.k@gmail.com', counter: 'Napier Town', source: 'Website', model: 'Karizma XMR', variant: 'Standard', budget: 185, rep: 'Rahul Mehta', stage: 'Qualified', financeRequired: 'Yes', financier: 'IDFC', createdAt: daysAgo(10), lastContactAt: daysAgo(9), nextFollowUp: daysAhead(-2), notes: 'Premium buyer. Follow-up overdue. IDFC docs pending.', dropReason: '' },
+    { id: 'E010', customer: 'Ishita Rao', phone: '+91 96789 01234', email: 'ishita@outlook.com', counter: 'Adhartal', source: 'Existing Customer', model: 'Destini 125', variant: 'VX', budget: 85, rep: 'Sneha Iyer', stage: 'Won', financeRequired: 'No', financier: '', createdAt: daysAgo(35), lastContactAt: daysAgo(7), nextFollowUp: '', notes: 'Upgrading from Pleasure. Cash purchase.', dropReason: '' },
+    { id: 'E011', customer: 'Devansh Bose', phone: '+91 97890 12345', email: '', counter: 'Madan Mahal', source: 'Auto Expo', model: 'Xtreme 125R', variant: 'Connected', budget: 105, rep: 'Vikram Singh', stage: 'Test Drive', financeRequired: 'Yes', financier: 'Hero Fin Corp', createdAt: daysAgo(6), lastContactAt: daysAgo(1), nextFollowUp: daysAhead(3), notes: 'College student. Hero Fin Corp student scheme applied.', dropReason: '' },
+    { id: 'E012', customer: 'Tara Menon', phone: '+91 99001 23456', email: 'tara.m@gmail.com', counter: 'Napier Town', source: 'Walk-in', model: 'Maestro Edge 125', variant: 'Stealth', budget: 90, rep: 'Priya Shah', stage: 'Won', financeRequired: 'Yes', financier: 'HDFC', createdAt: daysAgo(40), lastContactAt: daysAgo(15), nextFollowUp: '', notes: 'Delivered last week. HDFC loan disbursed.', dropReason: '' },
+    { id: 'E013', customer: 'Aditya Bansal', phone: '+91 98112 23344', email: 'adi.b@gmail.com', counter: 'Damoh Naka', source: 'Google Ads', model: 'Splendor Plus', variant: 'i3S Drum', budget: 78, rep: 'Arjun Kapoor', stage: 'Contacted', financeRequired: 'Yes', financier: 'Shree Ram', createdAt: daysAgo(9), lastContactAt: daysAgo(8), nextFollowUp: daysAhead(-1), notes: 'Has not responded. Shree Ram prelim offer sent.', dropReason: '' },
+    { id: 'E014', customer: 'Meera Iyer', phone: '+91 98223 34455', email: 'meera@outlook.com', counter: 'Adhartal', source: 'Referral', model: 'Pleasure Plus', variant: 'LX', budget: 72, rep: 'Rahul Mehta', stage: 'New', financeRequired: 'No', financier: '', createdAt: daysAgo(1), lastContactAt: '', nextFollowUp: daysAhead(0), notes: 'Referred by Kavya Nair. Office commute use. Cash buyer.', dropReason: '' },
+    { id: 'E015', customer: 'Nikhil Choudhury', phone: '+91 98334 45566', email: '', counter: 'Madan Mahal', source: 'Facebook/Meta Ads', model: 'Glamour', variant: 'Disc BS6', budget: 92, rep: 'Anjali Verma', stage: 'Lost', financeRequired: 'Yes', financier: 'Hinduja', createdAt: daysAgo(30), lastContactAt: daysAgo(20), nextFollowUp: '', notes: 'Postponed purchase to next year.', dropReason: 'Postponed purchase' },
+    { id: 'E016', customer: 'Saanvi Kulkarni', phone: '+91 98445 56677', email: 'saanvi@gmail.com', counter: 'Napier Town', source: 'WhatsApp', model: 'HF Deluxe', variant: 'Self Start Alloy', budget: 70, rep: 'Sneha Iyer', stage: 'Qualified', financeRequired: 'Yes', financier: 'Hero Fin Corp', createdAt: daysAgo(4), lastContactAt: daysAgo(2), nextFollowUp: daysAhead(2), notes: 'First-time buyer. Needs finance walkthrough.', dropReason: '' },
+    { id: 'E017', customer: 'Veer Khurana', phone: '+91 98556 67788', email: 'veer.k@yahoo.com', counter: 'Damoh Naka', source: 'Walk-in', model: 'Xpulse 200', variant: 'Standard', budget: 145, rep: 'Vikram Singh', stage: 'Negotiation', financeRequired: 'Yes', financier: 'IDFC', createdAt: daysAgo(7), lastContactAt: daysAgo(1), nextFollowUp: daysAhead(1), notes: 'Negotiating exchange value for old Splendor.', dropReason: '' },
+    { id: 'E018', customer: 'Pooja Saxena', phone: '+91 98667 78899', email: '', counter: 'Adhartal', source: 'Website', model: 'Vida V1 (EV)', variant: 'Plus', budget: 130, rep: 'Priya Shah', stage: 'New', financeRequired: 'Yes', financier: 'Hero Fin Corp', createdAt: daysAgo(0), lastContactAt: '', nextFollowUp: daysAhead(1), notes: 'Form filled on website 2 hours ago. EV-curious.', dropReason: '' }
+  ];
+  saveData();
+}
+
+/* ====================== NAVIGATION ====================== */
+function setView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const view = document.getElementById('view-' + name);
+  if (view) view.classList.add('active');
+  const nav = document.querySelector('.nav-item[data-view="' + name + '"]');
+  if (nav) nav.classList.add('active');
+  const baseTitle = nav ? nav.textContent.trim() : name;
+  document.getElementById('view-title').textContent = currentPeriod ? baseTitle + ' — ' + formatMonthLabel(currentPeriod) : baseTitle;
+  if (name === 'dashboard') renderDashboard();
+  else if (name === 'enquiries') renderTable();
+  else if (name === 'counters') renderCounters();
+  else if (name === 'finance') renderFinance();
+  else if (name === 'performance') renderPerformance();
+  else if (name === 'leakage') renderLeakage();
+  else if (name === 'settings') renderSettings();
+}
+
+/* ====================== DROPDOWN POPULATION ====================== */
+function populateSelect(id, options, includeBlank, blankLabel) {
+  const sel = document.getElementById(id);
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = '';
+  if (includeBlank) {
+    const o = document.createElement('option');
+    o.value = ''; o.textContent = blankLabel || 'All';
+    sel.appendChild(o);
+  }
+  options.forEach(opt => {
+    const o = document.createElement('option');
+    o.value = opt; o.textContent = opt;
+    sel.appendChild(o);
+  });
+  sel.value = current;
+}
+function refreshAllSelects() {
+  populateSelect('f-stage', STAGES, true, 'All stages');
+  populateSelect('f-source', SOURCES, true, 'All sources');
+  populateSelect('f-rep', config.reps, true, 'All reps');
+  populateSelect('f-counter', config.counters, true, 'All counters');
+  populateSelect('f-financier', config.financiers, true, 'All financiers');
+  populateSelect('f-counter-in', config.counters, false);
+  populateSelect('f-source-in', SOURCES, false);
+  populateSelect('f-model', config.models, false);
+  populateSelect('f-rep-in', config.reps, false);
+  populateSelect('f-stage-in', STAGES, false);
+  populateSelect('f-financier-in', [''].concat(config.financiers), false);
+  refreshMonthOptions();
+}
+
+/* ====================== PERIOD (MONTH) FILTER ====================== */
+let currentPeriod = ''; // '' = all time, otherwise 'YYYY-MM'
+
+function getMonthKey(e) {
+  // Prefer createdAt; fall back to lastContactAt. Accept either ISO or parseable formats.
+  let raw = e.createdAt || e.lastContactAt || '';
+  // If it's already YYYY-MM-... we can shortcut
+  let key = raw.slice(0, 7);
+  if (/^\d{4}-\d{2}$/.test(key)) return key;
+  // Otherwise try to parse it on the fly
+  const parsed = parseDate(raw);
+  return parsed ? parsed.slice(0, 7) : '';
+}
+function inPeriod(e) {
+  if (!currentPeriod) return true;
+  return getMonthKey(e) === currentPeriod;
+}
+function getActiveEnquiries() { return enquiries.filter(inPeriod); }
+function getAvailableMonths() {
+  const set = new Set();
+  enquiries.forEach(e => { const k = getMonthKey(e); if (k) set.add(k); });
+  return Array.from(set).sort().reverse(); // newest first
+}
+function formatMonthLabel(ym) {
+  if (!ym) return 'All time';
+  const [y, m] = ym.split('-');
+  const names = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return names[parseInt(m,10)-1] + ' ' + y;
+}
+function refreshMonthOptions() {
+  const months = getAvailableMonths();
+  const optsHtml = '<option value="">All time</option>' +
+    months.map(m => '<option value="' + m + '">' + formatMonthLabel(m) + '</option>').join('');
+  // Global topbar dropdown
+  const g = document.getElementById('global-period');
+  if (g) { g.innerHTML = optsHtml; g.value = currentPeriod; }
+  // Per-view dropdowns (Dashboard, Counters, Finance, Performance, Leakage)
+  document.querySelectorAll('.view-month').forEach(sel => {
+    sel.innerHTML = optsHtml;
+    sel.value = currentPeriod;
+  });
+  // The Enquiries-tab table filter (separate, can override global per-table)
+  const f = document.getElementById('f-month');
+  if (f) {
+    const cur = f.value;
+    f.innerHTML = '<option value="">All months</option>' +
+      months.map(m => '<option value="' + m + '">' + formatMonthLabel(m) + '</option>').join('');
+    f.value = cur;
+  }
+}
+function setPeriod(p) {
+  currentPeriod = p || '';
+  // Sync every month dropdown so all tabs + topbar show the same selection
+  const g = document.getElementById('global-period'); if (g) g.value = currentPeriod;
+  document.querySelectorAll('.view-month').forEach(sel => { sel.value = currentPeriod; });
+  // Re-render whichever view is currently active
+  const activeNav = document.querySelector('.nav-item.active');
+  const view = activeNav ? activeNav.dataset.view : 'dashboard';
+  setView(view);
+}
+
+/* ====================== DASHBOARD ====================== */
+function renderDashboard() {
+  const E = getActiveEnquiries();
+  const total = E.length;
+  const active = E.filter(e => ACTIVE_STAGES.includes(e.stage)).length;
+  const won = E.filter(e => e.stage === 'Won').length;
+  const lost = E.filter(e => e.stage === 'Lost').length;
+  const closed = won + lost;
+  const conv = total ? Math.round(won / total * 100) : 0;        // Sold / Total enquiries
+  const winRate = closed ? Math.round(won / closed * 100) : 0;   // Won / (Won+Lost)
+  const finReq = E.filter(e => e.financeRequired === 'Yes').length;
+  const finPct = total ? Math.round(finReq / total * 100) : 0;
+  document.getElementById('kpi-total').textContent = total;
+  document.getElementById('kpi-active').textContent = active;
+  document.getElementById('kpi-conv').textContent = conv + '%';
+  document.getElementById('kpi-fin').textContent = finPct + '%';
+  document.getElementById('kpi-total-trend').textContent = won + ' won · ' + lost + ' lost · ' + active + ' open';
+  document.getElementById('kpi-active-trend').textContent = 'Open across pipeline';
+  document.getElementById('kpi-conv-trend').textContent = won + '/' + total + ' (Win rate on closed: ' + winRate + '%)';
+  document.getElementById('kpi-fin-trend').textContent = finReq + ' finance enquiries';
+
+  // Stage chart
+  const stageCounts = STAGES.map(s => E.filter(e => e.stage === s).length);
+  drawChart('chart-stage', 'bar', {
+    labels: STAGES,
+    datasets: [{ data: stageCounts, backgroundColor: ['#5b9eff','#ffb02e','#5b9eff','#ffb02e','#ff2e2e','#2bd47d','#ff5c5c'] }]
+  }, { plugins: { legend: { display: false } } });
+
+  // Source chart
+  const srcMap = {};
+  E.forEach(e => { srcMap[e.source] = (srcMap[e.source] || 0) + 1; });
+  drawChart('chart-source', 'doughnut', {
+    labels: Object.keys(srcMap),
+    datasets: [{ data: Object.values(srcMap), backgroundColor: ['#ff2e2e','#ffb02e','#5b9eff','#2bd47d','#a05bff','#ff5c93','#5be0ff','#ff8b3d','#9bff5b'] }]
+  }, { plugins: { legend: { position: 'right', labels: { color: '#94a0c8', font: { size: 11 } } } } });
+
+  // Counter summary cards
+  renderCounterSummary();
+
+  // Leaderboard
+  renderLeaderboard();
+}
+
+function renderCounterSummary() {
+  const wrap = document.getElementById('counter-summary');
+  const E = getActiveEnquiries();
+  let html = '';
+  config.counters.forEach(c => {
+    const list = E.filter(e => e.counter === c);
+    const won = list.filter(e => e.stage === 'Won').length;
+    const conv = list.length ? Math.round(won / list.length * 100) : 0;
+    html += '<div class="counter-card">';
+    html += '<div class="counter-name">' + escapeHtml(c) + '<span class="lb-conv">' + conv + '%</span></div>';
+    html += '<div class="counter-stats">';
+    html += '<div class="counter-stat"><strong>' + list.length + '</strong>Enquiries</div>';
+    html += '<div class="counter-stat"><strong>' + list.filter(e => ACTIVE_STAGES.includes(e.stage)).length + '</strong>Active</div>';
+    html += '<div class="counter-stat"><strong>' + won + '</strong>Won</div>';
+    html += '</div></div>';
+  });
+  wrap.innerHTML = html;
+}
+
+function renderLeaderboard() {
+  const lb = document.getElementById('leaderboard');
+  const E = getActiveEnquiries();
+  const data = config.reps.map(r => {
+    const list = E.filter(e => e.rep === r);
+    const won = list.filter(e => e.stage === 'Won').length;
+    const conv = list.length ? Math.round(won / list.length * 100) : 0;
+    return { rep: r, total: list.length, won, conv };
+  }).sort((a,b) => b.won - a.won || b.conv - a.conv);
+
+  let html = '';
+  data.forEach((d, i) => {
+    html += '<div class="lb-row">';
+    html += '<div class="lb-rank">' + (i+1) + '</div>';
+    html += '<div class="lb-name">' + escapeHtml(d.rep) + '</div>';
+    html += '<div class="lb-stats">' + d.won + '/' + d.total + '</div>';
+    html += '<div class="lb-conv">' + d.conv + '%</div>';
+    html += '</div>';
+  });
+  lb.innerHTML = html;
+}
+
+/* ====================== ENQUIRIES TABLE ====================== */
+function renderTable() {
+  const search = (document.getElementById('f-search').value || '').toLowerCase();
+  const fStage = document.getElementById('f-stage').value;
+  const fSource = document.getElementById('f-source').value;
+  const fRep = document.getElementById('f-rep').value;
+  const fCounter = document.getElementById('f-counter').value;
+  const fFinance = document.getElementById('f-finance').value;
+  const fFinancier = document.getElementById('f-financier').value;
+  const fMonth = (document.getElementById('f-month') || {}).value || '';
+  // The per-table month dropdown overrides the global period for the table, but
+  // if the user hasn't picked a per-table month, the global period still applies.
+  const periodFilter = fMonth || currentPeriod;
+
+  const rows = enquiries.filter(e => {
+    if (periodFilter && getMonthKey(e) !== periodFilter) return false;
+    if (fStage && e.stage !== fStage) return false;
+    if (fSource && e.source !== fSource) return false;
+    if (fRep && e.rep !== fRep) return false;
+    if (fCounter && e.counter !== fCounter) return false;
+    if (fFinance && e.financeRequired !== fFinance) return false;
+    if (fFinancier && e.financier !== fFinancier) return false;
+    if (search) {
+      const blob = (e.customer + ' ' + e.phone + ' ' + e.email + ' ' + e.notes + ' ' + e.id).toLowerCase();
+      if (!blob.includes(search)) return false;
+    }
+    return true;
+  });
+
+  lastFilteredIds = rows.map(e => e.id);
+  const tbody = document.getElementById('enquiry-tbody');
+  let html = '';
+  rows.forEach(e => {
+    const dsc = dateDiff(e.lastContactAt);
+    const stale = ACTIVE_STAGES.includes(e.stage) && (dsc === null || dsc > STALE_DAYS);
+    const stageCls = 'badge-' + e.stage.toLowerCase().replace(/ /g, '-');
+    const finBadge = e.financeRequired === 'Yes' ? '<span class="badge badge-yes">' + escapeHtml(e.financier || 'Yes') + '</span>' : '<span class="badge badge-no">Cash</span>';
+    const checked = selectedIds.has(e.id) ? ' checked' : '';
+    html += '<tr class="' + (stale ? 'leak-row' : '') + '" onclick="openModal(\'' + e.id + '\')" style="cursor:pointer">';
+    html += '<td onclick="event.stopPropagation()"><input type="checkbox" class="row-check" data-id="' + escapeHtml(e.id) + '"' + checked + ' onclick="toggleSelectRow(\'' + e.id + '\', this.checked)" /></td>';
+    html += '<td>' + escapeHtml(e.id) + '</td>';
+    html += '<td><strong>' + escapeHtml(e.customer) + '</strong><br><span style="color:var(--muted);font-size:11px">' + escapeHtml(e.phone) + '</span></td>';
+    html += '<td>' + escapeHtml(e.counter || '') + '</td>';
+    html += '<td>' + escapeHtml(e.source) + '</td>';
+    html += '<td>' + escapeHtml(e.model) + '</td>';
+    html += '<td>₹' + (e.budget || 0) + '</td>';
+    html += '<td>' + escapeHtml(e.rep) + '</td>';
+    html += '<td><span class="badge ' + stageCls + '">' + escapeHtml(e.stage) + '</span></td>';
+    html += '<td>' + finBadge + '</td>';
+    html += '<td>' + (e.lastContactAt || '—') + '</td>';
+    html += '<td>' + (e.nextFollowUp || '—') + '</td>';
+    html += '<td><button class="btn btn-sm" onclick="event.stopPropagation(); openModal(\'' + e.id + '\')">Edit</button></td>';
+    html += '</tr>';
+  });
+  if (!rows.length) html = '<tr><td colspan="13" style="text-align:center; padding:30px; color:var(--muted)">No enquiries match the filters.</td></tr>';
+  tbody.innerHTML = html;
+  updateBulkBar();
+}
+
+function toggleSelectAll(checked) {
+  if (checked) lastFilteredIds.forEach(id => selectedIds.add(id));
+  else lastFilteredIds.forEach(id => selectedIds.delete(id));
+  document.querySelectorAll('.row-check').forEach(cb => { cb.checked = selectedIds.has(cb.dataset.id); });
+  updateBulkBar();
+}
+function selectAllVisible() {
+  lastFilteredIds.forEach(id => selectedIds.add(id));
+  document.querySelectorAll('.row-check').forEach(cb => { cb.checked = selectedIds.has(cb.dataset.id); });
+  updateBulkBar();
+}
+function selectAllEnquiries() {
+  enquiries.forEach(e => selectedIds.add(e.id));
+  document.querySelectorAll('.row-check').forEach(cb => { cb.checked = selectedIds.has(cb.dataset.id); });
+  updateBulkBar();
+}
+function deleteAllEnquiries() {
+  const total = enquiries.length;
+  if (!total) { alert('There are no enquiries to delete.'); return; }
+  const first = confirm('Delete ALL ' + total + ' enquiries permanently? This cannot be undone.');
+  if (!first) return;
+  const second = confirm('Are you absolutely sure? This will wipe every enquiry from the dashboard.');
+  if (!second) return;
+  enquiries = [];
+  selectedIds.clear();
+  saveData();
+  refreshAllSelects();
+  setView('enquiries');
+}
+function toggleSelectRow(id, checked) {
+  if (checked) selectedIds.add(id); else selectedIds.delete(id);
+  updateBulkBar();
+}
+function clearSelection() {
+  selectedIds.clear();
+  document.querySelectorAll('.row-check').forEach(cb => cb.checked = false);
+  const sa = document.getElementById('select-all'); if (sa) sa.checked = false;
+  updateBulkBar();
+}
+function updateBulkBar() {
+  const bar = document.getElementById('bulk-bar');
+  const count = selectedIds.size;
+  if (bar) {
+    bar.style.display = 'flex';
+    const label = count === 0 ? 'Bulk actions:' : count + ' selected';
+    document.getElementById('bulk-count').textContent = label;
+  }
+  const sa = document.getElementById('select-all');
+  if (sa) {
+    const visible = lastFilteredIds.length;
+    const visibleSelected = lastFilteredIds.filter(id => selectedIds.has(id)).length;
+    sa.checked = visible > 0 && visibleSelected === visible;
+    sa.indeterminate = visibleSelected > 0 && visibleSelected < visible;
+  }
+}
+function deleteSelected() {
+  const count = selectedIds.size;
+  if (!count) return;
+  const msg = count === 1
+    ? 'Delete this 1 enquiry permanently?'
+    : 'Delete these ' + count + ' enquiries permanently? This cannot be undone.';
+  if (!confirm(msg)) return;
+  enquiries = enquiries.filter(e => !selectedIds.has(e.id));
+  selectedIds.clear();
+  saveData();
+  renderTable();
+}
+function clearFilters() {
+  ['f-search','f-stage','f-source','f-rep','f-counter','f-finance','f-financier','f-month'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  renderTable();
+}
+
+/* ====================== COUNTERS VIEW ====================== */
+function renderCounters() {
+  const wrap = document.getElementById('counter-detail');
+  const E = getActiveEnquiries();
+  let html = '<div style="overflow-x:auto"><table class="table"><thead><tr><th>Counter</th><th>Total</th><th>Active</th><th>Won</th><th>Lost</th><th>Conv % (won/total)</th><th>Win Rate (won/closed)</th><th>Finance %</th><th>Stale</th></tr></thead><tbody>';
+  config.counters.forEach(c => {
+    const list = E.filter(e => e.counter === c);
+    const active = list.filter(e => ACTIVE_STAGES.includes(e.stage)).length;
+    const won = list.filter(e => e.stage === 'Won').length;
+    const lost = list.filter(e => e.stage === 'Lost').length;
+    const closed = won + lost;
+    const conv = list.length ? Math.round(won / list.length * 100) : 0;
+    const winRate = closed ? Math.round(won / closed * 100) : 0;
+    const fin = list.filter(e => e.financeRequired === 'Yes').length;
+    const finPct = list.length ? Math.round(fin / list.length * 100) : 0;
+    const stale = list.filter(e => ACTIVE_STAGES.includes(e.stage) && (dateDiff(e.lastContactAt) === null || dateDiff(e.lastContactAt) > STALE_DAYS)).length;
+    html += '<tr><td><strong>' + escapeHtml(c) + '</strong></td>';
+    html += '<td>' + list.length + '</td>';
+    html += '<td>' + active + '</td>';
+    html += '<td style="color:var(--ok)">' + won + '</td>';
+    html += '<td style="color:var(--danger)">' + lost + '</td>';
+    html += '<td><strong>' + conv + '%</strong><div class="pb"><div class="pb-fill ok" style="width:' + conv + '%"></div></div></td>';
+    html += '<td>' + winRate + '%</td>';
+    html += '<td>' + finPct + '%</td>';
+    html += '<td' + (stale ? ' style="color:var(--danger);font-weight:600"' : '') + '>' + stale + '</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  wrap.innerHTML = html;
+
+  const labels = config.counters;
+  const counts = labels.map(c => E.filter(e => e.counter === c).length);
+  drawChart('chart-counter', 'bar', {
+    labels, datasets: [{ data: counts, backgroundColor: '#ff2e2e' }]
+  }, { plugins: { legend: { display: false } } });
+
+  const convs = labels.map(c => {
+    const list = E.filter(e => e.counter === c);
+    const won = list.filter(e => e.stage === 'Won').length;
+    return list.length ? Math.round(won / list.length * 100) : 0;
+  });
+  drawChart('chart-counter-conv', 'bar', {
+    labels, datasets: [{ data: convs, backgroundColor: '#2bd47d' }]
+  }, { plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: v => v + '%' } } } });
+}
+
+/* ====================== FINANCE VIEW ====================== */
+function renderFinance() {
+  const E = getActiveEnquiries();
+  const total = E.length;
+  const finReq = E.filter(e => e.financeRequired === 'Yes');
+  const finWon = finReq.filter(e => e.stage === 'Won').length;
+  const cashWon = E.filter(e => e.stage === 'Won' && e.financeRequired !== 'Yes').length;
+
+  document.getElementById('fin-total').textContent = finReq.length;
+  document.getElementById('fin-share').textContent = total ? Math.round(finReq.length / total * 100) + '% of all enquiries' : '';
+  document.getElementById('fin-won').textContent = finWon;
+  document.getElementById('cash-won').textContent = cashWon;
+
+  const labels = config.financiers;
+  const counts = labels.map(f => finReq.filter(e => e.financier === f).length);
+  drawChart('chart-financier', 'bar', {
+    labels, datasets: [{ data: counts, backgroundColor: ['#ff2e2e','#ffb02e','#5b9eff','#2bd47d','#a05bff','#ff5c93'] }]
+  }, { plugins: { legend: { display: false } } });
+
+  let html = '<div style="overflow-x:auto"><table class="table"><thead><tr><th>Financier</th><th>Enquiries</th><th>Won</th><th>Lost</th><th>Active</th><th>Conv % (won/total)</th><th>Win Rate (won/closed)</th></tr></thead><tbody>';
+  config.financiers.forEach(f => {
+    const list = finReq.filter(e => e.financier === f);
+    const won = list.filter(e => e.stage === 'Won').length;
+    const lost = list.filter(e => e.stage === 'Lost').length;
+    const active = list.filter(e => ACTIVE_STAGES.includes(e.stage)).length;
+    const closed = won + lost;
+    const conv = list.length ? Math.round(won / list.length * 100) : 0;
+    const winRate = closed ? Math.round(won / closed * 100) : 0;
+    html += '<tr><td><strong>' + escapeHtml(f) + '</strong></td>';
+    html += '<td>' + list.length + '</td>';
+    html += '<td style="color:var(--ok)">' + won + '</td>';
+    html += '<td style="color:var(--danger)">' + lost + '</td>';
+    html += '<td>' + active + '</td>';
+    html += '<td><strong>' + conv + '%</strong></td>';
+    html += '<td>' + winRate + '%</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  document.getElementById('financier-table').innerHTML = html;
+}
+
+/* ====================== PERFORMANCE VIEW ====================== */
+function renderPerformance() {
+  const E = getActiveEnquiries();
+  // Rep detail table
+  let html = '<div style="overflow-x:auto"><table class="table"><thead><tr><th>Rep</th><th>Total</th><th>Active</th><th>Won</th><th>Lost</th><th>Conv % (won/total)</th><th>Win Rate (won/closed)</th></tr></thead><tbody>';
+  config.reps.forEach(r => {
+    const list = E.filter(e => e.rep === r);
+    const won = list.filter(e => e.stage === 'Won').length;
+    const lost = list.filter(e => e.stage === 'Lost').length;
+    const active = list.filter(e => ACTIVE_STAGES.includes(e.stage)).length;
+    const closed = won + lost;
+    const conv = list.length ? Math.round(won / list.length * 100) : 0;
+    const winRate = closed ? Math.round(won / closed * 100) : 0;
+    html += '<tr><td><strong>' + escapeHtml(r) + '</strong></td>';
+    html += '<td>' + list.length + '</td>';
+    html += '<td>' + active + '</td>';
+    html += '<td style="color:var(--ok)">' + won + '</td>';
+    html += '<td style="color:var(--danger)">' + lost + '</td>';
+    html += '<td><strong>' + conv + '%</strong><div class="pb"><div class="pb-fill ok" style="width:' + conv + '%"></div></div></td>';
+    html += '<td>' + winRate + '%</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  document.getElementById('rep-detail').innerHTML = html;
+
+  // 30-day won trend
+  const labels = [], counts = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = daysAgo(i);
+    labels.push(d.slice(5));
+    counts.push(E.filter(e => e.stage === 'Won' && e.lastContactAt === d).length);
+  }
+  drawChart('chart-trend', 'line', {
+    labels, datasets: [{ data: counts, borderColor: '#2bd47d', backgroundColor: 'rgba(43,212,125,0.15)', fill: true, tension: 0.3 }]
+  }, { plugins: { legend: { display: false } } });
+
+  // Top models
+  const modelMap = {};
+  E.forEach(e => {
+    if (!modelMap[e.model]) modelMap[e.model] = { total: 0, won: 0 };
+    modelMap[e.model].total++;
+    if (e.stage === 'Won') modelMap[e.model].won++;
+  });
+  const sorted = Object.entries(modelMap).sort((a,b) => b[1].total - a[1].total);
+  let mh = '<div style="overflow-x:auto"><table class="table"><thead><tr><th>Model</th><th>Enquiries</th><th>Won</th><th>Win Rate</th></tr></thead><tbody>';
+  sorted.forEach(([m, d]) => {
+    const wr = d.total ? Math.round(d.won / d.total * 100) : 0;
+    mh += '<tr><td><strong>' + escapeHtml(m) + '</strong></td><td>' + d.total + '</td><td>' + d.won + '</td><td>' + wr + '%</td></tr>';
+  });
+  mh += '</tbody></table></div>';
+  document.getElementById('model-table').innerHTML = mh;
+}
+
+/* ====================== LEAKAGE VIEW ====================== */
+function renderLeakage() {
+  const E = getActiveEnquiries();
+  const stale = E.filter(e => ACTIVE_STAGES.includes(e.stage) && (dateDiff(e.lastContactAt) === null || dateDiff(e.lastContactAt) > STALE_DAYS));
+  let html = '';
+  stale.forEach(e => {
+    const days = dateDiff(e.lastContactAt);
+    html += '<tr onclick="openModal(\'' + e.id + '\')" style="cursor:pointer">';
+    html += '<td>' + escapeHtml(e.id) + '</td>';
+    html += '<td><strong>' + escapeHtml(e.customer) + '</strong><br><span style="color:var(--muted);font-size:11px">' + escapeHtml(e.phone) + '</span></td>';
+    html += '<td>' + escapeHtml(e.counter || '') + '</td>';
+    html += '<td><span class="badge badge-' + e.stage.toLowerCase().replace(/ /g,'-') + '">' + escapeHtml(e.stage) + '</span></td>';
+    html += '<td>' + escapeHtml(e.rep) + '</td>';
+    html += '<td style="color:var(--danger);font-weight:600">' + (days === null ? 'Never' : days + ' days') + '</td>';
+    html += '<td>' + (e.nextFollowUp || '—') + '</td>';
+    html += '</tr>';
+  });
+  if (!stale.length) html = '<tr><td colspan="7" style="text-align:center; padding:20px; color:var(--muted)">No stale enquiries 🎉</td></tr>';
+  document.getElementById('leak-tbody').innerHTML = html;
+
+  const today = todayISO();
+  const overdue = E.filter(e => ACTIVE_STAGES.includes(e.stage) && e.nextFollowUp && e.nextFollowUp < today);
+  let oh = '';
+  overdue.forEach(e => {
+    const days = dateDiff(e.nextFollowUp);
+    oh += '<tr onclick="openModal(\'' + e.id + '\')" style="cursor:pointer">';
+    oh += '<td>' + escapeHtml(e.id) + '</td>';
+    oh += '<td><strong>' + escapeHtml(e.customer) + '</strong></td>';
+    oh += '<td>' + escapeHtml(e.counter || '') + '</td>';
+    oh += '<td><span class="badge badge-' + e.stage.toLowerCase().replace(/ /g,'-') + '">' + escapeHtml(e.stage) + '</span></td>';
+    oh += '<td>' + escapeHtml(e.rep) + '</td>';
+    oh += '<td>' + e.nextFollowUp + '</td>';
+    oh += '<td style="color:var(--danger);font-weight:600">' + days + ' days</td>';
+    oh += '</tr>';
+  });
+  if (!overdue.length) oh = '<tr><td colspan="7" style="text-align:center; padding:20px; color:var(--muted)">No overdue follow-ups</td></tr>';
+  document.getElementById('overdue-tbody').innerHTML = oh;
+}
+
+/* ====================== SETTINGS ====================== */
+function renderSettings() {
+  renderCrudList('counter-list', config.counters, 'Counter', renameCounter, deleteCounter);
+  renderCrudList('rep-list', config.reps, 'Rep', renameRep, deleteRep);
+  renderCrudList('model-list', config.models, 'Model', renameModel, deleteModel);
+  renderCrudList('financier-list', config.financiers, 'Financier', renameFinancier, deleteFinancier);
+  renderColumnMapping();
+  updateSyncUI();
+}
+
+function renderColumnMapping() {
+  const wrap = document.getElementById('column-mapping');
+  if (!wrap) return;
+  const headers = config.lastImportHeaders || [];
+  const map = config.lastImportMap || {};
+  const overrides = config.columnOverrides || {};
+  if (!headers.length) {
+    wrap.innerHTML = '<p class="help-text">No imports yet. Click <strong>🔄 Sync Now</strong> below to pull from your Google Sheet — the mapping will appear here.</p>';
+    return;
+  }
+  let html = '<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:10px;">';
+  for (const [field, label] of Object.entries(FIELD_LABELS)) {
+    const detected = (map[field] != null && map[field] >= 0) ? headers[map[field]] : '';
+    const overridden = overrides[field] || '';
+    const current = overridden || detected;
+    const status = overridden ? '🔧 override' : (detected ? '✓ auto' : '⚠ unmapped');
+    const statusColor = overridden ? 'var(--info)' : (detected ? 'var(--ok)' : 'var(--danger)');
+    html += '<label style="display:flex; flex-direction:column; gap:4px; padding:10px; background:var(--panel-2); border:1px solid var(--line); border-radius:8px;">';
+    html += '<span style="font-size:12px; color:var(--muted); display:flex; justify-content:space-between;">';
+    html += '<strong style="color:var(--text)">' + escapeHtml(label) + '</strong>';
+    html += '<span style="color:' + statusColor + '; font-size:11px">' + status + '</span>';
+    html += '</span>';
+    html += '<select onchange="setColumnOverride(\'' + field + '\', this.value)" style="background:var(--panel); border:1px solid var(--line); color:var(--text); padding:6px 8px; border-radius:6px; font-size:12px;">';
+    html += '<option value="">— Not mapped —</option>';
+    headers.forEach(h => {
+      const sel = h === current ? ' selected' : '';
+      html += '<option value="' + escapeHtml(h) + '"' + sel + '>' + escapeHtml(h) + '</option>';
+    });
+    html += '</select>';
+    html += '</label>';
+  }
+  html += '</div>';
+  wrap.innerHTML = html;
+}
+
+function setColumnOverride(field, headerName) {
+  if (!config.columnOverrides) config.columnOverrides = {};
+  if (headerName) config.columnOverrides[field] = headerName;
+  else delete config.columnOverrides[field];
+  saveData();
+  renderColumnMapping();
+}
+
+function clearColumnOverrides() {
+  if (!confirm('Clear all manual column overrides? Auto-detection will be used next sync.')) return;
+  config.columnOverrides = {};
+  saveData();
+  renderColumnMapping();
+  alert('Cleared. Click 🔄 Sync Now to re-process.');
+}
+function renderCrudList(elemId, arr, label, renameFn, deleteFn) {
+  let html = '';
+  arr.forEach((v, i) => {
+    html += '<li>';
+    html += '<input value="' + escapeHtml(v) + '" data-idx="' + i + '" data-list="' + elemId + '" />';
+    html += '<button class="btn btn-sm icon-btn danger" title="Delete" data-action="delete" data-idx="' + i + '" data-list="' + elemId + '">×</button>';
+    html += '</li>';
+  });
+  const el = document.getElementById(elemId);
+  el.innerHTML = html;
+  el.querySelectorAll('input').forEach(inp => {
+    inp.onchange = function() { renameFn(parseInt(this.dataset.idx), this.value); };
+  });
+  el.querySelectorAll('button[data-action="delete"]').forEach(btn => {
+    btn.onclick = function() { deleteFn(parseInt(this.dataset.idx)); };
+  });
+}
+
+/* COUNTERS CRUD */
+function addCounter() {
+  const name = document.getElementById('new-counter').value.trim();
+  if (!name) return;
+  if (config.counters.includes(name)) { alert('Counter already exists.'); return; }
+  config.counters.push(name);
+  document.getElementById('new-counter').value = '';
+  saveData(); renderSettings(); refreshAllSelects();
+}
+function renameCounter(idx, newName) {
+  const trimmed = newName.trim();
+  if (!trimmed) { renderSettings(); return; }
+  const old = config.counters[idx];
+  if (trimmed === old) return;
+  if (config.counters.includes(trimmed)) { alert('Counter name already exists.'); renderSettings(); return; }
+  config.counters[idx] = trimmed;
+  enquiries.forEach(e => { if (e.counter === old) e.counter = trimmed; });
+  saveData(); refreshAllSelects();
+}
+function deleteCounter(idx) {
+  const name = config.counters[idx];
+  const used = enquiries.filter(e => e.counter === name).length;
+  if (used > 0) {
+    const reassign = prompt(name + ' is used by ' + used + ' enquiries. Reassign them to which counter? (Leave blank to cancel)\n\nOptions: ' + config.counters.filter((_,i) => i !== idx).join(', '));
+    if (!reassign || !config.counters.includes(reassign) || reassign === name) { alert('Cancelled.'); return; }
+    enquiries.forEach(e => { if (e.counter === name) e.counter = reassign; });
+  }
+  config.counters.splice(idx, 1);
+  saveData(); renderSettings(); refreshAllSelects();
+}
+
+/* REPS CRUD */
+function addRep() {
+  const name = document.getElementById('new-rep').value.trim();
+  if (!name) return;
+  if (config.reps.includes(name)) { alert('Rep already exists.'); return; }
+  config.reps.push(name);
+  document.getElementById('new-rep').value = '';
+  saveData(); renderSettings(); refreshAllSelects();
+}
+function renameRep(idx, newName) {
+  const trimmed = newName.trim();
+  if (!trimmed) { renderSettings(); return; }
+  const old = config.reps[idx];
+  if (trimmed === old) return;
+  if (config.reps.includes(trimmed)) { alert('Rep name already exists.'); renderSettings(); return; }
+  config.reps[idx] = trimmed;
+  enquiries.forEach(e => { if (e.rep === old) e.rep = trimmed; });
+  saveData(); refreshAllSelects();
+}
+function deleteRep(idx) {
+  const name = config.reps[idx];
+  const used = enquiries.filter(e => e.rep === name).length;
+  if (used > 0) {
+    const reassign = prompt(name + ' is assigned to ' + used + ' enquiries. Reassign them to which rep? (Leave blank to cancel)\n\nOptions: ' + config.reps.filter((_,i) => i !== idx).join(', '));
+    if (!reassign || !config.reps.includes(reassign) || reassign === name) { alert('Cancelled.'); return; }
+    enquiries.forEach(e => { if (e.rep === name) e.rep = reassign; });
+  }
+  config.reps.splice(idx, 1);
+  saveData(); renderSettings(); refreshAllSelects();
+}
+
+/* MODELS CRUD */
+function addModel() {
+  const name = document.getElementById('new-model').value.trim();
+  if (!name) return;
+  if (config.models.includes(name)) { alert('Model already exists.'); return; }
+  config.models.push(name);
+  document.getElementById('new-model').value = '';
+  saveData(); renderSettings(); refreshAllSelects();
+}
+function renameModel(idx, newName) {
+  const trimmed = newName.trim();
+  if (!trimmed) { renderSettings(); return; }
+  const old = config.models[idx];
+  if (trimmed === old) return;
+  if (config.models.includes(trimmed)) { alert('Model already exists.'); renderSettings(); return; }
+  config.models[idx] = trimmed;
+  enquiries.forEach(e => { if (e.model === old) e.model = trimmed; });
+  saveData(); refreshAllSelects();
+}
+function deleteModel(idx) {
+  const name = config.models[idx];
+  const used = enquiries.filter(e => e.model === name).length;
+  if (used > 0) {
+    const reassign = prompt(name + ' is on ' + used + ' enquiries. Reassign them to which model? (Leave blank to cancel)\n\nOptions: ' + config.models.filter((_,i) => i !== idx).join(', '));
+    if (!reassign || !config.models.includes(reassign) || reassign === name) { alert('Cancelled.'); return; }
+    enquiries.forEach(e => { if (e.model === name) e.model = reassign; });
+  }
+  config.models.splice(idx, 1);
+  saveData(); renderSettings(); refreshAllSelects();
+}
+
+/* FINANCIERS CRUD */
+function addFinancier() {
+  const name = document.getElementById('new-financier').value.trim();
+  if (!name) return;
+  if (config.financiers.includes(name)) { alert('Financier already exists.'); return; }
+  config.financiers.push(name);
+  document.getElementById('new-financier').value = '';
+  saveData(); renderSettings(); refreshAllSelects();
+}
+function renameFinancier(idx, newName) {
+  const trimmed = newName.trim();
+  if (!trimmed) { renderSettings(); return; }
+  const old = config.financiers[idx];
+  if (trimmed === old) return;
+  if (config.financiers.includes(trimmed)) { alert('Financier already exists.'); renderSettings(); return; }
+  config.financiers[idx] = trimmed;
+  enquiries.forEach(e => { if (e.financier === old) e.financier = trimmed; });
+  saveData(); refreshAllSelects();
+}
+function deleteFinancier(idx) {
+  const name = config.financiers[idx];
+  const used = enquiries.filter(e => e.financier === name).length;
+  if (used > 0) {
+    const reassign = prompt(name + ' is on ' + used + ' enquiries. Reassign to which financier? (Leave blank to clear financier on those records)\n\nOptions: ' + config.financiers.filter((_,i) => i !== idx).join(', '));
+    if (reassign && !config.financiers.includes(reassign)) { alert('Invalid choice. Cancelled.'); return; }
+    enquiries.forEach(e => { if (e.financier === name) e.financier = reassign || ''; });
+  }
+  config.financiers.splice(idx, 1);
+  saveData(); renderSettings(); refreshAllSelects();
+}
+
+function resetAllData() {
+  if (!confirm('This will erase ALL enquiries and reset reps/models/counters/financiers to defaults. Continue?')) return;
+  localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(CONFIG_KEY);
+  config = { counters: [...DEFAULT_COUNTERS], reps: [...DEFAULT_REPS], models: [...DEFAULT_MODELS], financiers: [...DEFAULT_FINANCIERS] };
+  enquiries = [];
+  seedData();
+  refreshAllSelects();
+  renderSettings();
+  setView('dashboard');
+}
+
+function redetectDates() {
+  const before = enquiries.map(e => ({ id: e.id, c: e.createdAt, l: e.lastContactAt }));
+  // Force re-parse: try to coerce createdAt/lastContactAt/nextFollowUp again, even ISO ones
+  let fixed = 0;
+  enquiries.forEach(e => {
+    ['createdAt','lastContactAt','nextFollowUp'].forEach(k => {
+      const v = e[k];
+      if (!v) return;
+      const parsed = parseDate(v);
+      if (parsed && parsed !== v) { e[k] = parsed; fixed++; }
+    });
+    // If lastContactAt is older than createdAt, prefer it
+    const isoOk = /^\d{4}-\d{2}-\d{2}$/;
+    if (e.lastContactAt && isoOk.test(e.lastContactAt) && e.createdAt && isoOk.test(e.createdAt) && e.lastContactAt < e.createdAt) {
+      e.createdAt = e.lastContactAt; fixed++;
+    }
+  });
+  saveData();
+  refreshAllSelects();
+  setView(document.querySelector('.nav-item.active').dataset.view);
+  // Surface a helpful summary so the user can confirm what happened
+  const months = getAvailableMonths();
+  alert('Re-detected ' + fixed + ' date fields.\n\nMonths now in your data:\n' + (months.length ? months.map(formatMonthLabel).join(', ') : '(none)'));
+}
+
+/* ====================== MODAL: NEW / EDIT ====================== */
+function openModal(id) {
+  refreshAllSelects();
+  editingId = id || null;
+  const isEdit = !!id;
+  document.getElementById('modal-title').textContent = isEdit ? 'Edit Enquiry' : 'New Enquiry';
+  document.getElementById('del-btn').style.display = isEdit ? 'inline-block' : 'none';
+  let e = isEdit ? enquiries.find(x => x.id === id) : { id: nextId(), customer: '', phone: '', email: '', counter: config.counters[0] || '', source: SOURCES[0], model: config.models[0] || '', variant: '', budget: '', rep: config.reps[0] || '', stage: 'New', financeRequired: 'No', financier: '', createdAt: todayISO(), lastContactAt: '', nextFollowUp: '', notes: '', dropReason: '' };
+  document.getElementById('f-customer').value = e.customer;
+  document.getElementById('f-phone').value = e.phone;
+  document.getElementById('f-email').value = e.email;
+  document.getElementById('f-counter-in').value = e.counter || (config.counters[0] || '');
+  document.getElementById('f-source-in').value = e.source;
+  document.getElementById('f-model').value = e.model;
+  document.getElementById('f-variant').value = e.variant;
+  document.getElementById('f-budget').value = e.budget;
+  document.getElementById('f-rep-in').value = e.rep;
+  document.getElementById('f-stage-in').value = e.stage;
+  document.getElementById('f-finance-in').value = e.financeRequired || 'No';
+  document.getElementById('f-financier-in').value = e.financier || '';
+  document.getElementById('f-last').value = e.lastContactAt || '';
+  document.getElementById('f-next').value = e.nextFollowUp || '';
+  document.getElementById('f-notes').value = e.notes || '';
+  document.getElementById('f-drop').value = e.dropReason || '';
+  document.getElementById('drop-wrap').style.display = (e.stage === 'Lost') ? 'flex' : 'none';
+  document.getElementById('modal-bg').classList.add('open');
+}
+function closeModal() { document.getElementById('modal-bg').classList.remove('open'); editingId = null; }
+function saveEnquiry() {
+  const data = {
+    customer: document.getElementById('f-customer').value.trim(),
+    phone: document.getElementById('f-phone').value.trim(),
+    email: document.getElementById('f-email').value.trim(),
+    counter: document.getElementById('f-counter-in').value,
+    source: document.getElementById('f-source-in').value,
+    model: document.getElementById('f-model').value,
+    variant: document.getElementById('f-variant').value.trim(),
+    budget: parseFloat(document.getElementById('f-budget').value) || 0,
+    rep: document.getElementById('f-rep-in').value,
+    stage: document.getElementById('f-stage-in').value,
+    financeRequired: document.getElementById('f-finance-in').value,
+    financier: document.getElementById('f-financier-in').value,
+    lastContactAt: document.getElementById('f-last').value,
+    nextFollowUp: document.getElementById('f-next').value,
+    notes: document.getElementById('f-notes').value,
+    dropReason: document.getElementById('f-drop').value
+  };
+  if (!data.customer) { alert('Customer name is required'); return; }
+  if (data.financeRequired !== 'Yes') data.financier = '';
+
+  if (editingId) {
+    const idx = enquiries.findIndex(e => e.id === editingId);
+    if (idx >= 0) enquiries[idx] = Object.assign({}, enquiries[idx], data);
+  } else {
+    data.id = nextId();
+    data.createdAt = todayISO();
+    enquiries.unshift(data);
+  }
+  saveData();
+  closeModal();
+  setView(document.querySelector('.nav-item.active').dataset.view);
+}
+function deleteEnquiry() {
+  if (!editingId) return;
+  if (!confirm('Delete this enquiry permanently?')) return;
+  enquiries = enquiries.filter(e => e.id !== editingId);
+  saveData();
+  closeModal();
+  setView(document.querySelector('.nav-item.active').dataset.view);
+}
+
+document.getElementById('f-stage-in').addEventListener('change', function(){
+  document.getElementById('drop-wrap').style.display = this.value === 'Lost' ? 'flex' : 'none';
+});
+document.getElementById('f-finance-in').addEventListener('change', function(){
+  if (this.value !== 'Yes') document.getElementById('f-financier-in').value = '';
+});
+
+/* ====================== CHARTS HELPER ====================== */
+function drawChart(id, type, data, opts) {
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(ctx, {
+    type, data,
+    options: Object.assign({
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#94a0c8' } } },
+      scales: type === 'doughnut' || type === 'pie' ? {} : {
+        x: { ticks: { color: '#94a0c8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: { ticks: { color: '#94a0c8' }, grid: { color: 'rgba(255,255,255,0.05)' }, beginAtZero: true }
+      }
+    }, opts || {})
+  });
+}
+
+/* ====================== CSV EXPORT ====================== */
+function exportCSV() {
+  const headers = ['ID','Customer','Phone','Email','Counter','Source','Model','Variant','Budget','Rep','Stage','FinanceRequired','Financier','Created','LastContact','NextFollowUp','DropReason','Notes'];
+  const rows = enquiries.map(e => [e.id, e.customer, e.phone, e.email, e.counter, e.source, e.model, e.variant, e.budget, e.rep, e.stage, e.financeRequired, e.financier, e.createdAt, e.lastContactAt, e.nextFollowUp, e.dropReason, e.notes]);
+  const csv = [headers, ...rows].map(r => r.map(c => {
+    const s = String(c == null ? '' : c);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }).join(',')).join('\n');
+  downloadFile('enquiries-' + todayISO() + '.csv', csv, 'text/csv');
+}
+
+function exportJSON() {
+  const payload = { exportedAt: new Date().toISOString(), config, enquiries };
+  downloadFile('hero-sales-backup-' + todayISO() + '.json', JSON.stringify(payload, null, 2), 'application/json');
+}
+
+function downloadFile(name, content, mime) {
+  const blob = new Blob([content], { type: mime + ';charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 100);
+}
+
+/* ====================== JSON IMPORT ====================== */
+function importJSON(ev) {
+  const file = ev.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const obj = JSON.parse(e.target.result);
+      if (!obj.enquiries || !Array.isArray(obj.enquiries)) throw new Error('Invalid JSON: no enquiries array');
+      if (!confirm('Restore from JSON backup? This will REPLACE current data with ' + obj.enquiries.length + ' enquiries.')) return;
+      enquiries = obj.enquiries;
+      if (obj.config) {
+        if (obj.config.counters) config.counters = obj.config.counters;
+        if (obj.config.reps) config.reps = obj.config.reps;
+        if (obj.config.models) config.models = obj.config.models;
+        if (obj.config.financiers) config.financiers = obj.config.financiers;
+      }
+      saveData(); refreshAllSelects(); setView('dashboard');
+      alert('Imported ' + enquiries.length + ' enquiries.');
+    } catch (err) { alert('Could not import: ' + err.message); }
+  };
+  reader.readAsText(file);
+  ev.target.value = '';
+}
+
+/* ====================== CSV / TSV IMPORT ====================== */
+function detectDelimiter(text) {
+  // Look at the first non-empty line, count tabs vs commas
+  const firstLine = text.split(/\r?\n/).find(l => l.trim() !== '') || '';
+  const tabs = (firstLine.match(/\t/g) || []).length;
+  const commas = (firstLine.match(/,/g) || []).length;
+  return tabs > commas ? '\t' : ',';
+}
+function parseCSV(text, delim) {
+  const d = delim || detectDelimiter(text);
+  const rows = []; let row = []; let cur = ''; let inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQ) {
+      if (ch === '"' && text[i+1] === '"') { cur += '"'; i++; }
+      else if (ch === '"') { inQ = false; }
+      else cur += ch;
+    } else {
+      if (ch === '"') inQ = true;
+      else if (ch === d) { row.push(cur); cur = ''; }
+      else if (ch === '\n' || ch === '\r') {
+        if (cur !== '' || row.length) { row.push(cur); rows.push(row); row = []; cur = ''; }
+        if (ch === '\r' && text[i+1] === '\n') i++;
+      } else cur += ch;
+    }
+  }
+  if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+  return rows;
+}
+
+/* ====================== PASTE FROM GOOGLE SHEET ====================== */
+function openPasteModal() {
+  document.getElementById('paste-url').value = '';
+  document.getElementById('paste-data').value = '';
+  document.getElementById('paste-modal').classList.add('open');
+}
+function closePasteModal() { document.getElementById('paste-modal').classList.remove('open'); }
+
+function processPaste() {
+  const url = document.getElementById('paste-url').value.trim();
+  const data = document.getElementById('paste-data').value;
+  if (url) {
+    fetchSheetURL(url);
+  } else if (data.trim()) {
+    closePasteModal();
+    importFromText(data);
+  } else {
+    alert('Paste your data or enter a published Google Sheet URL.');
+  }
+}
+
+function fetchSheetURL(url) {
+  // Convert standard Sheet URL to CSV-export URL where possible
+  // Patterns:
+  //  https://docs.google.com/spreadsheets/d/SHEET_ID/edit#gid=0
+  //  https://docs.google.com/spreadsheets/d/e/.../pub?output=csv  (already correct)
+  //  https://docs.google.com/spreadsheets/d/SHEET_ID/...
+  let fetchURL = url;
+  const m = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (m && !url.includes('output=csv') && !url.includes('export?format=csv')) {
+    const sid = m[1];
+    const gidMatch = url.match(/[#&?]gid=(\d+)/);
+    const gid = gidMatch ? gidMatch[1] : '0';
+    fetchURL = 'https://docs.google.com/spreadsheets/d/' + sid + '/export?format=csv&gid=' + gid;
+  }
+  fetch(fetchURL).then(r => {
+    if (!r.ok) throw new Error('HTTP ' + r.status + ' — sheet may not be public. In Google Sheets: File → Share → Publish to web → CSV');
+    return r.text();
+  }).then(text => {
+    if (text.trim().startsWith('<')) throw new Error('Got HTML instead of CSV. Make sure the sheet is published to web (File → Share → Publish to web → CSV).');
+    closePasteModal();
+    importFromText(text);
+  }).catch(err => {
+    alert('Could not fetch the sheet:\n\n' + err.message + '\n\nTip: copy the rows manually and paste them in the textarea instead — that always works.');
+  });
+}
+
+function importFromText(text) {
+  try {
+    const rows = parseCSV(text).filter(r => r.some(c => c.trim() !== ''));
+    if (rows.length < 2) throw new Error('Need a header row plus at least one data row.');
+    const parsed = mapRowsToEnquiries(rows);
+    pendingImport = parsed;
+    showImportPreview();
+  } catch (err) { alert('Could not parse pasted data: ' + err.message); }
+}
+
+/* ---------- value normalizers ---------- */
+const STAGE_SYNONYMS = {
+  'Won': ['won','sold','closed-won','closed won','closedwon','booked','booking','booking done','book','delivered','delivery','delivery done','retail','retailed','retail done','retailing','billed','billing','billing done','invoiced','invoice','success','completed','closed','final','done','converted','conversion','victory','y'],
+  'Lost': ['lost','dropped','drop','dead','cancelled','canceled','cancel','declined','decline','not interested','ni','closed-lost','closed lost','abandoned','rejected','reject','no go','nogo','bought competitor','lost to competitor','cold','no response','unreachable','failed','fail','nogos','dropp','disqualified'],
+  'New': ['new','fresh','enquiry','enquiries','open','today','just in','pending','to call','to contact','untouched','raw'],
+  'Contacted': ['contacted','contact done','called','call done','follow up done','follow-up done','followed up','attempted','reached','in touch','first contact','first call','spoken'],
+  'Qualified': ['qualified','interested','hot','warm','in discussion','engaged','in process','active','need analysis','requirement gathered','intent confirmed'],
+  'Test Drive': ['test drive','test ride','td','tr','td done','tr done','demo','ride','test ride done','taken test ride','td planned','td scheduled','test drive done','test drive scheduled'],
+  'Negotiation': ['negotiation','negotiating','negotiate','finalising','finalizing','price discussion','exchange','advance','advance taken','token','token taken','deal in progress','closure','closing','quote shared','offer sent','proposal sent','plan dr','plan delivery','pdr','plan dlv','plan dly']
+};
+
+function normalizeHeader(h) {
+  return String(h || '').toLowerCase().trim().replace(/[._\-]+/g, ' ').replace(/\s+/g, ' ').replace(/[^a-z0-9 ?]/g, '');
+}
+function normalizeStage(raw) {
+  const s = String(raw || '').toLowerCase().trim();
+  if (!s) return 'New';
+  if (STAGES.map(x => x.toLowerCase()).includes(s)) return STAGES.find(x => x.toLowerCase() === s);
+  for (const [stage, syns] of Object.entries(STAGE_SYNONYMS)) {
+    if (syns.includes(s)) return stage;
+  }
+  for (const [stage, syns] of Object.entries(STAGE_SYNONYMS)) {
+    for (const syn of syns) {
+      if (s.includes(syn) || (syn.length > 3 && syn.includes(s))) return stage;
+    }
+  }
+  return 'New';
+}
+function normalizeFinance(raw) {
+  const s = String(raw || '').toLowerCase().trim();
+  if (!s) return 'No';
+  // Cash / self-funded buckets → No
+  if (['cash','self','own','self funded','own funds','cash buyer','csd','none','na','n/a','-'].includes(s)) return 'No';
+  if (['yes','y','true','1','required','need','needed','loan','finance','financed','emi','on emi'].includes(s)) return 'Yes';
+  // If the value contains the word "cash" → No, otherwise default Yes when it looks like a bank/financier name
+  if (s.includes('cash') || s.includes('self') || s.includes('own')) return 'No';
+  // Anything else (bank names like HDFC, IDFC, HERO, etc.) implies finance was used
+  return 'Yes';
+}
+const FINANCIER_SYNONYMS = {
+  'Hero Fin Corp': ['hero','hero fin','herofin','hero fincorp','hero fin corp','hero fincorp ltd','hero finance','heroes fincorp'],
+  'IDFC': ['idfc','idfc bank','idfc first','idfc first bank'],
+  'L&T': ['l&t','l & t','lnt','lt finance','l and t','l&t finance','lt fin','l t finance'],
+  'Shree Ram': ['shree ram','shreeram','shriram','shri ram','shri-ram','shriram fin','shriram finance','shriram city','shree ram finance'],
+  'HDFC': ['hdfc','hdfc bank','hdfc finance','hdb'],
+  'Hinduja': ['hinduja','hinduja leyland','hinduja finance','hlf','iihl'],
+  'Kotak': ['kotak','kotak mahindra','kotak bank','kotak prime','kotak mahindra prime']
+};
+function normalizeFinancier(raw, configFinanciers) {
+  const s = String(raw || '').toLowerCase().trim();
+  if (!s) return '';
+  // Cash / no-finance buckets → empty financier
+  if (['cash','self','own','none','na','n/a','-','csd','self funded','own funds','no finance','no'].includes(s)) return '';
+  if (s.includes('cash') || s === 'self') return '';
+  // Synonym match
+  for (const [canon, syns] of Object.entries(FINANCIER_SYNONYMS)) {
+    if (syns.includes(s)) return canon;
+    for (const syn of syns) {
+      if (s.includes(syn) || (syn.length > 3 && syn.includes(s))) return canon;
+    }
+  }
+  // Fall back to fuzzy match against existing config list
+  const existing = (configFinanciers || []).find(f => f.toLowerCase() === s);
+  if (existing) return existing;
+  // Return raw value (capitalized) so it can be auto-added
+  return raw.trim();
+}
+function normalizeSource(raw) {
+  const s = String(raw || '').toLowerCase().trim();
+  if (!s) return 'Walk-in';
+  const exact = SOURCES.find(x => x.toLowerCase() === s); if (exact) return exact;
+  if (s.includes('walk') || s.includes('showroom') || s.includes('direct')) return 'Walk-in';
+  if (s.includes('website') || s.includes('web') || s.includes('site')) return 'Website';
+  if (s.includes('whats')) return 'WhatsApp';
+  if (s.includes('phone') || s.includes('call') || s.includes('inbound')) return 'Phone Call';
+  if (s.includes('facebook') || s.includes('fb') || s.includes('meta') || s.includes('instagram') || s.includes('insta')) return 'Facebook/Meta Ads';
+  if (s.includes('google') || s.includes('adword') || s.includes('search ad')) return 'Google Ads';
+  if (s.includes('refer')) return 'Referral';
+  if (s.includes('expo') || s.includes('event') || s.includes('exhibition') || s.includes('mela')) return 'Auto Expo';
+  if (s.includes('exist') || s.includes('repeat') || s.includes('previous')) return 'Existing Customer';
+  return 'Walk-in';
+}
+function fuzzyMatchToList(value, list) {
+  if (!value) return '';
+  const s = String(value).toLowerCase().trim();
+  const exact = list.find(x => x.toLowerCase() === s); if (exact) return exact;
+  const starts = list.find(x => x.toLowerCase().startsWith(s) || s.startsWith(x.toLowerCase())); if (starts) return starts;
+  const contains = list.find(x => x.toLowerCase().includes(s) || s.includes(x.toLowerCase())); if (contains) return contains;
+  return '';
+}
+function parseBudget(raw) {
+  if (raw == null) return 0;
+  const s = String(raw).replace(/[₹,$,\s]/g, '').replace(/[a-zA-Z]/g, '');
+  const n = parseFloat(s); return isNaN(n) ? 0 : n;
+}
+
+const FIELD_OPTIONS = {
+  customer: ['customer','customer name','cust name','name','lead name','lead','client','client name','buyer','buyer name','party','party name','full name'],
+  phone: ['phone','mobile','mobile no','mobile number','contact','contact number','contact no','phone number','tel','cell','whatsapp','whatsapp no'],
+  email: ['email','e-mail','email id','mail','email address'],
+  counter: ['counter','branch','location','outlet','showroom','dealership','store','dealer'],
+  source: ['lead source','enquiry source','channel','origin','lead origin','via','medium','source of enquiry','enquiry channel'],
+  model: ['model','product','vehicle','bike','two wheeler','motorcycle','scooter','car','car model','model name'],
+  variant: ['variant','trim','version','grade','spec'],
+  budget: ['budget','price','amount','cost','quote','offered price','final price','ex showroom'],
+  rep: ['rep','sales rep','salesperson','dse','dse name','sales executive','executive','assigned to','owner','staff','sales person','sales','consultant','attended by'],
+  stage: ['stage','status','pipeline stage','lead status','booking status','enquiry status','outcome','result','disposition','final status','current status','call status'],
+  financeRequired: ['source 1','source-1','source1','financerequired','finance required','finance?','loan required','payment mode','mode of payment','payment','payment type','cash or finance','cash/finance','finance/cash','cash/loan','loan/cash','finance type','funding','emi'],
+  financier: ['source 2','source-2','source2','financier','bank','lender','finance partner','financer','financing partner','loan partner','nbfc','finance company'],
+  lastContactAt: ['lastcontact','last contact','last contact date','last call','last call date','last followup','last interaction','date','enquiry date','date of enquiry'],
+  nextFollowUp: ['nextfollowup','next followup','next follow up','next contact','next follow-up','next call','next call date','followup date','reminder'],
+  notes: ['notes','remarks','comments','description','feedback','observation','follow up 1','follow up','followup','follow-up','follow up -1','follow up-1'],
+  dropReason: ['dropreason','drop reason','lost reason','reason','reason for drop','reason for loss','closure reason','dead reason']
+};
+
+const FIELD_LABELS = {
+  customer: 'Customer Name', phone: 'Phone', email: 'Email',
+  counter: 'Counter', source: 'Source', model: 'Model', variant: 'Variant',
+  budget: 'Budget', rep: 'Sales Rep', stage: 'Stage',
+  financeRequired: 'Finance Required (Yes/No)', financier: 'Financier (bank name)',
+  lastContactAt: 'Last Contact', nextFollowUp: 'Next Follow-up',
+  notes: 'Notes', dropReason: 'Drop Reason'
+};
+
+function buildHeaderMap(headers) {
+  const used = new Set();
+  const map = {};
+
+  // 0. Apply user overrides first (always win)
+  const overrides = config.columnOverrides || {};
+  for (const [field, headerName] of Object.entries(overrides)) {
+    if (!headerName) continue;
+    const i = headers.indexOf(normalizeHeader(headerName));
+    if (i >= 0) { map[field] = i; used.add(i); }
+  }
+
+  // 1. Exact match — strongest signal, runs for every field
+  for (const [field, opts] of Object.entries(FIELD_OPTIONS)) {
+    if (map[field] != null) continue;
+    for (const o of opts) {
+      const i = headers.indexOf(normalizeHeader(o));
+      if (i >= 0 && !used.has(i)) { map[field] = i; used.add(i); break; }
+    }
+  }
+
+  // 2. Strong partial: header EQUALS one of the options after stripping common qualifiers
+  for (const [field, opts] of Object.entries(FIELD_OPTIONS)) {
+    if (map[field] != null) continue;
+    for (let i = 0; i < headers.length; i++) {
+      if (used.has(i)) continue;
+      const h = headers[i];
+      for (const o of opts) {
+        const no = normalizeHeader(o);
+        // header IS the option, possibly prefixed/suffixed by short qualifier (1-2 words)
+        if (h === no) { map[field] = i; used.add(i); break; }
+      }
+      if (map[field] != null) break;
+    }
+  }
+
+  // 3. Loose partial: header CONTAINS option (e.g., "Lead Source" contains "source")
+  //    Skip ambiguous short tokens (< 4 chars) to avoid false positives.
+  for (const [field, opts] of Object.entries(FIELD_OPTIONS)) {
+    if (map[field] != null) continue;
+    for (let i = 0; i < headers.length; i++) {
+      if (used.has(i)) continue;
+      const h = headers[i];
+      for (const o of opts) {
+        const no = normalizeHeader(o);
+        if (no.length < 4) continue;
+        if (h && (h.includes(no) || no.includes(h))) { map[field] = i; used.add(i); break; }
+      }
+      if (map[field] != null) break;
+    }
+  }
+
+  // Default unmapped to -1
+  Object.keys(FIELD_OPTIONS).forEach(f => { if (map[f] == null) map[f] = -1; });
+  return map;
+}
+
+function mapRowsToEnquiries(rows) {
+  const headers = rows[0].map(normalizeHeader);
+  const map = buildHeaderMap(headers);
+
+  // Auto-detect Won via "delivered date" / "sold date" column (separate from main map)
+  let deliveryIdx = -1;
+  ['delivery date','delivered','delivered on','sold on','sold date','booking date','booked on','retail date'].forEach(o => {
+    if (deliveryIdx >= 0) return;
+    const i = headers.indexOf(normalizeHeader(o));
+    if (i >= 0 && map.stage !== i) deliveryIdx = i;
+  });
+
+  // Persist last import metadata for the Column Mapping UI
+  config.lastImportHeaders = rows[0];
+  config.lastImportMap = Object.assign({}, map);
+
+  // Diagnostic
+  const mapped = Object.entries(map).filter(([k,v]) => v >= 0);
+  const missing = Object.entries(map).filter(([k,v]) => v < 0).map(([k]) => k);
+  console.log('[Import] Mapped ' + mapped.length + ' of ' + Object.keys(FIELD_OPTIONS).length + ' columns.');
+  console.log('[Import] Sheet headers:', rows[0]);
+  console.log('[Import] Mapping detail:');
+  for (const [field, idx] of Object.entries(map)) {
+    console.log('  ' + field + ': ' + (idx >= 0 ? '"' + rows[0][idx] + '"' : '— NOT MAPPED —'));
+  }
+  if (missing.length) console.warn('[Import] Unmapped fields:', missing);
+
+  return rows.slice(1).map((r, idx) => {
+    const get = k => map[k] >= 0 ? (r[map[k]] || '').trim() : '';
+    const rawStage = get('stage');
+    let stage = normalizeStage(rawStage);
+    // If no stage but delivery date is filled → Won
+    if (!rawStage && deliveryIdx >= 0 && r[deliveryIdx] && r[deliveryIdx].trim()) stage = 'Won';
+
+    let counter = get('counter');
+    let counterMatch = fuzzyMatchToList(counter, config.counters);
+    if (counter && !counterMatch) { config.counters.push(counter); counterMatch = counter; }
+    let rep = get('rep');
+    let repMatch = fuzzyMatchToList(rep, config.reps);
+    if (rep && !repMatch) { config.reps.push(rep); repMatch = rep; }
+    let model = get('model');
+    let modelMatch = fuzzyMatchToList(model, config.models);
+    if (model && !modelMatch) { config.models.push(model); modelMatch = model; }
+    let rawFinancier = get('financier');
+    let financierCanon = normalizeFinancier(rawFinancier, config.financiers);
+    let financierMatch = '';
+    if (financierCanon) {
+      // If it's already a known synonym-mapped canonical name, use it.
+      if (config.financiers.includes(financierCanon)) financierMatch = financierCanon;
+      else {
+        const existing = fuzzyMatchToList(financierCanon, config.financiers);
+        if (existing) financierMatch = existing;
+        else { config.financiers.push(financierCanon); financierMatch = financierCanon; }
+      }
+    }
+
+    // Finance required: use the financier value as a hint when the dedicated column is missing/blank
+    let financeRequired = normalizeFinance(get('financeRequired'));
+    if (financeRequired === 'No' && financierMatch) financeRequired = 'Yes';
+
+    // Source: blank means walk-in by default, but if the only "source" we have is the payment-mode column we should not pollute
+    let source = normalizeSource(get('source'));
+
+    // Created date: prefer explicit lastContactAt/date column; otherwise today.
+    // Use robust parseDate so DD/MM/YYYY (Indian) etc. all become ISO YYYY-MM-DD.
+    const dateVal = parseDate(get('lastContactAt'));
+    const createdAt = dateVal || todayISO();
+    const nextFu = parseDate(get('nextFollowUp'));
+
+    return {
+      id: 'I' + Date.now().toString(36) + idx,
+      customer: get('customer') || '(no name)',
+      phone: get('phone'),
+      email: get('email'),
+      counter: counterMatch || (config.counters[0] || ''),
+      source,
+      model: modelMatch || (config.models[0] || ''),
+      variant: get('variant'),
+      budget: parseBudget(get('budget')),
+      rep: repMatch || (config.reps[0] || ''),
+      stage,
+      financeRequired,
+      financier: financierMatch,
+      createdAt,
+      lastContactAt: dateVal,
+      nextFollowUp: nextFu,
+      notes: get('notes'),
+      dropReason: get('dropReason')
+    };
+  });
+}
+
+function importCSV(ev) {
+  const file = ev.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const rows = parseCSV(e.target.result).filter(r => r.some(c => c.trim() !== ''));
+      if (rows.length < 2) throw new Error('CSV must have a header row and at least one data row');
+      pendingImport = mapRowsToEnquiries(rows);
+      showImportPreview();
+    } catch (err) { alert('CSV import failed: ' + err.message); }
+  };
+  reader.readAsText(file);
+  ev.target.value = '';
+}
+
+function showImportPreview() {
+  if (!pendingImport) return;
+  document.getElementById('import-summary').textContent = 'Found ' + pendingImport.length + ' enquiries. Currently you have ' + enquiries.length + '.';
+  const t = document.getElementById('import-table');
+  let html = '<thead><tr><th>Customer</th><th>Phone</th><th>Counter</th><th>Model</th><th>Stage</th><th>Rep</th><th>Finance</th></tr></thead><tbody>';
+  pendingImport.slice(0, 50).forEach(p => {
+    html += '<tr><td>' + escapeHtml(p.customer) + '</td><td>' + escapeHtml(p.phone) + '</td><td>' + escapeHtml(p.counter) + '</td><td>' + escapeHtml(p.model) + '</td><td>' + escapeHtml(p.stage) + '</td><td>' + escapeHtml(p.rep) + '</td><td>' + escapeHtml(p.financeRequired === 'Yes' ? (p.financier || 'Yes') : 'Cash') + '</td></tr>';
+  });
+  if (pendingImport.length > 50) html += '<tr><td colspan="7" style="text-align:center;color:var(--muted)">… ' + (pendingImport.length - 50) + ' more rows</td></tr>';
+  html += '</tbody>';
+  t.innerHTML = html;
+  document.getElementById('import-modal').classList.add('open');
+}
+function confirmImport(mode) {
+  if (!pendingImport) return;
+  if (mode === 'replace') enquiries = pendingImport;
+  else enquiries = pendingImport.concat(enquiries);
+  pendingImport = null;
+  document.getElementById('import-modal').classList.remove('open');
+  saveData(); refreshAllSelects(); setView('dashboard');
+}
+function cancelImport() { pendingImport = null; document.getElementById('import-modal').classList.remove('open'); }
+
+/* ====================== MENUS ====================== */
+function toggleMenu(id) {
+  document.querySelectorAll('.menu').forEach(m => { if (m.id !== id) m.classList.remove('open'); });
+  document.getElementById(id).classList.toggle('open');
+}
+function closeMenus() { document.querySelectorAll('.menu').forEach(m => m.classList.remove('open')); }
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.menu-wrap')) closeMenus();
+});
+
+/* ====================== GOOGLE SHEET SYNC ====================== */
+function normalizeSheetURL(url) {
+  if (!url) return '';
+  if (url.includes('output=csv') || url.includes('export?format=csv')) return url;
+  const m = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (m) {
+    const sid = m[1];
+    const gidMatch = url.match(/[#&?]gid=(\d+)/);
+    const gid = gidMatch ? gidMatch[1] : '0';
+    return 'https://docs.google.com/spreadsheets/d/' + sid + '/export?format=csv&gid=' + gid;
+  }
+  return url;
+}
+function saveSheetConfig() {
+  const raw = document.getElementById('sheet-url').value.trim();
+  config.sheet.url = raw;
+  config.sheet.autoOpen = document.getElementById('sheet-auto-open').checked;
+  config.sheet.autoIntervalEnabled = document.getElementById('sheet-auto-interval').checked;
+  config.sheet.intervalMin = Math.max(1, parseInt(document.getElementById('sheet-interval-min').value) || 15);
+  saveData();
+  updateSyncUI();
+  scheduleAutoSync();
+  alert('Sheet link saved. Click "Sync Now" to pull data immediately.');
+}
+function clearSheetConfig() {
+  if (!confirm('Disconnect from Google Sheet? Your local enquiries stay; only the link is removed.')) return;
+  config.sheet = { url: '', autoOpen: false, autoIntervalEnabled: false, intervalMin: 15, lastSync: '' };
+  saveData();
+  updateSyncUI();
+  scheduleAutoSync();
+}
+function syncFromSheet() {
+  if (!config.sheet.url) { alert('No Google Sheet linked. Go to Settings → Google Sheet Live Link to set one up.'); return; }
+  const url = normalizeSheetURL(config.sheet.url);
+  const btn = document.getElementById('sync-btn'); if (btn) btn.textContent = '⏳ Syncing...';
+  fetch(url).then(r => {
+    if (!r.ok) throw new Error('HTTP ' + r.status + '. Make sure the sheet is published or shared "Anyone with the link can view".');
+    return r.text();
+  }).then(text => {
+    if (text.trim().startsWith('<')) throw new Error('Got HTML instead of CSV. Use File → Share → Publish to web → CSV in Google Sheets.');
+    const rows = parseCSV(text).filter(r => r.some(c => c.trim() !== ''));
+    if (rows.length < 2) throw new Error('Sheet has no data rows.');
+    const parsed = mapRowsToEnquiries(rows);
+    enquiries = parsed;
+    config.sheet.lastSync = new Date().toISOString();
+    saveData();
+    refreshAllSelects();
+    updateSyncUI();
+    setView(document.querySelector('.nav-item.active').dataset.view);
+    const banner = document.getElementById('sync-btn'); if (banner) banner.textContent = '✓ Synced';
+    setTimeout(() => updateSyncUI(), 2000);
+  }).catch(err => {
+    alert('Sync failed:\n\n' + err.message + '\n\nTip: open Settings and re-paste the URL, or use Import → Paste from Google Sheet for a manual copy.');
+    updateSyncUI();
+  });
+}
+function updateSyncUI() {
+  const btn = document.getElementById('sync-btn');
+  if (btn) {
+    btn.style.display = config.sheet.url ? 'inline-flex' : 'none';
+    btn.textContent = '🔄 Sync';
+  }
+  const last = document.getElementById('sheet-last-sync');
+  if (last) {
+    if (config.sheet.lastSync) {
+      const d = new Date(config.sheet.lastSync);
+      last.textContent = 'Last synced: ' + d.toLocaleString();
+    } else last.textContent = config.sheet.url ? 'Never synced' : '';
+  }
+  const u = document.getElementById('sheet-url'); if (u) u.value = config.sheet.url || '';
+  const ao = document.getElementById('sheet-auto-open'); if (ao) ao.checked = !!config.sheet.autoOpen;
+  const ai = document.getElementById('sheet-auto-interval'); if (ai) ai.checked = !!config.sheet.autoIntervalEnabled;
+  const im = document.getElementById('sheet-interval-min'); if (im) im.value = config.sheet.intervalMin || 15;
+}
+function scheduleAutoSync() {
+  if (sheetTimer) { clearInterval(sheetTimer); sheetTimer = null; }
+  if (config.sheet.url && config.sheet.autoIntervalEnabled) {
+    const ms = Math.max(60000, (config.sheet.intervalMin || 15) * 60000);
+    sheetTimer = setInterval(syncFromSheet, ms);
+  }
+}
+
+/* ====================== INIT ====================== */
+document.querySelectorAll('.nav-item').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+document.getElementById('modal-bg').addEventListener('click', e => { if (e.target.id === 'modal-bg') closeModal(); });
+
+loadData();
+refreshAllSelects();
+updateSyncUI();
+scheduleAutoSync();
+setView('dashboard');
+
+// Auto-sync on open
+if (config.sheet.url && config.sheet.autoOpen) {
+  setTimeout(syncFromSheet, 500);
+}
+</script>
+</body>
+</html>
