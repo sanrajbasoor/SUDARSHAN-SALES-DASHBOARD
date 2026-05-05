@@ -471,6 +471,14 @@
           <button class="btn" onclick="cleanJunkEnquiries()" title="Remove enquiries with no customer name, phone, or email">🧹 Clean junk rows</button>
           <button class="btn btn-danger" onclick="resetAllData()">Reset All Data</button>
         </div>
+        <div style="margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line);">
+          <h3 style="margin: 0 0 6px 0; font-size: 14px;">📡 Share with Team</h3>
+          <p class="help-text" style="margin-top:4px;">Push your data to the dashboard URL so your manager + team see the same numbers when they open the link. Click <strong>📤 Publish to Team</strong> → it downloads <code>data.json</code>. Upload that one file to your GitHub repo (overwriting if it exists). Anyone refreshing the dashboard URL will see this data within a minute.</p>
+          <div style="display:flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-primary" onclick="publishToTeam()" title="Download data.json — upload to GitHub to share with team">📤 Publish to Team</button>
+            <button class="btn" onclick="pullFromServer()" title="Pull the latest data.json from your GitHub repo (overrides local data)">📥 Pull from Server</button>
+          </div>
+        </div>
       </div>
     </section>
   </main>
@@ -794,6 +802,9 @@ function migrateDates() {
 function saveData() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(enquiries));
   localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+  // Track when this device last made a local edit so the auto-fetch from
+  // data.json can decide whether it's safe to override.
+  localStorage.setItem('hero-last-local-edit', String(Date.now()));
 }
 
 /* ====================== SEED DATA ====================== */
@@ -1705,6 +1716,52 @@ function exportJSON() {
   downloadFile('hero-sales-backup-' + todayISO() + '.json', JSON.stringify(payload, null, 2), 'application/json');
 }
 
+/**
+ * Export the data with the exact name ("data.json") that the dashboard
+ * auto-fetches on load. Uploading this single file to your GitHub repo
+ * is what makes your manager / team see your latest data.
+ */
+function publishToTeam() {
+  const payload = { exportedAt: new Date().toISOString(), config, enquiries };
+  downloadFile('data.json', JSON.stringify(payload, null, 2), 'application/json');
+  setTimeout(() => {
+    alert('✅ data.json downloaded.\n\nNext steps to share with your team:\n' +
+          '1. Open your GitHub repo (SUDARSHAN-SALES-DASHBOARD)\n' +
+          '2. Click "Add file" → "Upload files"\n' +
+          '3. Drag the data.json file you just downloaded\n' +
+          '4. Click "Commit changes"\n\n' +
+          'Within a minute, anyone refreshing the dashboard URL will see this data.');
+  }, 200);
+}
+
+/**
+ * Force a fetch of data.json from the GitHub repo, overriding local data.
+ * Useful when a team member's localStorage has stale data and they want
+ * to see whatever was most recently published to the server.
+ */
+function pullFromServer() {
+  if (!confirm('This will REPLACE your local data with whatever is currently in data.json on the server.\n\nContinue?')) return;
+  // Clear the local-edit timestamp so the auto-fetch logic always pulls
+  localStorage.removeItem('hero-last-local-edit');
+  fetch('data.json?t=' + Date.now(), { cache: 'no-cache' })
+    .then(r => { if (!r.ok) throw new Error('No data.json found on server (HTTP ' + r.status + ')'); return r.json(); })
+    .then(obj => {
+      if (!Array.isArray(obj.enquiries)) throw new Error('data.json is invalid (no enquiries array)');
+      enquiries = obj.enquiries;
+      if (obj.config) {
+        if (obj.config.counters) config.counters = obj.config.counters;
+        if (obj.config.reps) config.reps = obj.config.reps;
+        if (obj.config.models) config.models = obj.config.models;
+        if (obj.config.financiers) config.financiers = obj.config.financiers;
+      }
+      saveData();
+      refreshAllSelects();
+      setView(document.querySelector('.nav-item.active').dataset.view);
+      alert('✅ Pulled ' + enquiries.length + ' enquiries from server.\nServer timestamp: ' + (obj.exportedAt || 'unknown'));
+    })
+    .catch(err => alert('Could not pull from server: ' + err.message));
+}
+
 function downloadFile(name, content, mime) {
   const blob = new Blob([content], { type: mime + ';charset=utf-8' });
   const a = document.createElement('a');
@@ -2320,6 +2377,51 @@ refreshAllSelects();
 updateSyncUI();
 scheduleAutoSync();
 setView('dashboard');
+
+/* ====================== SHARED DATA FETCH ======================
+ * On every page load, try to fetch a "data.json" file from the same origin
+ * (i.e., from the GitHub repo). If found, replace local data with it.
+ * This is how the manager / team see the same data when the URL is shared.
+ *
+ * Workflow:
+ *   1. You build up data on your laptop (paste/import CSVs)
+ *   2. Click "Export JSON Backup" → downloads sudarshan-backup.json
+ *   3. Rename it to data.json
+ *   4. Upload data.json to your GitHub repo (same place as index.html)
+ *   5. Anyone refreshing the dashboard URL now sees the latest data
+ */
+(function fetchSharedData() {
+  const SHARED_DATA_URL = 'data.json';
+  fetch(SHARED_DATA_URL, { cache: 'no-cache' })
+    .then(r => {
+      if (!r.ok) { console.log('[Shared] No data.json on server (' + r.status + ') — using local data.'); return null; }
+      return r.json();
+    })
+    .then(obj => {
+      if (!obj) return;
+      if (!Array.isArray(obj.enquiries)) { console.warn('[Shared] data.json missing enquiries array'); return; }
+      // Compare timestamps so we don't override newer local edits with stale server data
+      const serverTime = obj.exportedAt ? new Date(obj.exportedAt).getTime() : 0;
+      const localTime = parseInt(localStorage.getItem('hero-last-local-edit') || '0', 10);
+      if (localTime > serverTime && enquiries.length > 0) {
+        console.log('[Shared] Local data is newer than data.json — keeping local. (Click Settings → Pull from server to override.)');
+        return;
+      }
+      enquiries = obj.enquiries;
+      if (obj.config) {
+        if (obj.config.counters) config.counters = obj.config.counters;
+        if (obj.config.reps) config.reps = obj.config.reps;
+        if (obj.config.models) config.models = obj.config.models;
+        if (obj.config.financiers) config.financiers = obj.config.financiers;
+      }
+      saveData();
+      migrateDates();
+      refreshAllSelects();
+      setView(document.querySelector('.nav-item.active').dataset.view);
+      console.log('[Shared] Loaded ' + enquiries.length + ' enquiries from data.json (server time: ' + (obj.exportedAt || 'unknown') + ')');
+    })
+    .catch(err => console.log('[Shared] data.json fetch failed (probably not deployed yet):', err.message));
+})();
 
 // Auto-sync on open
 if (config.sheet.url && config.sheet.autoOpen) {
