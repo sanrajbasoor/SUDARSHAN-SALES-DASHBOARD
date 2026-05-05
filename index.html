@@ -521,6 +521,13 @@
       <span style="display:block; color:var(--muted); font-size:12px; margin-bottom:4px;">Or paste rows directly (header row required)</span>
       <textarea id="paste-data" placeholder="Customer&#9;Phone&#9;Counter&#9;Model&#9;Stage&#9;Rep&#9;Finance&#9;Financier&#10;Aarav Sharma&#9;+91 98...&#9;Napier Town&#9;Splendor Plus&#9;New&#9;Priya Shah&#9;Yes&#9;Hero Fin Corp" style="width:100%; min-height:180px; background:var(--panel-2); border:1px solid var(--line); color:var(--text); padding:8px 10px; border-radius:8px; font-family:monospace; font-size:12px;"></textarea>
     </label>
+    <label style="display:block; margin-top:12px; padding:10px 12px; background:var(--panel-2); border:1px solid var(--accent); border-radius:8px;">
+      <span style="display:block; color:var(--accent); font-size:13px; font-weight:600; margin-bottom:6px;">📍 Counter for these enquiries</span>
+      <span style="display:block; color:var(--muted); font-size:11px; margin-bottom:6px;">If your sheet does NOT have a Counter column (e.g., separate sheet per counter), pick which counter this batch belongs to. Every row imported in this batch will be tagged with this counter.</span>
+      <select id="paste-counter-override" style="width:100%; background:var(--panel); border:1px solid var(--line); color:var(--text); padding:8px 10px; border-radius:8px;">
+        <option value="">— Auto-detect from sheet —</option>
+      </select>
+    </label>
     <div class="modal-actions">
       <button class="btn" onclick="closePasteModal()">Cancel</button>
       <button class="btn btn-primary" onclick="processPaste()">Continue →</button>
@@ -601,7 +608,34 @@ const STAGES = ['New', 'Contacted', 'Qualified', 'Test Drive', 'Negotiation', 'W
 const ACTIVE_STAGES = ['New', 'Contacted', 'Qualified', 'Test Drive', 'Negotiation'];
 const STALE_DAYS = 7;
 
-const DEFAULT_COUNTERS = ['Napier Town', 'Madan Mahal', 'Damoh Naka', 'Adhartal'];
+const DEFAULT_COUNTERS = ['Napier Town', 'MML (ICE)', 'VIDA Hub', 'DN', 'Premia', 'Adhartal'];
+// Counter synonyms — map common abbreviations / variations to your canonical counter names
+const COUNTER_SYNONYMS = {
+  'Napier Town': ['napier town','napier','nt','napiertown','napier-town'],
+  'MML (ICE)': ['mml','mml ice','mml(ice)','mml (ice)','madan mahal','madanmahal','mm','madan mahal location','mml location','m.m.l','m m l','ice','madan'],
+  'VIDA Hub': ['vida','vida hub','vidahub','ev hub','electric hub','vida store','ev'],
+  'DN': ['dn','damoh naka','damohnaka','damoh','damoh-naka','d.n.','d n'],
+  'Premia': ['premia','premium','premiea','premier'],
+  'Adhartal': ['adhartal','adartal','adhar tal','adhartaal','adharthaal']
+};
+function normalizeCounter(raw, configCounters) {
+  const s = String(raw || '').toLowerCase().trim();
+  if (!s) return '';
+  // Synonym match
+  for (const [canon, syns] of Object.entries(COUNTER_SYNONYMS)) {
+    if (syns.includes(s)) return canon;
+    for (const syn of syns) {
+      if (s === syn) return canon;
+      if (s.length > 2 && s.includes(syn) && syn.length > 1) return canon;
+      if (syn.length > 3 && syn.includes(s) && s.length > 2) return canon;
+    }
+  }
+  // Existing config match
+  const existing = (configCounters || []).find(c => c.toLowerCase() === s);
+  if (existing) return existing;
+  // Return raw so caller can auto-add
+  return raw.trim();
+}
 const DEFAULT_REPS = ['Priya Shah', 'Rahul Mehta', 'Anjali Verma', 'Vikram Singh', 'Sneha Iyer', 'Arjun Kapoor'];
 const DEFAULT_MODELS = ['Splendor Plus', 'HF Deluxe', 'Passion Pro', 'Glamour', 'Xtreme 125R', 'Xtreme 160R', 'Xpulse 200', 'Karizma XMR', 'Maestro Edge 125', 'Pleasure Plus', 'Destini 125', 'Vida V1 (EV)'];
 const DEFAULT_FINANCIERS = ['Hero Fin Corp', 'IDFC', 'L&T', 'Shree Ram', 'HDFC', 'Hinduja', 'Kotak'];
@@ -1734,9 +1768,19 @@ function parseCSV(text, delim) {
 }
 
 /* ====================== PASTE FROM GOOGLE SHEET ====================== */
+// Holds the user-picked counter for the current import batch (empty = auto-detect)
+let pendingCounterOverride = '';
+
 function openPasteModal() {
   document.getElementById('paste-url').value = '';
   document.getElementById('paste-data').value = '';
+  // Populate the counter override dropdown with all configured counters
+  const sel = document.getElementById('paste-counter-override');
+  if (sel) {
+    sel.innerHTML = '<option value="">— Auto-detect from sheet —</option>' +
+      config.counters.map(c => '<option value="' + escapeHtml(c) + '">' + escapeHtml(c) + '</option>').join('');
+    sel.value = '';
+  }
   document.getElementById('paste-modal').classList.add('open');
 }
 function closePasteModal() { document.getElementById('paste-modal').classList.remove('open'); }
@@ -1744,6 +1788,9 @@ function closePasteModal() { document.getElementById('paste-modal').classList.re
 function processPaste() {
   const url = document.getElementById('paste-url').value.trim();
   const data = document.getElementById('paste-data').value;
+  // Capture the chosen counter override BEFORE closing the modal
+  const ovSel = document.getElementById('paste-counter-override');
+  pendingCounterOverride = ovSel ? (ovSel.value || '') : '';
   if (url) {
     fetchSheetURL(url);
   } else if (data.trim()) {
@@ -1890,7 +1937,7 @@ const FIELD_OPTIONS = {
   customer: ['customer','customer name','cust name','name','lead name','lead','client','client name','buyer','buyer name','party','party name','full name'],
   phone: ['phone','mobile','mobile no','mobile number','contact','contact number','contact no','phone number','tel','cell','whatsapp','whatsapp no'],
   email: ['email','e-mail','email id','mail','email address'],
-  counter: ['counter','branch','location','outlet','showroom','dealership','store','dealer'],
+  counter: ['counter','branch','location','outlet','showroom','dealership','store','dealer','center','centre','sub branch','sub-branch','site','place','where','from where','enquiry location','sales counter','sales point','point of sale','pos','exec branch','dealer point'],
   source: ['lead source','enquiry source','channel','origin','lead origin','via','medium','source of enquiry','enquiry channel'],
   model: ['model','product','vehicle','bike','two wheeler','motorcycle','scooter','car','car model','model name'],
   variant: ['variant','trim','version','grade','spec'],
@@ -2017,9 +2064,23 @@ function mapRowsToEnquiries(rows) {
     // If no stage but delivery date is filled → Won
     if (!rawStage && deliveryIdx >= 0 && r[deliveryIdx] && r[deliveryIdx].trim()) stage = 'Won';
 
+    // If the user picked a counter in the import modal, use that for every row.
+    // Otherwise, auto-detect from a Counter/Branch/Location column.
     let counter = get('counter');
-    let counterMatch = fuzzyMatchToList(counter, config.counters);
-    if (counter && !counterMatch) { config.counters.push(counter); counterMatch = counter; }
+    let counterMatch = '';
+    if (pendingCounterOverride) {
+      counterMatch = pendingCounterOverride;
+    } else {
+      let counterCanon = normalizeCounter(counter, config.counters);
+      if (counterCanon) {
+        if (config.counters.includes(counterCanon)) counterMatch = counterCanon;
+        else {
+          const fuzzy = fuzzyMatchToList(counterCanon, config.counters);
+          if (fuzzy) counterMatch = fuzzy;
+          else { config.counters.push(counterCanon); counterMatch = counterCanon; }
+        }
+      }
+    }
     let rep = get('rep');
     let repMatch = fuzzyMatchToList(rep, config.reps);
     if (rep && !repMatch) { config.reps.push(rep); repMatch = rep; }
@@ -2057,7 +2118,7 @@ function mapRowsToEnquiries(rows) {
       customer: get('customer') || '(no name)',
       phone: get('phone'),
       email: get('email'),
-      counter: counterMatch || (config.counters[0] || ''),
+      counter: counterMatch || 'Unassigned',
       source,
       model: modelMatch || (config.models[0] || ''),
       variant: get('variant'),
@@ -2084,12 +2145,51 @@ function importCSV(ev) {
     try {
       const rows = parseCSV(e.target.result).filter(r => r.some(c => c.trim() !== ''));
       if (rows.length < 2) throw new Error('CSV must have a header row and at least one data row');
+      // Ask which counter this batch belongs to (optional — leave blank to auto-detect)
+      pendingCounterOverride = promptForCounter(file.name);
       pendingImport = mapRowsToEnquiries(rows);
       showImportPreview();
     } catch (err) { alert('CSV import failed: ' + err.message); }
   };
   reader.readAsText(file);
   ev.target.value = '';
+}
+
+/**
+ * Prompt the user to choose which counter this CSV/import batch belongs to.
+ * Hint defaults to detecting from the filename (e.g., "FY26_PREMIA_..." → Premia).
+ */
+function promptForCounter(hint) {
+  const upper = (hint || '').toUpperCase();
+  let suggested = '';
+  for (const c of config.counters) {
+    const cu = c.toUpperCase();
+    // Strip parens for matching: "MML (ICE)" → "MML"
+    const cuStripped = cu.replace(/\(.*?\)/g, '').trim();
+    if (cuStripped && upper.includes(cuStripped)) { suggested = c; break; }
+    if (cu.length > 2 && upper.includes(cu)) { suggested = c; break; }
+  }
+  const choices = config.counters.map((c, i) => (i+1) + '. ' + c).join('\n');
+  const promptMsg = 'Which counter do these enquiries belong to?\n\n' + choices + '\n\nEnter the number (1-' + config.counters.length + ') or counter name.\nLeave blank to auto-detect from a Counter column in the file.' + (suggested ? '\n\n(Suggested: ' + suggested + ')' : '');
+  const answer = window.prompt(promptMsg, suggested);
+  if (answer == null) return ''; // cancelled → auto-detect
+  const trimmed = answer.trim();
+  if (!trimmed) return '';
+  // Numeric choice
+  const n = parseInt(trimmed, 10);
+  if (!isNaN(n) && n >= 1 && n <= config.counters.length) return config.counters[n-1];
+  // Match by name (fuzzy)
+  const exact = config.counters.find(c => c.toLowerCase() === trimmed.toLowerCase());
+  if (exact) return exact;
+  const partial = config.counters.find(c => c.toLowerCase().includes(trimmed.toLowerCase()) || trimmed.toLowerCase().includes(c.toLowerCase()));
+  if (partial) return partial;
+  // Treat as a new counter name and add it
+  if (confirm('"' + trimmed + '" is not in your counter list. Add it as a new counter?')) {
+    config.counters.push(trimmed);
+    saveData();
+    return trimmed;
+  }
+  return '';
 }
 
 function showImportPreview() {
@@ -2110,10 +2210,11 @@ function confirmImport(mode) {
   if (mode === 'replace') enquiries = pendingImport;
   else enquiries = pendingImport.concat(enquiries);
   pendingImport = null;
+  pendingCounterOverride = ''; // reset for next import
   document.getElementById('import-modal').classList.remove('open');
   saveData(); refreshAllSelects(); setView('dashboard');
 }
-function cancelImport() { pendingImport = null; document.getElementById('import-modal').classList.remove('open'); }
+function cancelImport() { pendingImport = null; pendingCounterOverride = ''; document.getElementById('import-modal').classList.remove('open'); }
 
 /* ====================== MENUS ====================== */
 function toggleMenu(id) {
@@ -2159,6 +2260,8 @@ function clearSheetConfig() {
 function syncFromSheet() {
   if (!config.sheet.url) { alert('No Google Sheet linked. Go to Settings → Google Sheet Live Link to set one up.'); return; }
   const url = normalizeSheetURL(config.sheet.url);
+  // For Sheet sync, ask which counter this sync should tag rows with (or leave blank)
+  pendingCounterOverride = promptForCounter(config.sheet.url || 'sheet');
   const btn = document.getElementById('sync-btn'); if (btn) btn.textContent = '⏳ Syncing...';
   fetch(url).then(r => {
     if (!r.ok) throw new Error('HTTP ' + r.status + '. Make sure the sheet is published or shared "Anyone with the link can view".');
@@ -2168,6 +2271,7 @@ function syncFromSheet() {
     const rows = parseCSV(text).filter(r => r.some(c => c.trim() !== ''));
     if (rows.length < 2) throw new Error('Sheet has no data rows.');
     const parsed = mapRowsToEnquiries(rows);
+    pendingCounterOverride = ''; // reset so it doesn't leak into the next import
     enquiries = parsed;
     config.sheet.lastSync = new Date().toISOString();
     saveData();
