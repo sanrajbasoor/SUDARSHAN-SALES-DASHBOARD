@@ -468,6 +468,7 @@
           <button class="btn" onclick="exportCSV()">Download CSV</button>
           <button class="btn" onclick="exportJSON()">Download JSON Backup</button>
           <button class="btn" onclick="redetectDates()">🔄 Re-detect dates</button>
+          <button class="btn" onclick="cleanJunkEnquiries()" title="Remove enquiries with no customer name, phone, or email">🧹 Clean junk rows</button>
           <button class="btn btn-danger" onclick="resetAllData()">Reset All Data</button>
         </div>
       </div>
@@ -1507,6 +1508,32 @@ function resetAllData() {
   setView('dashboard');
 }
 
+/**
+ * Remove enquiries that look like junk: no customer name (or "(no name)"),
+ * no phone, and no email. These are typically from blank rows in the sheet.
+ */
+function cleanJunkEnquiries() {
+  const before = enquiries.length;
+  const junk = enquiries.filter(e => {
+    const noName = !e.customer || e.customer.trim() === '' || e.customer.trim() === '(no name)';
+    const noPhone = !e.phone || !/\d/.test(e.phone);
+    const noEmail = !e.email || !e.email.includes('@');
+    return noName && noPhone && noEmail;
+  });
+  if (!junk.length) { alert('No junk rows found — your data is clean.'); return; }
+  if (!confirm('Found ' + junk.length + ' enquiries with no name, phone, or email.\n\nDelete them all?')) return;
+  enquiries = enquiries.filter(e => {
+    const noName = !e.customer || e.customer.trim() === '' || e.customer.trim() === '(no name)';
+    const noPhone = !e.phone || !/\d/.test(e.phone);
+    const noEmail = !e.email || !e.email.includes('@');
+    return !(noName && noPhone && noEmail);
+  });
+  saveData();
+  refreshAllSelects();
+  setView(document.querySelector('.nav-item.active').dataset.view);
+  alert('Removed ' + (before - enquiries.length) + ' junk rows.\nRemaining: ' + enquiries.length);
+}
+
 function redetectDates() {
   const before = enquiries.map(e => ({ id: e.id, c: e.createdAt, l: e.lastContactAt }));
   // Force re-parse: try to coerce createdAt/lastContactAt/nextFollowUp again, even ISO ones
@@ -1971,8 +1998,20 @@ function mapRowsToEnquiries(rows) {
   }
   if (missing.length) console.warn('[Import] Unmapped fields:', missing);
 
-  return rows.slice(1).map((r, idx) => {
+  let skipped = 0;
+  const result = rows.slice(1).map((r, idx) => {
     const get = k => map[k] >= 0 ? (r[map[k]] || '').trim() : '';
+
+    // SKIP empty / junk rows. A real enquiry must have at least a customer name OR a phone number OR an email.
+    // Without any of those three, the row is just blank cells (sheet padding, deleted entries, formatting rows).
+    const customerVal = get('customer');
+    const phoneVal = get('phone');
+    const emailVal = get('email');
+    const hasIdentity = (customerVal && customerVal.replace(/[\s\-_]/g,'') !== '') ||
+                        (phoneVal && /\d/.test(phoneVal)) ||
+                        (emailVal && emailVal.includes('@'));
+    if (!hasIdentity) { skipped++; return null; }
+
     const rawStage = get('stage');
     let stage = normalizeStage(rawStage);
     // If no stage but delivery date is filled → Won
@@ -2033,7 +2072,9 @@ function mapRowsToEnquiries(rows) {
       notes: get('notes'),
       dropReason: get('dropReason')
     };
-  });
+  }).filter(Boolean);
+  if (skipped) console.log('[Import] Skipped ' + skipped + ' blank/junk rows (no customer, phone, or email).');
+  return result;
 }
 
 function importCSV(ev) {
