@@ -917,3 +917,403 @@ function renderLeaderboard() {
   const data=config.reps.map(r=>{const list=E.filter(e=>e.rep===r),won=list.filter(e=>e.stage==='Won').length,conv=list.length?Math.round(won/list.length*100):0;return{rep:r,total:list.length,won,conv};}).sort((a,b)=>b.won-a.won||b.conv-a.conv);
   let html=''; data.forEach((d,i)=>{html+='<div class="lb-row"><div class="lb-rank">'+(i+1)+'</div><div class="lb-name">'+escapeHtml(d.rep)+'</div><div class="lb-stats">'+d.won+'/'+d.total+'</div><div class="lb-conv">'+d.conv+'%</div></div>';}); lb.innerHTML=html;
 }
+
+/* ====================== DRAW CHART UTILITY ====================== */
+function drawChart(id, type, data, options) {
+  const el = document.getElementById(id); if (!el) return;
+  if (charts[id]) { try { charts[id].destroy(); } catch(e) {} }
+  charts[id] = new Chart(el.getContext('2d'), {
+    type, data,
+    options: Object.assign({ responsive:true, maintainAspectRatio:false, plugins:{legend:{labels:{color:'#94a0c8',font:{size:11}}}}, scales: type==='bar'||type==='line' ? {x:{ticks:{color:'#94a0c8',font:{size:10}},grid:{color:'rgba(255,255,255,0.05)'}},y:{ticks:{color:'#94a0c8',font:{size:10}},grid:{color:'rgba(255,255,255,0.05)'}}} : {} }, options||{})
+  });
+}
+
+/* ====================== ENQUIRIES TABLE ====================== */
+function renderTable() {
+  const s=document.getElementById('f-search')?.value.toLowerCase()||'';
+  const stg=document.getElementById('f-stage')?.value||'';
+  const src=document.getElementById('f-source')?.value||'';
+  const rep=document.getElementById('f-rep')?.value||'';
+  const ctr=document.getElementById('f-counter')?.value||'';
+  const fin=document.getElementById('f-finance')?.value||'';
+  const fnc=document.getElementById('f-financier')?.value||'';
+  const exc=document.getElementById('f-exchange-filter')?.value||'';
+  const mon=document.getElementById('f-month')?.value||'';
+  let list = enquiries.filter(e => {
+    if (s && !['customer','phone','email','model','notes'].some(k=>(e[k]||'').toLowerCase().includes(s))) return false;
+    if (stg && e.stage!==stg) return false;
+    if (src && e.source!==src) return false;
+    if (rep && e.rep!==rep) return false;
+    if (ctr && e.counter!==ctr) return false;
+    if (fin && e.financeRequired!==fin) return false;
+    if (fnc && e.financier!==fnc) return false;
+    if (exc && (exc==='Yes' ? !e.exchange : !!e.exchange)) return false;
+    if (mon && getMonthKey(e)!==mon) return false;
+    return true;
+  });
+  lastFilteredIds = list.map(e=>e.id);
+  const tbody = document.getElementById('enquiry-tbody'); if (!tbody) return;
+  if (!list.length) { tbody.innerHTML='<tr><td colspan="13" style="text-align:center;color:var(--muted);padding:24px;">No enquiries match your filters.</td></tr>'; return; }
+  tbody.innerHTML = list.map(e => {
+    const staleD = dateDiff(e.lastContactAt); const isStale = staleD!==null && staleD>STALE_DAYS && ACTIVE_STAGES.includes(e.stage);
+    const fuOver = e.nextFollowUp && e.nextFollowUp < todayISO() && ACTIVE_STAGES.includes(e.stage);
+    const stageColors={'New':'#5b9eff','Contacted':'#ffb02e','Qualified':'#5be0ff','Test Drive':'#ff5c93','Negotiation':'#ff8b3d','Booked':'#a05bff','Won':'#2bd47d','Lost':'#ff4444'};
+    const col=stageColors[e.stage]||'#94a0c8';
+    const chk = selectedIds.has(e.id);
+    const exBadge = e.exchange==='Yes' ? '<span style="background:rgba(255,176,46,0.15);color:#ffb02e;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:600;margin-left:4px;">EX</span>' : '';
+    return '<tr'+(isStale?' style="opacity:0.7"':'')+(fuOver?' class="overdue-row"':'')+'>'
+      +'<td><input type="checkbox" '+(chk?'checked':'')+' onchange="toggleSelect(\''+e.id+'\',this.checked)"/></td>'
+      +'<td><span style="font-family:monospace;font-size:11px;">'+escapeHtml(e.id)+'</span></td>'
+      +'<td><strong>'+escapeHtml(e.customer)+'</strong>'+exBadge+'<br><span style="color:var(--muted);font-size:11px">'+escapeHtml(e.phone)+'</span></td>'
+      +'<td>'+escapeHtml(e.counter||'')+'</td>'
+      +'<td>'+escapeHtml(e.source||'')+'</td>'
+      +'<td>'+escapeHtml(e.model)+'<br><span style="color:var(--muted);font-size:11px">'+escapeHtml(e.variant||'')+'</span></td>'
+      +'<td>'+(e.budget||'-')+'</td>'
+      +'<td>'+escapeHtml(e.rep)+'</td>'
+      +'<td><span style="background:'+col+'22;color:'+col+';padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;">'+escapeHtml(e.stage)+'</span></td>'
+      +'<td style="font-size:12px">'+(e.financeRequired==='Yes'?'<span style="color:var(--ok);">&#10003; '+escapeHtml(e.financier||'Yes')+'</span>':'<span style="color:var(--muted);">Cash</span>')+'</td>'
+      +'<td style="font-size:12px;color:'+(isStale?'var(--warn)':'var(--muted)')+'">'+escapeHtml(e.lastContactAt||'-')+(isStale?' <span title="Stale">&#9888;</span>':'')+'</td>'
+      +'<td style="font-size:12px;color:'+(fuOver?'var(--danger)':'var(--muted)')+'">'+escapeHtml(e.nextFollowUp||'-')+'</td>'
+      +'<td><button class="btn btn-sm" onclick="openModal(\''+e.id+'\')">Edit</button></td>'
+      +'</tr>';
+  }).join('');
+  updateBulkBar();
+}
+function clearFilters() {
+  ['f-search','f-stage','f-source','f-rep','f-counter','f-finance','f-financier','f-exchange-filter','f-month'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  renderTable();
+}
+function toggleSelect(id,checked) { if(checked) selectedIds.add(id); else selectedIds.delete(id); updateBulkBar(); }
+function toggleSelectAll(checked) { const list=lastFilteredIds; list.forEach(id=>{if(checked)selectedIds.add(id);else selectedIds.delete(id);}); renderTable(); }
+function selectAllVisible() { lastFilteredIds.forEach(id=>selectedIds.add(id)); renderTable(); }
+function selectAllEnquiries() { enquiries.forEach(e=>selectedIds.add(e.id)); renderTable(); }
+function clearSelection() { selectedIds.clear(); renderTable(); }
+function updateBulkBar() {
+  const bar=document.getElementById('bulk-bar'); const cnt=document.getElementById('bulk-count');
+  if(bar){bar.style.display=selectedIds.size>0?'flex':'none';}
+  if(cnt)cnt.textContent=selectedIds.size+' selected';
+}
+function deleteSelected() {
+  if(!selectedIds.size) return;
+  if(!confirm('Delete '+selectedIds.size+' selected enquiries?')) return;
+  enquiries = enquiries.filter(e=>!selectedIds.has(e.id));
+  selectedIds.clear(); saveData(); renderTable(); showToast('Deleted.');
+}
+function deleteAllEnquiries() {
+  if(!confirm('Delete ALL '+enquiries.length+' enquiries? This cannot be undone.')) return;
+  enquiries=[]; selectedIds.clear(); saveData(); renderTable(); renderDashboard(); showToast('All data cleared.');
+}
+
+/* ====================== LEAKAGE VIEW ====================== */
+function renderLeakage() {
+  const E = getActiveEnquiries();
+  const stale = E.filter(e=>ACTIVE_STAGES.includes(e.stage)&&dateDiff(e.lastContactAt)>STALE_DAYS);
+  const noTD = E.filter(e=>['Qualified','Negotiation','Booked'].includes(e.stage)&&isTDModel(e.model)&&!e.testRideStatus);
+  const overdue = E.filter(e=>ACTIVE_STAGES.includes(e.stage)&&e.nextFollowUp&&e.nextFollowUp<todayISO());
+  const lt=document.getElementById('leak-tbody');
+  if(lt) lt.innerHTML = stale.length ? stale.map(e=>'<tr onclick="openModal(\''+e.id+'\')" style="cursor:pointer"><td>'+escapeHtml(e.id)+'</td><td>'+escapeHtml(e.customer)+'</td><td>'+escapeHtml(e.counter||'')+'</td><td>'+escapeHtml(e.stage)+'</td><td>'+escapeHtml(e.rep)+'</td><td style="color:var(--warn)">'+dateDiff(e.lastContactAt)+' days</td><td>'+escapeHtml(e.nextFollowUp||'-')+'</td></tr>').join('') : '<tr><td colspan="7" style="text-align:center;color:var(--ok);padding:18px;">&#10003; No stale enquiries</td></tr>';
+  const nt=document.getElementById('no-td-tbody');
+  if(nt) nt.innerHTML = noTD.length ? noTD.map(e=>'<tr onclick="openModal(\''+e.id+'\')" style="cursor:pointer"><td>'+escapeHtml(e.id)+'</td><td>'+escapeHtml(e.customer)+'</td><td>'+escapeHtml(e.counter||'')+'</td><td>'+escapeHtml(e.stage)+'</td><td>'+escapeHtml(e.rep)+'</td><td>'+dateDiff(e.lastContactAt)+' days</td></tr>').join('') : '<tr><td colspan="6" style="text-align:center;color:var(--ok);padding:18px;">&#10003; All qualified leads have been offered a test ride</td></tr>';
+  const ot=document.getElementById('overdue-tbody');
+  if(ot) ot.innerHTML = overdue.length ? overdue.map(e=>'<tr onclick="openModal(\''+e.id+'\')" style="cursor:pointer"><td>'+escapeHtml(e.id)+'</td><td>'+escapeHtml(e.customer)+'</td><td>'+escapeHtml(e.counter||'')+'</td><td>'+escapeHtml(e.stage)+'</td><td>'+escapeHtml(e.rep)+'</td><td>'+escapeHtml(e.nextFollowUp)+'</td><td style="color:var(--danger)">'+Math.abs(dateDiff(e.nextFollowUp||todayISO()))+' days</td></tr>').join('') : '<tr><td colspan="7" style="text-align:center;color:var(--ok);padding:18px;">&#10003; No overdue follow-ups</td></tr>';
+}
+
+/* ====================== COUNTER VIEW ====================== */
+function renderCounters() {
+  const E=getActiveEnquiries();
+  const det=document.getElementById('counter-detail'); if(det){
+    let html='<div style="overflow-x:auto"><table class="table"><thead><tr><th>Counter</th><th>Enquiries</th><th>Active</th><th>Won</th><th>Booked</th><th>Lost</th><th>Conv%</th><th>Finance%</th></tr></thead><tbody>';
+    config.counters.forEach(c=>{
+      const list=E.filter(e=>e.counter===c);
+      const won=list.filter(e=>e.stage==='Won').length,lost=list.filter(e=>e.stage==='Lost').length,booked=list.filter(e=>e.stage==='Booked').length;
+      const active=list.filter(e=>ACTIVE_STAGES.includes(e.stage)).length;
+      const conv=list.length?Math.round(won/list.length*100):0;
+      const fin=list.length?Math.round(list.filter(e=>e.financeRequired==='Yes').length/list.length*100):0;
+      html+='<tr><td><strong>'+escapeHtml(c)+'</strong></td><td>'+list.length+'</td><td>'+active+'</td><td style="color:var(--ok)">'+won+'</td><td style="color:#a05bff">'+booked+'</td><td style="color:var(--danger)">'+lost+'</td><td>'+conv+'%</td><td>'+fin+'%</td></tr>';
+    });
+    html+='</tbody></table></div>'; det.innerHTML=html;
+  }
+  const cntCounts=config.counters.map(c=>E.filter(e=>e.counter===c).length);
+  const cntConv=config.counters.map(c=>{const l=E.filter(e=>e.counter===c);return l.length?Math.round(l.filter(e=>e.stage==='Won').length/l.length*100):0;});
+  drawChart('chart-counter','bar',{labels:config.counters,datasets:[{data:cntCounts,backgroundColor:'#5b9eff88'}]},{plugins:{legend:{display:false}}});
+  drawChart('chart-counter-conv','bar',{labels:config.counters,datasets:[{data:cntConv,backgroundColor:'#2bd47d88',label:'Conv%'}]},{plugins:{legend:{display:false}}});
+}
+
+/* ====================== FINANCE VIEW ====================== */
+function renderFinance() {
+  const E=getActiveEnquiries();
+  const finE=E.filter(e=>e.financeRequired==='Yes');
+  const finWon=finE.filter(e=>e.stage==='Won').length;
+  const cashWon=E.filter(e=>e.financeRequired!=='Yes'&&e.stage==='Won').length;
+  document.getElementById('fin-total')&&(document.getElementById('fin-total').textContent=finE.length);
+  document.getElementById('fin-won')&&(document.getElementById('fin-won').textContent=finWon);
+  document.getElementById('cash-won')&&(document.getElementById('cash-won').textContent=cashWon);
+  document.getElementById('fin-share')&&(document.getElementById('fin-share').textContent=E.length?Math.round(finE.length/E.length*100)+'% of enquiries need finance':'');
+  const finMap={};finE.forEach(e=>{const k=e.financier||'Unknown';finMap[k]=(finMap[k]||0)+1;});
+  drawChart('chart-financier','doughnut',{labels:Object.keys(finMap),datasets:[{data:Object.values(finMap),backgroundColor:['#ff2e2e','#ffb02e','#5b9eff','#2bd47d','#a05bff','#ff5c93','#5be0ff','#ff8b3d']}]},{});
+  const ft=document.getElementById('financier-table');
+  if(ft){
+    const fins=Object.entries(finMap).sort((a,b)=>b[1]-a[1]);
+    ft.innerHTML='<table class="table"><thead><tr><th>Financier</th><th>Enquiries</th><th>Won</th></tr></thead><tbody>'
+      +fins.map(([f,cnt])=>'<tr><td>'+escapeHtml(f)+'</td><td>'+cnt+'</td><td>'+finE.filter(e=>e.financier===f&&e.stage==='Won').length+'</td></tr>').join('')
+      +'</tbody></table>';
+  }
+}
+
+/* ====================== PERFORMANCE VIEW ====================== */
+function renderPerformance() {
+  const E=getActiveEnquiries();
+  const rd=document.getElementById('rep-detail'); if(rd){
+    let html='<div style="overflow-x:auto"><table class="table"><thead><tr><th>Rep</th><th>Enquiries</th><th>Active</th><th>Won</th><th>Booked</th><th>Conv%</th><th>Test Rides</th><th>TD-to-Won</th></tr></thead><tbody>';
+    config.reps.forEach(r=>{
+      const list=E.filter(e=>e.rep===r);
+      const won=list.filter(e=>e.stage==='Won').length,booked=list.filter(e=>e.stage==='Booked').length;
+      const active=list.filter(e=>ACTIVE_STAGES.includes(e.stage)).length;
+      const conv=list.length?Math.round(won/list.length*100):0;
+      const tdDone=list.filter(e=>e.testRideStatus&&e.testRideStatus.startsWith('Yes')).length;
+      const tdWon=list.filter(e=>e.testRideStatus&&e.testRideStatus.startsWith('Yes')&&e.stage==='Won').length;
+      const tdRate=tdDone?Math.round(tdWon/tdDone*100):0;
+      html+='<tr><td><strong>'+escapeHtml(r)+'</strong></td><td>'+list.length+'</td><td>'+active+'</td><td style="color:var(--ok)">'+won+'</td><td style="color:#a05bff">'+booked+'</td><td>'+conv+'%</td><td>'+tdDone+'</td><td>'+(tdDone?tdRate+'%':'-')+'</td></tr>';
+    });
+    html+='</tbody></table></div>'; rd.innerHTML=html;
+  }
+  const today=todayISO(),thirtyAgo=daysAgo(30);
+  const days=[],cnts=[];
+  for(let i=29;i>=0;i--){const d=daysAgo(i);days.push(d.slice(5));cnts.push(enquiries.filter(e=>e.stage==='Won'&&e.lastContactAt===d).length);}
+  drawChart('chart-trend','line',{labels:days,datasets:[{data:cnts,borderColor:'#2bd47d',backgroundColor:'rgba(43,212,125,0.1)',tension:0.3,fill:true}]},{plugins:{legend:{display:false}}});
+  const mMap={};E.forEach(e=>{if(e.model)mMap[e.model]=(mMap[e.model]||0)+1;});
+  const mt=document.getElementById('model-table');
+  if(mt){
+    const sorted=Object.entries(mMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
+    mt.innerHTML='<table class="table"><thead><tr><th>Model</th><th>Enquiries</th><th>Won</th></tr></thead><tbody>'
+      +sorted.map(([m,cnt])=>'<tr><td>'+escapeHtml(m)+'</td><td>'+cnt+'</td><td>'+E.filter(e=>e.model===m&&e.stage==='Won').length+'</td></tr>').join('')
+      +'</tbody></table>';
+  }
+}
+
+/* ====================== SETTINGS VIEW ====================== */
+function renderSettings() {
+  ['counter','rep','model','financier'].forEach(type=>{
+    const list=document.getElementById(type+'-list'); if(!list) return;
+    const arr=type==='counter'?config.counters:type==='rep'?config.reps:type==='model'?config.models:config.financiers;
+    list.innerHTML=arr.map((item,i)=>'<li class="crud-item"><span>'+escapeHtml(item)+'</span><button class="btn btn-sm btn-danger" onclick="remove'+type.charAt(0).toUpperCase()+type.slice(1)+'('+i+')">Remove</button></li>').join('');
+  });
+  // Monthly targets
+  const tgl=document.getElementById('target-global');
+  if(tgl) tgl.value=(config.targets&&config.targets.global)||'';
+  const tcl=document.getElementById('target-counter-list');
+  if(tcl) tcl.innerHTML=config.counters.map(c=>'<div style="background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;"><label style="font-size:12px;color:var(--muted);margin-bottom:4px;display:block;">'+escapeHtml(c)+'</label><input type="number" min="0" data-counter="'+escapeHtml(c)+'" class="target-counter-input" value="'+((config.targets&&config.targets.counters&&config.targets.counters[c])||'')+'" placeholder="e.g. 40" style="width:100%;background:var(--panel);border:1px solid var(--line);color:var(--text);padding:6px 10px;border-radius:8px;"/></div>').join('');
+  const sui=document.getElementById('script-url-input');
+  if(sui) sui.value=localStorage.getItem('hero-apps-script-url-v1')||'';
+  updateScriptSyncUI();
+}
+function addCounter(){const v=document.getElementById('new-counter')?.value.trim();if(!v)return;config.counters.push(v);document.getElementById('new-counter').value='';saveData();renderSettings();showToast('Counter added.');}
+function addRep(){const v=document.getElementById('new-rep')?.value.trim();if(!v)return;config.reps.push(v);document.getElementById('new-rep').value='';saveData();renderSettings();showToast('Rep added.');}
+function addModel(){const v=document.getElementById('new-model')?.value.trim();if(!v)return;config.models.push(v);document.getElementById('new-model').value='';saveData();renderSettings();refreshAllSelects();showToast('Model added.');}
+function addFinancier(){const v=document.getElementById('new-financier')?.value.trim();if(!v)return;config.financiers.push(v);document.getElementById('new-financier').value='';saveData();renderSettings();showToast('Financier added.');}
+function removeCounter(i){if(!confirm('Remove counter?'))return;config.counters.splice(i,1);saveData();renderSettings();}
+function removeRep(i){if(!confirm('Remove rep?'))return;config.reps.splice(i,1);saveData();renderSettings();}
+function removeModel(i){if(!confirm('Remove model?'))return;config.models.splice(i,1);saveData();renderSettings();refreshAllSelects();}
+function removeFinancier(i){if(!confirm('Remove financier?'))return;config.financiers.splice(i,1);saveData();renderSettings();}
+function saveTargets(){
+  const g=document.getElementById('target-global')?.value;
+  if(!config.targets) config.targets={};
+  config.targets.global=parseInt(g)||0;
+  config.targets.counters={};
+  document.querySelectorAll('.target-counter-input').forEach(inp=>{const c=inp.dataset.counter;const v=parseInt(inp.value)||0;if(v)config.targets.counters[c]=v;});
+  saveData(); renderDashboard(); showToast('Targets saved.');
+}
+function clearColumnOverrides(){config.columnOverrides={};saveData();showToast('Column overrides cleared.');}
+function redetectDates(){migrateDates();saveData();showToast('Dates re-processed.');}
+function cleanJunkEnquiries(){
+  const before=enquiries.length;
+  enquiries=enquiries.filter(e=>e.customer&&e.customer.trim()&&e.customer.trim()!=='0');
+  saveData();renderTable();showToast('Removed '+(before-enquiries.length)+' junk rows.');
+}
+function resetAllData(){if(!confirm('Reset ALL data? Cannot be undone.'))return;enquiries=[];config={counters:[...DEFAULT_COUNTERS],reps:[...DEFAULT_REPS],models:[...DEFAULT_MODELS],financiers:[...DEFAULT_FINANCIERS]};saveData();renderDashboard();renderSettings();showToast('Data reset.');}
+function exportCSV(){
+  const hdr='ID,Customer,Phone,Email,Counter,Source,Model,Variant,Budget,Rep,Stage,Finance,Financier,Created,Last Contact,Next FU,Notes,Drop Reason';
+  const rows=enquiries.map(e=>[e.id,e.customer,e.phone,e.email,e.counter,e.source,e.model,e.variant,e.budget,e.rep,e.stage,e.financeRequired,e.financier,e.createdAt,e.lastContactAt,e.nextFollowUp,e.notes,e.dropReason].map(v=>'"'+(String(v||'').replace(/"/g,'""'))+'"').join(','));
+  const blob=new Blob([[hdr,...rows].join('\n')],{type:'text/csv'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='sudarshan_enquiries_'+todayISO()+'.csv';a.click();
+}
+function exportJSON(){
+  const blob=new Blob([JSON.stringify({enquiries,config,exportedAt:new Date().toISOString()},null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='sudarshan_backup_'+todayISO()+'.json';a.click();
+}
+function publishToTeam(){exportJSON();}
+async function pullFromServer(){
+  showToast('Pulling from server...');
+  await loadFromScript();
+}
+function saveSheetConfig(){showToast('Sheet config saved.');}
+function syncFromSheet(){showToast('Sheet sync not configured.');}
+function clearSheetConfig(){showToast('Sheet config cleared.');}
+
+/* ====================== MODAL ====================== */
+function openModal(id) {
+  editingId = id||null;
+  const e = id ? enquiries.find(x=>x.id===id) : null;
+  document.getElementById('modal-title').textContent = e ? 'Edit Enquiry — '+e.id : 'New Enquiry';
+  document.getElementById('del-btn').style.display = e ? '' : 'none';
+  populateSelect('f-counter-in',config.counters,true,'— Select counter —');
+  populateSelect('f-source-in',SOURCES,true,'— Select source —');
+  populateSelect('f-model',config.models,true,'— Select model —');
+  populateSelect('f-rep-in',config.reps,true,'— Select rep —');
+  populateSelect('f-stage-in',STAGES,false);
+  populateSelect('f-financier-in',config.financiers,true,'— Select financier —');
+  if (e) {
+    ['customer','phone','email','variant','notes'].forEach(k=>{const el=document.getElementById('f-'+k);if(el)el.value=e[k]||'';});
+    document.getElementById('f-budget').value=e.budget||'';
+    document.getElementById('f-counter-in').value=e.counter||'';
+    document.getElementById('f-source-in').value=e.source||'';
+    document.getElementById('f-model').value=e.model||'';
+    document.getElementById('f-rep-in').value=e.rep||'';
+    document.getElementById('f-stage-in').value=e.stage||'New';
+    document.getElementById('f-finance-in').value=e.financeRequired||'No';
+    document.getElementById('f-financier-in').value=e.financier||'';
+    document.getElementById('f-last').value=e.lastContactAt||todayISO();
+    document.getElementById('f-next').value=e.nextFollowUp||'';
+    document.getElementById('f-drop').value=e.dropReason||'';
+    document.getElementById('f-exchange').value=e.exchange||'No';
+    toggleExchangeFields(e.exchange||'No');
+    if(e.exchange==='Yes'){
+      document.getElementById('f-ex-brand').value=e.exchangeBrand||'';
+      document.getElementById('f-ex-model').value=e.exchangeModel||'';
+      document.getElementById('f-ex-year').value=e.exchangeYear||'';
+      document.getElementById('f-ex-kms').value=e.exchangeKms||'';
+      document.getElementById('f-ex-asking').value=e.exchangeAsking||'';
+      document.getElementById('f-ex-offered').value=e.exchangeOffered||'';
+    }
+    document.getElementById('f-td-offered').value=e.testRideStatus||'';
+    document.getElementById('f-td-date').value=e.testRideDate||'';
+    document.getElementById('f-booking-amt').value=e.bookingAmt||'';
+    document.getElementById('f-delivery-date').value=e.deliveryDate||'';
+    updateStageDependentFields(e.stage);
+  } else {
+    ['customer','phone','email','variant','notes'].forEach(k=>{const el=document.getElementById('f-'+k);if(el)el.value='';});
+    document.getElementById('f-budget').value='';
+    document.getElementById('f-counter-in').value='';
+    document.getElementById('f-source-in').value='';
+    document.getElementById('f-model').value='';
+    document.getElementById('f-rep-in').value='';
+    document.getElementById('f-stage-in').value='New';
+    document.getElementById('f-finance-in').value='No';
+    document.getElementById('f-financier-in').value='';
+    document.getElementById('f-last').value=todayISO();
+    document.getElementById('f-next').value='';
+    document.getElementById('f-drop').value='';
+    document.getElementById('f-exchange').value='No';
+    document.getElementById('f-td-offered').value='';
+    document.getElementById('f-td-date').value='';
+    document.getElementById('f-booking-amt').value='';
+    document.getElementById('f-delivery-date').value='';
+    toggleExchangeFields('No');
+    updateStageDependentFields('New');
+  }
+  document.getElementById('modal-bg').style.display='flex';
+  document.getElementById('f-stage-in').addEventListener('change',function(){updateStageDependentFields(this.value);},{once:false});
+}
+function closeModal(){document.getElementById('modal-bg').style.display='none';editingId=null;}
+function updateStageDependentFields(stage) {
+  const model=document.getElementById('f-model')?.value||'';
+  const showTD=isTDModel(model)&&['Qualified','Test Drive','Negotiation','Booked'].includes(stage);
+  document.getElementById('td-offer-wrap').style.display=showTD?'':'none';
+  document.getElementById('td-date-wrap').style.display=showTD?'':'none';
+  document.getElementById('drop-wrap').style.display=stage==='Lost'?'':'none';
+  document.getElementById('booking-amount-wrap').style.display=stage==='Booked'?'':'none';
+  document.getElementById('delivery-date-wrap').style.display=stage==='Booked'?'':'none';
+  const fuReq=document.getElementById('fu-required');
+  if(fuReq) fuReq.textContent=ACTIVE_STAGES.includes(stage)?'(required)':'';
+}
+function toggleExchangeFields(val){
+  const ef=document.getElementById('exchange-fields');
+  if(ef) ef.style.display=val==='Yes'?'grid':'none';
+}
+function saveEnquiry() {
+  const customer=document.getElementById('f-customer').value.trim();
+  const phone=document.getElementById('f-phone').value.trim();
+  const counter=document.getElementById('f-counter-in').value;
+  const model=document.getElementById('f-model').value;
+  const rep=document.getElementById('f-rep-in').value;
+  const stage=document.getElementById('f-stage-in').value;
+  if(!customer){showToast('Customer name required.');return;}
+  if(!counter){showToast('Please select a counter.');return;}
+  const nextFU=document.getElementById('f-next').value;
+  if(ACTIVE_STAGES.includes(stage)&&!nextFU){showToast('Next follow-up date is required for active stages.');return;}
+  if(stage==='Lost'&&!document.getElementById('f-drop').value){showToast('Please select a lost reason.');return;}
+  const tdStatus=document.getElementById('f-td-offered').value;
+  if(['Qualified','Negotiation','Booked'].includes(stage)&&isTDModel(model)&&!tdStatus){showToast('Please set test ride status for this model.');return;}
+  const exchange=document.getElementById('f-exchange').value;
+  const existing = editingId ? enquiries.find(e=>e.id===editingId) : null;
+  const obj = existing ? {...existing} : {id:nextId(),createdAt:todayISO()};
+  obj.customer=customer; obj.phone=phone; obj.email=document.getElementById('f-email').value.trim();
+  obj.counter=counter; obj.source=document.getElementById('f-source-in').value;
+  obj.model=model; obj.variant=document.getElementById('f-variant').value.trim();
+  obj.budget=parseFloat(document.getElementById('f-budget').value)||0;
+  obj.rep=rep; obj.stage=stage;
+  obj.financeRequired=document.getElementById('f-finance-in').value;
+  obj.financier=document.getElementById('f-financier-in').value;
+  obj.lastContactAt=document.getElementById('f-last').value||todayISO();
+  obj.nextFollowUp=nextFU; obj.notes=document.getElementById('f-notes').value.trim();
+  obj.dropReason=document.getElementById('f-drop').value;
+  obj.exchange=exchange;
+  if(exchange==='Yes'){obj.exchangeBrand=document.getElementById('f-ex-brand').value;obj.exchangeModel=document.getElementById('f-ex-model').value;obj.exchangeYear=document.getElementById('f-ex-year').value;obj.exchangeKms=document.getElementById('f-ex-kms').value;obj.exchangeAsking=document.getElementById('f-ex-asking').value;obj.exchangeOffered=document.getElementById('f-ex-offered').value;}
+  else{delete obj.exchangeBrand;delete obj.exchangeModel;delete obj.exchangeYear;delete obj.exchangeKms;delete obj.exchangeAsking;delete obj.exchangeOffered;}
+  obj.testRideStatus=document.getElementById('f-td-offered').value;
+  obj.testRideDate=document.getElementById('f-td-date').value;
+  obj.bookingAmt=stage==='Booked'?document.getElementById('f-booking-amt').value:'';
+  obj.deliveryDate=stage==='Booked'?document.getElementById('f-delivery-date').value:'';
+  if(existing){const idx=enquiries.findIndex(e=>e.id===editingId);enquiries[idx]=obj;}
+  else{enquiries.unshift(obj);}
+  saveData(); closeModal(); renderDashboard(); renderTable(); refreshMonthOptions();
+  showToast(existing?'Enquiry updated.':'Enquiry added.');
+}
+function deleteEnquiry(){
+  if(!editingId||!confirm('Delete this enquiry?')) return;
+  enquiries=enquiries.filter(e=>e.id!==editingId);
+  saveData(); closeModal(); renderDashboard(); renderTable(); showToast('Deleted.');
+}
+
+/* ====================== PASTE / IMPORT MODALS ====================== */
+function openPasteModal(){populateSelect('paste-counter-override',config.counters,true,'— Auto-detect from sheet —');document.getElementById('paste-modal').style.display='flex';}
+function closePasteModal(){document.getElementById('paste-modal').style.display='none';}
+function processPaste(){showToast('Use the Pull from Sheets button in Settings to import data.');closePasteModal();}
+function cancelImport(){document.getElementById('import-modal').style.display='none';pendingImport=null;}
+function confirmImport(mode){
+  if(!pendingImport) return;
+  if(mode==='replace') enquiries=pendingImport;
+  else enquiries=[...enquiries,...pendingImport.filter(ni=>!enquiries.some(e=>e.id===ni.id))];
+  saveData();renderDashboard();renderTable();refreshMonthOptions();
+  document.getElementById('import-modal').style.display='none';pendingImport=null;
+  showToast('Import complete.');
+}
+
+/* ====================== INIT ====================== */
+function initApp() {
+  loadData();
+  migrateDates();
+  refreshAllSelects();
+  refreshMonthOptions();
+  populateSelect('f-stage',STAGES,true,'All stages');
+  populateSelect('f-source',SOURCES,true,'All sources');
+  ['f-rep','f-counter'].forEach(id=>{
+    const el=document.getElementById(id); if(!el) return;
+    const arr=id==='f-rep'?config.reps:config.counters;
+    el.innerHTML='<option value="">'+('f-rep'===id?'All reps':'All counters')+'</option>'+arr.map(v=>'<option>'+escapeHtml(v)+'</option>').join('');
+  });
+  populateSelect('f-financier',config.financiers,true,'All financiers');
+  document.querySelectorAll('.nav-item').forEach(btn=>{
+    btn.addEventListener('click',()=>setView(btn.dataset.view));
+  });
+  document.getElementById('modal-bg')?.addEventListener('click',function(ev){if(ev.target===this)closeModal();});
+  document.getElementById('paste-modal')?.addEventListener('click',function(ev){if(ev.target===this)closePasteModal();});
+  document.getElementById('f-stage-in')?.addEventListener('change',function(){updateStageDependentFields(this.value);});
+  document.getElementById('f-model')?.addEventListener('change',function(){updateStageDependentFields(document.getElementById('f-stage-in')?.value||'New');});
+  loadFromScript().catch(()=>{});
+  setView('dashboard');
+}
+document.addEventListener('DOMContentLoaded', initApp);
+</script>
+</body>
+</html>
