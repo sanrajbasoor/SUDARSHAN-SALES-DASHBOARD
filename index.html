@@ -56,7 +56,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 <body>
 <div id="lock-screen" class="lock-screen">
   <div class="lock-card">
-    <div class="lock-emoji">🔒</div>
+    <div class="lock-emoji">&#128274;</div>
     <h2 style="margin:8px 0 4px 0">Sudarshan Motors</h2>
     <p style="color:var(--muted);margin:0 0 16px 0">Enter passcode to access the dashboard</p>
     <input type="password" id="lock-input" placeholder="Passcode" autocomplete="off" autofocus
@@ -64,10 +64,9 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
       onkeydown="if(event.key==='Enter') tryUnlock()"/>
     <button class="btn" onclick="tryUnlock()" style="width:100%;padding:12px;font-size:15px;">Unlock</button>
     <div id="lock-error" style="color:var(--danger);font-size:13px;margin-top:10px;min-height:18px;"></div>
-    <p style="color:var(--muted);font-size:11px;margin-top:18px;text-align:center;">Hero MotoCorp · Jabalpur · Internal use only</p>
+    <p style="color:var(--muted);font-size:11px;margin-top:18px;text-align:center;">Hero MotoCorp &middot; Jabalpur &middot; Internal use only</p>
   </div>
 </div>
-
 <div class="app">
   <aside class="sidebar">
     <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp</div></div>
@@ -97,33 +96,32 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
         <input type="file" id="csv-input" accept=".csv,.txt" style="display:none" onchange="importCSV(event)"/>
         <input type="file" id="json-input" accept=".json" style="display:none" onchange="importJSON(event)"/>
         <div class="menu-wrap">
-          <button class="btn" onclick="toggleMenu('import-menu')">Import ▾</button>
+          <button class="btn" onclick="toggleMenu('import-menu')">Import &#9662;</button>
           <div class="menu" id="import-menu">
-            <button class="menu-item" onclick="closeMenus();openPasteModal();">📋 Paste from Google Sheet</button>
+            <button class="menu-item" onclick="closeMenus();openPasteModal();">&#128203; Paste from Google Sheet</button>
             <button class="menu-item" onclick="closeMenus();document.getElementById('csv-input').click();">CSV File</button>
             <button class="menu-item" onclick="closeMenus();document.getElementById('json-input').click();">JSON Backup</button>
           </div>
         </div>
         <div class="menu-wrap">
-          <button class="btn" onclick="toggleMenu('export-menu')">Export ▾</button>
+          <button class="btn" onclick="toggleMenu('export-menu')">Export &#9662;</button>
           <div class="menu" id="export-menu">
             <button class="menu-item" onclick="closeMenus();exportCSV();">CSV (for Google Sheets)</button>
             <button class="menu-item" onclick="closeMenus();exportJSON();">JSON Backup (full)</button>
           </div>
         </div>
-        <button class="btn" id="sync-btn" onclick="syncFromSheet()" style="display:none">🔄 Sync</button>
-        <span style="display:inline-flex;align-items:center;gap:5px;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel);font-size:12px;color:var(--muted);" title="Google Sheets live sync status">
+        <button class="btn" id="sync-btn" onclick="syncFromSheet()" style="display:none">&#128260; Sync</button>
+        <span style="display:inline-flex;align-items:center;gap:5px;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel);font-size:12px;color:var(--muted);">
           <span id="script-sync-indicator" style="width:8px;height:8px;border-radius:50%;background:#5f6368;flex-shrink:0;display:inline-block;transition:background .4s;"></span>
           <span id="script-sync-label">Not connected</span>
         </span>
         <button class="btn btn-primary" onclick="openModal()">+ New Enquiry</button>
-        <button class="btn" onclick="lockDashboard()" title="Lock dashboard">🔒 Lock</button>
+        <button class="btn" onclick="lockDashboard()" title="Lock dashboard">&#128274; Lock</button>
       </div>
     </div>
-
     <section class="view active" id="view-dashboard">
       <div class="filters" style="margin-bottom:14px;">
-        <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;">📅 Month:
+        <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;">&#128197; Month:
           <select class="filter-select view-month" id="vm-dashboard" onchange="setPeriod(this.value)"><option value="">All time</option></select>
         </label>
       </div>
@@ -137,14 +135,13 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
       </div>
       <div class="grid grid-2" style="margin-top:14px;">
         <div class="card"><h3>Pipeline by Stage</h3><div class="chart-wrap"><canvas id="chart-stage"></canvas></div></div>
-        <div class="card"><h3>Enquiries by Source</h3><div class="chart-wrap"><canvas id="chart-source"></canvas></div></div>
+        <div class="card"><h3>Enquiries by Source</h3><div id="source-chart-container" style="max-height:280px;overflow-y:auto;padding:0 2px;"></div></div>
       </div>
       <div class="grid grid-2" style="margin-top:14px;">
         <div class="card"><h3>Counter Performance</h3><div id="counter-summary" class="grid grid-2" style="gap:10px;"></div></div>
         <div class="card"><h3>Sales Rep Leaderboard</h3><div class="leaderboard" id="leaderboard"></div></div>
       </div>
     </section>
-
     <section class="view" id="view-enquiries">
       <div class="filters">
         <input class="filter-input" id="f-search" placeholder="Search customer / phone / email..." oninput="renderTable()"/>
@@ -160,40 +157,38 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
       </div>
       <div id="bulk-bar" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:10px 14px;margin-bottom:10px;background:var(--panel-2);border:1px solid var(--accent);border-radius:10px;">
         <strong id="bulk-count">0 selected</strong>
-        <button class="btn btn-sm" onclick="selectAllVisible()">☑ Select all visible</button>
-        <button class="btn btn-sm" onclick="selectAllEnquiries()">☑ Select ALL enquiries</button>
+        <button class="btn btn-sm" onclick="selectAllVisible()">&#9745; Select all visible</button>
+        <button class="btn btn-sm" onclick="selectAllEnquiries()">&#9745; Select ALL enquiries</button>
         <span style="margin-left:auto"></span>
         <button class="btn btn-sm" onclick="clearSelection()">Clear selection</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteSelected()">🗑 Delete selected</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteAllEnquiries()">🗑 Delete ALL</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteSelected()">&#128465; Delete selected</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteAllEnquiries()">&#128465; Delete ALL</button>
       </div>
       <div class="card" style="padding:0;overflow-x:auto;">
         <table class="table" id="enquiry-table">
           <thead><tr>
             <th style="width:36px"><input type="checkbox" id="select-all" onclick="toggleSelectAll(this.checked)"/></th>
-            <th>ID</th><th>Customer</th><th>Counter</th><th>Source</th><th>Model</th><th>Budget (₹'000)</th><th>Rep</th><th>Stage</th><th>Finance</th><th>Last Contact</th><th>Next FU</th><th></th>
+            <th>ID</th><th>Customer</th><th>Counter</th><th>Source</th><th>Model</th><th>Budget (&#8377;'000)</th><th>Rep</th><th>Stage</th><th>Finance</th><th>Last Contact</th><th>Next FU</th><th></th>
           </tr></thead>
           <tbody id="enquiry-tbody"></tbody>
         </table>
       </div>
     </section>
-
     <section class="view" id="view-counters">
       <div class="filters" style="margin-bottom:14px;">
-        <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;">📅 Month:
+        <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;">&#128197; Month:
           <select class="filter-select view-month" id="vm-counters" onchange="setPeriod(this.value)"><option value="">All time</option></select>
         </label>
       </div>
-      <div class="card"><h3>Counter-wise Performance — Jabalpur</h3><div id="counter-detail"></div></div>
+      <div class="card"><h3>Counter-wise Performance &mdash; Jabalpur</h3><div id="counter-detail"></div></div>
       <div class="grid grid-2" style="margin-top:14px;">
         <div class="card"><h3>Enquiries by Counter</h3><div class="chart-wrap"><canvas id="chart-counter"></canvas></div></div>
         <div class="card"><h3>Conversion by Counter</h3><div class="chart-wrap"><canvas id="chart-counter-conv"></canvas></div></div>
       </div>
     </section>
-
     <section class="view" id="view-finance">
       <div class="filters" style="margin-bottom:14px;">
-        <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;">📅 Month:
+        <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;">&#128197; Month:
           <select class="filter-select view-month" id="vm-finance" onchange="setPeriod(this.value)"><option value="">All time</option></select>
         </label>
       </div>
@@ -207,23 +202,21 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
         <div class="card"><h3>Financier Conversion</h3><div id="financier-table"></div></div>
       </div>
     </section>
-
     <section class="view" id="view-performance">
       <div class="filters" style="margin-bottom:14px;">
-        <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;">📅 Month:
+        <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;">&#128197; Month:
           <select class="filter-select view-month" id="vm-performance" onchange="setPeriod(this.value)"><option value="">All time</option></select>
         </label>
       </div>
       <div class="card"><h3>Sales Rep Performance</h3><div id="rep-detail"></div></div>
       <div class="grid grid-2" style="margin-top:14px;">
-        <div class="card"><h3>Won Enquiries — Last 30 Days</h3><div class="chart-wrap"><canvas id="chart-trend"></canvas></div></div>
+        <div class="card"><h3>Won Enquiries &mdash; Last 30 Days</h3><div class="chart-wrap"><canvas id="chart-trend"></canvas></div></div>
         <div class="card"><h3>Top Models</h3><div id="model-table"></div></div>
       </div>
     </section>
-
     <section class="view" id="view-leakage">
       <div class="filters" style="margin-bottom:14px;">
-        <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;">📅 Month:
+        <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;">&#128197; Month:
           <select class="filter-select view-month" id="vm-leakage" onchange="setPeriod(this.value)"><option value="">All time</option></select>
         </label>
       </div>
@@ -233,10 +226,9 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
         <div style="overflow-x:auto"><table class="table"><thead><tr><th>ID</th><th>Customer</th><th>Counter</th><th>Stage</th><th>Rep</th><th>Days Since Contact</th><th>Next FU</th></tr></thead><tbody id="leak-tbody"></tbody></table></div>
       </div>
       <div class="card" style="margin-top:14px;border-left:4px solid var(--accent-2);">
-        <h3 style="color:var(--accent-2)">🏍️ Qualified leads — test ride NOT offered yet</h3>
+        <h3 style="color:var(--accent-2)">&#128757; Qualified leads &mdash; test ride NOT offered yet</h3>
         <p class="help-text">These customers are ready to ride but no one has offered. This is your highest-recovery list.</p>
         <div style="overflow-x:auto"><table class="table"><thead><tr><th>ID</th><th>Customer</th><th>Counter</th><th>Stage</th><th>Rep</th><th>Days in pipeline</th></tr></thead><tbody id="no-td-tbody"></tbody></table></div>
-      </div>
       </div>
       <div class="card" style="margin-top:14px;">
         <h3>Overdue Follow-ups</h3>
@@ -244,7 +236,6 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
         <div style="overflow-x:auto"><table class="table"><thead><tr><th>ID</th><th>Customer</th><th>Counter</th><th>Stage</th><th>Rep</th><th>Scheduled</th><th>Days Overdue</th></tr></thead><tbody id="overdue-tbody"></tbody></table></div>
       </div>
     </section>
-
     <section class="view" id="view-settings">
       <div class="grid grid-2">
         <div class="card">
@@ -274,13 +265,13 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
       </div>
       <div class="card" style="margin-top:14px;">
         <h3>Column Mapping (last import)</h3>
-        <p class="help-text">Override column detection if a field got the wrong sheet column. Overrides are remembered for future syncs.</p>
+        <p class="help-text">Override column detection if a field got the wrong sheet column.</p>
         <div id="column-mapping" style="margin-top:10px;"></div>
         <div style="display:flex;gap:8px;margin-top:12px;"><button class="btn" onclick="clearColumnOverrides()">Clear all overrides</button></div>
       </div>
       <div class="card" style="margin-top:14px;">
         <h3>Google Sheet Live Link (CSV one-way pull)</h3>
-        <p class="help-text">Paste a published Google Sheet URL to pull data on demand. <strong>File → Share → Publish to web → CSV → copy URL</strong>.</p>
+        <p class="help-text">Paste a published Google Sheet URL to pull data on demand.</p>
         <label style="display:block;margin-top:10px;">
           <span style="display:block;color:var(--muted);font-size:12px;margin-bottom:4px;">Google Sheet URL</span>
           <input id="sheet-url" placeholder="https://docs.google.com/spreadsheets/d/.../pub?output=csv" style="width:100%;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:8px;"/>
@@ -291,17 +282,17 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
         </div>
         <div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap;">
           <button class="btn btn-primary" onclick="saveSheetConfig()">Save</button>
-          <button class="btn" onclick="syncFromSheet()">🔄 Sync Now</button>
+          <button class="btn" onclick="syncFromSheet()">&#128260; Sync Now</button>
           <button class="btn btn-ghost" onclick="clearSheetConfig()">Disconnect</button>
           <span id="sheet-last-sync" class="help-text" style="margin-left:auto"></span>
         </div>
       </div>
       <div class="card" style="margin-top:14px;">
-        <h3>⚡ Live Team Sync (Google Sheets via Apps Script)</h3>
-        <p class="help-text" style="margin-top:4px;">Connect once — every device that opens the dashboard sees the <strong>same live data automatically</strong>. No manual uploads.</p>
+        <h3>&#9889; Live Team Sync (Google Sheets via Apps Script)</h3>
+        <p class="help-text" style="margin-top:4px;">Connect once &mdash; every device that opens the dashboard sees the <strong>same live data automatically</strong>.</p>
         <div style="margin-top:10px;padding:10px 14px;border-radius:8px;border:1px solid rgba(43,212,125,0.3);background:rgba(43,212,125,0.06);display:flex;align-items:center;gap:8px;">
           <span id="script-sync-indicator-2" style="width:8px;height:8px;border-radius:50%;background:#5f6368;display:inline-block;transition:background .4s;"></span>
-          <span id="script-sync-status" style="font-size:12px;color:var(--muted);">Not connected — paste your Apps Script URL below</span>
+          <span id="script-sync-status" style="font-size:12px;color:var(--muted);">Not connected &mdash; paste your Apps Script URL below</span>
         </div>
         <label style="display:block;margin-top:10px;">
           <span style="display:block;color:var(--muted);font-size:12px;margin-bottom:4px;">Apps Script Web App URL</span>
@@ -310,15 +301,15 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
         </label>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center;">
           <button class="btn btn-primary" onclick="saveScriptUrl()">Save &amp; Connect</button>
-          <button class="btn" onclick="syncToScript(false)">☁ Push to Sheets</button>
-          <button class="btn" onclick="loadFromScriptManual()">↓ Pull from Sheets</button>
+          <button class="btn" onclick="syncToScript(false)">&#9729; Push to Sheets</button>
+          <button class="btn" onclick="loadFromScriptManual()">&#8595; Pull from Sheets</button>
           <button class="btn btn-ghost" onclick="disconnectScript()">Disconnect</button>
           <span id="script-last-sync-label" class="help-text" style="margin-left:auto;font-size:11px;"></span>
         </div>
       </div>
       <div class="card" style="margin-top:14px;">
         <h3>Monthly Targets</h3>
-        <p class="help-text">Set booking targets per counter. The dashboard will show real-time pacing so you know if you're on track to hit the month.</p>
+        <p class="help-text">Set booking targets per counter.</p>
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;padding:12px;background:var(--panel-2);border-radius:8px;border:1px solid var(--line);">
           <label style="font-size:13px;color:var(--muted);white-space:nowrap;">Total monthly target (all counters)</label>
           <input type="number" id="target-global" min="0" style="width:100px;background:var(--panel);border:1px solid var(--line);color:var(--text);padding:6px 10px;border-radius:8px;" placeholder="e.g. 200"/>
@@ -332,23 +323,22 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn" onclick="exportCSV()">Download CSV</button>
           <button class="btn" onclick="exportJSON()">Download JSON Backup</button>
-          <button class="btn" onclick="redetectDates()">🔄 Re-detect dates</button>
-          <button class="btn" onclick="cleanJunkEnquiries()">🧹 Clean junk rows</button>
+          <button class="btn" onclick="redetectDates()">&#128260; Re-detect dates</button>
+          <button class="btn" onclick="cleanJunkEnquiries()">&#129529; Clean junk rows</button>
           <button class="btn btn-danger" onclick="resetAllData()">Reset All Data</button>
         </div>
         <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--line);">
-          <h3 style="margin:0 0 6px 0;font-size:14px;">📡 Share with Team (manual fallback)</h3>
-          <p class="help-text" style="margin-top:4px;">Download data.json and upload to GitHub for team sharing. Use ⚡ Live Sync above for automatic sync.</p>
+          <h3 style="margin:0 0 6px 0;font-size:14px;">&#128225; Share with Team (manual fallback)</h3>
+          <p class="help-text" style="margin-top:4px;">Download data.json and upload to GitHub for team sharing.</p>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button class="btn btn-primary" onclick="publishToTeam()">📤 Publish to Team</button>
-            <button class="btn" onclick="pullFromServer()">📥 Pull from Server</button>
+            <button class="btn btn-primary" onclick="publishToTeam()">&#128228; Publish to Team</button>
+            <button class="btn" onclick="pullFromServer()">&#128229; Pull from Server</button>
           </div>
         </div>
       </div>
     </section>
   </main>
 </div>
-
 <div class="modal-bg" id="modal-bg">
   <div class="modal">
     <h2 id="modal-title">New Enquiry</h2>
@@ -360,19 +350,19 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
       <label>Source<select id="f-source-in"></select></label>
       <label>Model<select id="f-model"></select></label>
       <label>Variant<input id="f-variant"/></label>
-      <label>Budget (₹ '000)<input id="f-budget" type="number" min="0"/></label>
+      <label>Budget (&#8377; '000)<input id="f-budget" type="number" min="0"/></label>
       <label class="full" style="background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:4px;">
         <span style="font-weight:500;color:var(--text);font-size:13px;margin-bottom:6px;display:flex;align-items:center;gap:8px;">
-          🔄 Exchange Vehicle
+          &#128260; Exchange Vehicle
           <select id="f-exchange" onchange="toggleExchangeFields(this.value)" style="background:var(--panel);border:1px solid var(--line);color:var(--text);padding:4px 8px;border-radius:6px;font-size:12px;">
             <option value="No">No exchange</option>
-            <option value="Yes">Yes — customer has exchange</option>
+            <option value="Yes">Yes &mdash; customer has exchange</option>
           </select>
         </span>
-        <div id="exchange-fields" style="display:none;display:none;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px;">
+        <div id="exchange-fields" style="display:none;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px;">
           <label style="flex-direction:column;gap:3px;font-size:12px;color:var(--muted);">Brand to exchange
             <select id="f-ex-brand" style="background:var(--panel);border:1px solid var(--line);color:var(--text);padding:7px 10px;border-radius:8px;">
-              <option value="">— Select brand —</option>
+              <option value="">&#8212; Select brand &#8212;</option>
               <option>Honda</option><option>Bajaj</option><option>Suzuki</option>
               <option>TVS</option><option>Yamaha</option><option>Hero (old)</option>
               <option>Royal Enfield</option><option>KTM</option><option>Ather</option>
@@ -382,18 +372,18 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
           <label style="flex-direction:column;gap:3px;font-size:12px;color:var(--muted);">Model / variant<input id="f-ex-model" placeholder="e.g. Activa 6G" style="background:var(--panel);border:1px solid var(--line);color:var(--text);padding:7px 10px;border-radius:8px;"/></label>
           <label style="flex-direction:column;gap:3px;font-size:12px;color:var(--muted);">Year of purchase<input id="f-ex-year" type="number" placeholder="e.g. 2020" min="2005" max="2026" style="background:var(--panel);border:1px solid var(--line);color:var(--text);padding:7px 10px;border-radius:8px;"/></label>
           <label style="flex-direction:column;gap:3px;font-size:12px;color:var(--muted);">KMs driven (approx)<input id="f-ex-kms" type="number" placeholder="e.g. 35000" min="0" style="background:var(--panel);border:1px solid var(--line);color:var(--text);padding:7px 10px;border-radius:8px;"/></label>
-          <label style="flex-direction:column;gap:3px;font-size:12px;color:var(--muted);">Customer asking (₹ '000)<input id="f-ex-asking" type="number" placeholder="e.g. 45" min="0" style="background:var(--panel);border:1px solid var(--line);color:var(--text);padding:7px 10px;border-radius:8px;"/></label>
-          <label style="flex-direction:column;gap:3px;font-size:12px;color:var(--muted);">We offered (₹ '000)<input id="f-ex-offered" type="number" placeholder="e.g. 38" min="0" style="background:var(--panel);border:1px solid var(--line);color:var(--text);padding:7px 10px;border-radius:8px;"/></label>
+          <label style="flex-direction:column;gap:3px;font-size:12px;color:var(--muted);">Customer asking (&#8377; '000)<input id="f-ex-asking" type="number" placeholder="e.g. 45" min="0" style="background:var(--panel);border:1px solid var(--line);color:var(--text);padding:7px 10px;border-radius:8px;"/></label>
+          <label style="flex-direction:column;gap:3px;font-size:12px;color:var(--muted);">We offered (&#8377; '000)<input id="f-ex-offered" type="number" placeholder="e.g. 38" min="0" style="background:var(--panel);border:1px solid var(--line);color:var(--text);padding:7px 10px;border-radius:8px;"/></label>
         </div>
       </label>
       <label>Sales Rep<select id="f-rep-in"></select></label>
       <label>Stage<select id="f-stage-in"></select></label>
-      <label id="td-offer-wrap" style="display:none">Test Ride Status <span style="color:var(--danger);font-size:11px">*required for 125cc &amp; scooters</span>
+      <label id="td-offer-wrap" style="display:none">Test Ride Status
         <select id="f-td-offered">
-          <option value="">— Select —</option>
-          <option value="Yes — completed">✅ Completed</option>
-          <option value="Yes — customer declined">❌ Customer declined</option>
-          <option value="Not yet offered">⏳ Not yet offered</option>
+          <option value="">&#8212; Select &#8212;</option>
+          <option value="Yes — completed">&#10003; Completed</option>
+          <option value="Yes — customer declined">&#10007; Customer declined</option>
+          <option value="Not yet offered">&#8987; Not yet offered</option>
         </select>
       </label>
       <label id="td-date-wrap" style="display:none">Test Ride Date<input id="f-td-date" type="date"/></label>
@@ -401,12 +391,12 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
       <label>Financier<select id="f-financier-in"></select></label>
       <label>Last Contact<input id="f-last" type="date"/></label>
       <label>Next Follow-up <span id="fu-required" style="color:var(--danger);font-size:11px;"></span><input id="f-next" type="date"/></label>
-      <label id="booking-amount-wrap" style="display:none">Booking Amount (₹)<input id="f-booking-amt" type="number" min="0" placeholder="e.g. 1000"/></label>
+      <label id="booking-amount-wrap" style="display:none">Booking Amount (&#8377;)<input id="f-booking-amt" type="number" min="0" placeholder="e.g. 1000"/></label>
       <label id="delivery-date-wrap" style="display:none">Expected Delivery Date<input id="f-delivery-date" type="date"/></label>
       <label class="full">Notes<textarea id="f-notes"></textarea></label>
-      <label class="full" id="drop-wrap" style="display:none">Lost Reason <span style="color:var(--danger)">*</span>
+      <label class="full" id="drop-wrap" style="display:none">Lost Reason
         <select id="f-drop">
-          <option value="">— Select a reason —</option>
+          <option value="">&#8212; Select a reason &#8212;</option>
           <option>Price too high vs competitor</option>
           <option>Competitor model preferred</option>
           <option>Finance not approved</option>
@@ -428,29 +418,27 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
     </div>
   </div>
 </div>
-
 <div class="modal-bg" id="paste-modal">
   <div class="modal">
     <h2>Paste from Google Sheet</h2>
     <label style="display:block;margin-bottom:10px;">
       <span style="display:block;color:var(--muted);font-size:12px;margin-bottom:4px;">Google Sheet URL (optional)</span>
-      <input id="paste-url" placeholder="https://docs.google.com/spreadsheets/d/.../pub?output=csv" style="width:100%;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:8px;"/>
+      <input id="paste-url" placeholder="https://docs.google.com/spreadsheets/d/..." style="width:100%;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:8px;"/>
     </label>
     <label style="display:block;">
       <span style="display:block;color:var(--muted);font-size:12px;margin-bottom:4px;">Or paste rows directly (header row required)</span>
       <textarea id="paste-data" style="width:100%;min-height:180px;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:8px;font-family:monospace;font-size:12px;"></textarea>
     </label>
     <label style="display:block;margin-top:12px;padding:10px 12px;background:var(--panel-2);border:1px solid var(--accent);border-radius:8px;">
-      <span style="display:block;color:var(--accent);font-size:13px;font-weight:600;margin-bottom:6px;">📍 Counter for these enquiries</span>
-      <select id="paste-counter-override" style="width:100%;background:var(--panel);border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:8px;"><option value="">— Auto-detect from sheet —</option></select>
+      <span style="display:block;color:var(--accent);font-size:13px;font-weight:600;margin-bottom:6px;">&#128205; Counter for these enquiries</span>
+      <select id="paste-counter-override" style="width:100%;background:var(--panel);border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:8px;"><option value="">&#8212; Auto-detect from sheet &#8212;</option></select>
     </label>
     <div class="modal-actions">
       <button class="btn" onclick="closePasteModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="processPaste()">Continue →</button>
+      <button class="btn btn-primary" onclick="processPaste()">Continue &#8594;</button>
     </div>
   </div>
 </div>
-
 <div class="modal-bg" id="import-modal">
   <div class="modal">
     <h2>CSV Import Preview</h2>
@@ -465,9 +453,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
     </div>
   </div>
 </div>
-
 <div id="toast" style="position:fixed;bottom:24px;right:24px;background:var(--panel-2);color:var(--text);padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:9999;max-width:320px;box-shadow:0 6px 24px rgba(0,0,0,.5);border:1px solid var(--line);"></div>
-
 <script>
 /* ====================== PASSWORD GATE ====================== */
 const DASHBOARD_PASSWORD = 'hero2026';
@@ -520,9 +506,6 @@ function normalizeCounter(raw, configCounters) {
 }
 const DEFAULT_REPS = ['Priya Shah','Rahul Mehta','Anjali Verma','Vikram Singh','Sneha Iyer','Arjun Kapoor'];
 const DEFAULT_MODELS = ['Splendor Plus','HF Deluxe','Passion Pro','Glamour','Xtreme 125R','Xtreme 160R','Xpulse 200','Karizma XMR','Maestro Edge 125','Pleasure Plus','Destini 125','Vida V1 (EV)'];
-
-// Test ride is mandatory only for 125cc bikes and scooters (ICE + VIDA)
-// 100cc entry (Splendor+, HF Deluxe) and high-end (160R, Xpulse, Karizma, Harley) are excluded
 const TD_PRIORITY_KEYWORDS = ['125','super splendor','glamour','passion','destini','pleasure','maestro','xoom','vida'];
 function isTDModel(model) {
   if (!model) return false;
@@ -530,7 +513,7 @@ function isTDModel(model) {
   return TD_PRIORITY_KEYWORDS.some(k => m.includes(k));
 }
 const DEFAULT_FINANCIERS = ['Hero Fin Corp','IDFC','L&T','Shree Ram','HDFC','Hinduja','Kotak'];
-const FIELD_LABELS = { customer:'Customer Name',phone:'Phone',email:'Email',counter:'Counter',source:'Source',model:'Model',variant:'Variant',budget:'Budget (₹ 000)',rep:'Sales Rep',stage:'Stage',financeRequired:'Finance Required',financier:'Financier',lastContactAt:'Last Contact',nextFollowUp:'Next Follow-up',notes:'Notes',dropReason:'Drop Reason' };
+const FIELD_LABELS = { customer:'Customer Name',phone:'Phone',email:'Email',counter:'Counter',source:'Source',model:'Model',variant:'Variant',budget:'Budget (Rs 000)',rep:'Sales Rep',stage:'Stage',financeRequired:'Finance Required',financier:'Financier',lastContactAt:'Last Contact',nextFollowUp:'Next Follow-up',notes:'Notes',dropReason:'Drop Reason' };
 let config = {
   counters:[...DEFAULT_COUNTERS], reps:[...DEFAULT_REPS], models:[...DEFAULT_MODELS], financiers:[...DEFAULT_FINANCIERS],
   sheet:{url:'',autoOpen:false,autoIntervalEnabled:false,intervalMin:15,lastSync:''},
@@ -540,6 +523,8 @@ let config = {
 };
 let sheetTimer = null, enquiries = [], editingId = null, pendingImport = null;
 let charts = {}, selectedIds = new Set(), lastFilteredIds = [];
+// NEW: Live Bookings collapse + row-limit state
+let bookingsCollapsed = false, bookingsLimit = 5;
 
 /* ====================== UTILITIES ====================== */
 function todayISO() { return new Date().toISOString().slice(0,10); }
@@ -569,15 +554,10 @@ async function syncToScript(silent) {
   try {
     const res = await fetch(config.script.url, { method:'POST', headers:{'Content-Type':'text/plain'}, body:JSON.stringify({exportedAt:new Date().toISOString(),enquiries,config}), redirect:'follow' });
     const json = await res.json();
-    if (json.ok) {
-      config.script.lastSync = new Date().toISOString();
-      localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
-      updateScriptSyncUI();
-      if (!silent) showToast('✅ Saved to Google Sheets');
-    } else { if (!silent) showToast('⚠ Sync error: '+(json.error||'Unknown')); }
-  } catch(err) { if (!silent) showToast('⚠ Sync failed: '+err.message); console.warn('[Script] Push failed:',err); }
+    if (json.ok) { config.script.lastSync = new Date().toISOString(); localStorage.setItem(CONFIG_KEY, JSON.stringify(config)); updateScriptSyncUI(); if (!silent) showToast('Saved to Google Sheets'); }
+    else { if (!silent) showToast('Sync error: '+(json.error||'Unknown')); }
+  } catch(err) { if (!silent) showToast('Sync failed: '+err.message); }
 }
-
 async function loadFromScript() {
   if (!config.script || !config.script.url) return false;
   try {
@@ -585,54 +565,36 @@ async function loadFromScript() {
     const json = await res.json();
     if (!Array.isArray(json.enquiries)) return false;
     enquiries = json.enquiries;
-    if (json.config) {
-      if (json.config.counters) config.counters = json.config.counters;
-      if (json.config.reps) config.reps = json.config.reps;
-      if (json.config.models) config.models = json.config.models;
-      if (json.config.financiers) config.financiers = json.config.financiers;
-    }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(enquiries));
-    migrateDates(); return true;
+    if (json.config) { if (json.config.counters) config.counters = json.config.counters; if (json.config.reps) config.reps = json.config.reps; if (json.config.models) config.models = json.config.models; if (json.config.financiers) config.financiers = json.config.financiers; }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(enquiries)); migrateDates(); return true;
   } catch(err) { console.warn('[Script] Pull failed:',err); return false; }
 }
-
 async function loadFromScriptManual() {
-  if (!config.script || !config.script.url) { alert('No Apps Script URL saved. Paste one in Settings → ⚡ Live Team Sync.'); return; }
-  showToast('⏳ Pulling from Google Sheets…');
+  if (!config.script || !config.script.url) { alert('No Apps Script URL saved. Paste one in Settings.'); return; }
+  showToast('Pulling from Google Sheets...');
   const ok = await loadFromScript();
-  if (ok) { refreshAllSelects(); setView(document.querySelector('.nav-item.active').dataset.view); showToast('✅ Pulled '+enquiries.length+' enquiries from Google Sheets'); updateScriptSyncUI(); }
-  else showToast('⚠ Pull failed — check the URL in Settings');
+  if (ok) { refreshAllSelects(); setView(document.querySelector('.nav-item.active').dataset.view); showToast('Pulled '+enquiries.length+' enquiries'); updateScriptSyncUI(); }
+  else showToast('Pull failed - check the URL in Settings');
 }
-
 function saveScriptUrl() {
   const url = document.getElementById('script-url-input').value.trim();
-  if (url && !url.startsWith('https://script.google.com')) { alert('Invalid URL — should start with https://script.google.com/macros/s/'); return; }
-  config.script.url = url;
-  localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
-  updateScriptSyncUI();
-  if (url) { showToast('Connecting to Google Sheets…'); loadFromScriptManual(); }
-  else showToast('Disconnected');
+  if (url && !url.startsWith('https://script.google.com')) { alert('Invalid URL'); return; }
+  config.script.url = url; localStorage.setItem(CONFIG_KEY, JSON.stringify(config)); updateScriptSyncUI();
+  if (url) { showToast('Connecting...'); loadFromScriptManual(); } else showToast('Disconnected');
 }
-
 function disconnectScript() {
-  if (!confirm('Disconnect from Google Sheets? Your local data stays intact.')) return;
-  config.script = {url:'',lastSync:''};
-  localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
-  updateScriptSyncUI();
-  showToast('Disconnected from Google Sheets');
+  if (!confirm('Disconnect from Google Sheets?')) return;
+  config.script = {url:'',lastSync:''}; localStorage.setItem(CONFIG_KEY, JSON.stringify(config)); updateScriptSyncUI(); showToast('Disconnected');
 }
-
 function updateScriptSyncUI() {
   const url = config.script && config.script.url;
-  const dot1 = document.getElementById('script-sync-indicator');
-  const dot2 = document.getElementById('script-sync-indicator-2');
-  const label = document.getElementById('script-sync-label');
-  const status = document.getElementById('script-sync-status');
+  const dot1 = document.getElementById('script-sync-indicator'), dot2 = document.getElementById('script-sync-indicator-2');
+  const label = document.getElementById('script-sync-label'), status = document.getElementById('script-sync-status');
   const green = '#2bd47d', grey = '#5f6368';
   if (dot1) dot1.style.background = url ? green : grey;
   if (dot2) dot2.style.background = url ? green : grey;
   if (label) label.textContent = url ? 'Sheets live' : 'Not connected';
-  if (status) status.textContent = url ? 'Connected — all saves auto-sync to Google Sheets' : 'Not connected — paste your Apps Script URL below';
+  if (status) status.textContent = url ? 'Connected - all saves auto-sync to Google Sheets' : 'Not connected - paste your Apps Script URL below';
   const inp = document.getElementById('script-url-input'); if (inp) inp.value = url || '';
   const lastLabel = document.getElementById('script-last-sync-label');
   if (lastLabel) lastLabel.textContent = (config.script && config.script.lastSync) ? 'Last sync: '+new Date(config.script.lastSync).toLocaleString('en-IN') : (url ? 'Never synced yet' : '');
@@ -668,13 +630,9 @@ function migrateDates() {
   });
   if(fixed){saveDataLocal();}
 }
-function saveDataLocal() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(enquiries));
-  localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
-}
+function saveDataLocal() { localStorage.setItem(STORAGE_KEY, JSON.stringify(enquiries)); localStorage.setItem(CONFIG_KEY, JSON.stringify(config)); }
 function saveData() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(enquiries));
-  localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(enquiries)); localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
   localStorage.setItem('hero-last-local-edit', String(Date.now()));
   if (config.script && config.script.url) { syncToScript(true).catch(()=>{}); }
 }
@@ -682,14 +640,14 @@ function saveData() {
 /* ====================== SEED DATA ====================== */
 function seedData() {
   enquiries = [
-    {id:'E001',customer:'Aarav Sharma',phone:'+91 98201 12345',email:'aarav@gmail.com',counter:'Napier Town',source:'Walk-in',model:'Splendor Plus',variant:'Self Start Drum Alloy',budget:80,rep:'Priya Shah',stage:'Negotiation',financeRequired:'Yes',financier:'Hero Fin Corp',createdAt:daysAgo(3),lastContactAt:daysAgo(1),nextFollowUp:daysAhead(1),notes:'First-time buyer. Wants delivery by month-end.',dropReason:''},
+    {id:'E001',customer:'Aarav Sharma',phone:'+91 98201 12345',email:'aarav@gmail.com',counter:'Napier Town',source:'Walk-in',model:'Splendor Plus',variant:'Self Start Drum Alloy',budget:80,rep:'Priya Shah',stage:'Negotiation',financeRequired:'Yes',financier:'Hero Fin Corp',createdAt:daysAgo(3),lastContactAt:daysAgo(1),nextFollowUp:daysAhead(1),notes:'First-time buyer.',dropReason:''},
     {id:'E002',customer:'Diya Patel',phone:'+91 98765 43210',email:'diya.p@yahoo.com',counter:'Napier Town',source:'Website',model:'Xtreme 160R',variant:'Stealth Edition',budget:140,rep:'Rahul Mehta',stage:'Test Drive',financeRequired:'Yes',financier:'IDFC',createdAt:daysAgo(5),lastContactAt:daysAgo(2),nextFollowUp:daysAhead(0),notes:'Test ride scheduled.',dropReason:''},
     {id:'E003',customer:'Rohan Gupta',phone:'+91 99887 76543',email:'',counter:'DN',source:'Facebook/Meta Ads',model:'Glamour',variant:'XTec',budget:95,rep:'Anjali Verma',stage:'Qualified',financeRequired:'Yes',financier:'HDFC',createdAt:daysAgo(8),lastContactAt:daysAgo(2),nextFollowUp:daysAhead(2),notes:'Comparing with Pulsar 125.',dropReason:''},
-    {id:'E004',customer:'Kavya Nair',phone:'+91 87654 32109',email:'kavya@outlook.com',counter:'Adhartal',source:'Referral',model:'Pleasure Plus',variant:'Platinum',budget:75,rep:'Vikram Singh',stage:'Won',financeRequired:'No',financier:'',createdAt:daysAgo(20),lastContactAt:daysAgo(2),nextFollowUp:'',notes:'Cash deal. Delivery this weekend.',dropReason:''},
-    {id:'E005',customer:'Mihir Joshi',phone:'+91 90123 45678',email:'mihir.j@gmail.com',counter:'Napier Town',source:'Google Ads',model:'Passion Pro',variant:'Drum BS6',budget:78,rep:'Sneha Iyer',stage:'Lost',financeRequired:'Yes',financier:'Shree Ram',createdAt:daysAgo(15),lastContactAt:daysAgo(5),nextFollowUp:'',notes:'Went with Bajaj Platina due to lower EMI.',dropReason:'Bought competitor'},
+    {id:'E004',customer:'Kavya Nair',phone:'+91 87654 32109',email:'kavya@outlook.com',counter:'Adhartal',source:'Referral',model:'Pleasure Plus',variant:'Platinum',budget:75,rep:'Vikram Singh',stage:'Won',financeRequired:'No',financier:'',createdAt:daysAgo(20),lastContactAt:daysAgo(2),nextFollowUp:'',notes:'Cash deal.',dropReason:''},
+    {id:'E005',customer:'Mihir Joshi',phone:'+91 90123 45678',email:'mihir.j@gmail.com',counter:'Napier Town',source:'Google Ads',model:'Passion Pro',variant:'Drum BS6',budget:78,rep:'Sneha Iyer',stage:'Lost',financeRequired:'Yes',financier:'Shree Ram',createdAt:daysAgo(15),lastContactAt:daysAgo(5),nextFollowUp:'',notes:'Went with Bajaj Platina.',dropReason:'Competitor model preferred'},
     {id:'E006',customer:'Ananya Reddy',phone:'+91 91234 56789',email:'ananya.r@gmail.com',counter:'MML (ICE)',source:'WhatsApp',model:'Vida V1 (EV)',variant:'Pro',budget:145,rep:'Priya Shah',stage:'Contacted',financeRequired:'Yes',financier:'Hero Fin Corp',createdAt:daysAgo(2),lastContactAt:daysAgo(1),nextFollowUp:daysAhead(2),notes:'Asked for EV subsidy details.',dropReason:''},
-    {id:'E007',customer:'Karan Malhotra',phone:'+91 93456 78901',email:'',counter:'Adhartal',source:'Walk-in',model:'Xpulse 200',variant:'4V Rally Edition',budget:155,rep:'Arjun Kapoor',stage:'New',financeRequired:'Yes',financier:'L&T',createdAt:daysAgo(0),lastContactAt:'',nextFollowUp:daysAhead(1),notes:'Adventure rider — keen on off-road.',dropReason:''},
-    {id:'E008',customer:'Riya Bhatt',phone:'+91 94567 89012',email:'riya.b@yahoo.com',counter:'DN',source:'Phone Call',model:'HF Deluxe',variant:'Kick Start',budget:65,rep:'Anjali Verma',stage:'Lost',financeRequired:'Yes',financier:'Hinduja',createdAt:daysAgo(25),lastContactAt:daysAgo(12),nextFollowUp:'',notes:'Hinduja file went stale.',dropReason:'Not contacted in time'},
+    {id:'E007',customer:'Karan Malhotra',phone:'+91 93456 78901',email:'',counter:'Adhartal',source:'Walk-in',model:'Xpulse 200',variant:'4V Rally Edition',budget:155,rep:'Arjun Kapoor',stage:'New',financeRequired:'Yes',financier:'L&T',createdAt:daysAgo(0),lastContactAt:'',nextFollowUp:daysAhead(1),notes:'Adventure rider.',dropReason:''},
+    {id:'E008',customer:'Riya Bhatt',phone:'+91 94567 89012',email:'riya.b@yahoo.com',counter:'DN',source:'Phone Call',model:'HF Deluxe',variant:'Kick Start',budget:65,rep:'Anjali Verma',stage:'Lost',financeRequired:'Yes',financier:'Hinduja',createdAt:daysAgo(25),lastContactAt:daysAgo(12),nextFollowUp:'',notes:'File went stale.',dropReason:'Not contacted in time'},
     {id:'E009',customer:'Yash Khanna',phone:'+91 95678 90123',email:'yash.k@gmail.com',counter:'Napier Town',source:'Website',model:'Karizma XMR',variant:'Standard',budget:185,rep:'Rahul Mehta',stage:'Qualified',financeRequired:'Yes',financier:'IDFC',createdAt:daysAgo(10),lastContactAt:daysAgo(9),nextFollowUp:daysAhead(-2),notes:'IDFC docs pending.',dropReason:''},
     {id:'E010',customer:'Ishita Rao',phone:'+91 96789 01234',email:'ishita@outlook.com',counter:'Adhartal',source:'Existing Customer',model:'Destini 125',variant:'VX',budget:85,rep:'Sneha Iyer',stage:'Won',financeRequired:'No',financier:'',createdAt:daysAgo(35),lastContactAt:daysAgo(7),nextFollowUp:'',notes:'Upgrading from Pleasure.',dropReason:''}
   ];
@@ -703,7 +661,7 @@ function setView(name) {
   const view=document.getElementById('view-'+name); if(view) view.classList.add('active');
   const nav=document.querySelector('.nav-item[data-view="'+name+'"]'); if(nav) nav.classList.add('active');
   const baseTitle=nav?nav.textContent.trim():name;
-  document.getElementById('view-title').textContent=currentPeriod?baseTitle+' — '+formatMonthLabel(currentPeriod):baseTitle;
+  document.getElementById('view-title').textContent=currentPeriod?baseTitle+' - '+formatMonthLabel(currentPeriod):baseTitle;
   if(name==='dashboard') renderDashboard();
   else if(name==='enquiries') renderTable();
   else if(name==='counters') renderCounters();
@@ -728,7 +686,7 @@ function refreshAllSelects() {
   populateSelect('f-counter-in',config.counters,false); populateSelect('f-source-in',SOURCES,false);
   populateSelect('f-model',config.models,false); populateSelect('f-rep-in',config.reps,false);
   populateSelect('f-stage-in',STAGES,false); populateSelect('f-financier-in',[''].concat(config.financiers),false);
-  populateSelect('paste-counter-override',[''].concat(config.counters),false,'— Auto-detect from sheet —');
+  populateSelect('paste-counter-override',[''].concat(config.counters),false,'- Auto-detect from sheet -');
   refreshMonthOptions();
 }
 
@@ -761,15 +719,67 @@ function renderDashboard() {
   const finReq=E.filter(e=>e.financeRequired==='Yes').length,finPct=total?Math.round(finReq/total*100):0;
   document.getElementById('kpi-total').textContent=total; document.getElementById('kpi-active').textContent=active;
   document.getElementById('kpi-conv').textContent=conv+'%'; document.getElementById('kpi-fin').textContent=finPct+'%';
-  document.getElementById('kpi-total-trend').textContent=won+' won · '+lost+' lost · '+active+' open';
+  document.getElementById('kpi-total-trend').textContent=won+' won / '+lost+' lost / '+active+' open';
   document.getElementById('kpi-active-trend').textContent='Open across pipeline';
   document.getElementById('kpi-conv-trend').textContent=won+'/'+total+' (Win rate on closed: '+winRate+'%)';
   document.getElementById('kpi-fin-trend').textContent=finReq+' finance enquiries';
   const stageCounts=STAGES.map(s=>E.filter(e=>e.stage===s).length);
   drawChart('chart-stage','bar',{labels:STAGES,datasets:[{data:stageCounts,backgroundColor:['#5b9eff','#ffb02e','#5b9eff','#ffb02e','#ff2e2e','#2bd47d','#ff5c5c']}]},{plugins:{legend:{display:false}}});
+  // NEW: source breakdown replaces pie/doughnut chart
   const srcMap={};E.forEach(e=>{srcMap[e.source]=(srcMap[e.source]||0)+1;});
-  drawChart('chart-source','doughnut',{labels:Object.keys(srcMap),datasets:[{data:Object.values(srcMap),backgroundColor:['#ff2e2e','#ffb02e','#5b9eff','#2bd47d','#a05bff','#ff5c93','#5be0ff','#ff8b3d','#9bff5b']}]},{plugins:{legend:{position:'right',labels:{color:'#94a0c8',font:{size:11}}}}});
+  renderSourceChart(srcMap, E.length);
   renderCounterSummary(); renderLeaderboard(); renderPacing(); renderLiveBookings();
+}
+
+/* NEW: Enquiries by Source - horizontal bar breakdown */
+function renderSourceChart(srcMap, total) {
+  const container = document.getElementById('source-chart-container');
+  if (!container) return;
+  if (!total) total = Object.values(srcMap).reduce((a,b)=>a+b,0);
+  const sorted = Object.entries(srcMap).sort((a,b)=>b[1]-a[1]);
+  const max = sorted[0] ? sorted[0][1] : 1;
+  const colors = ['#ff2e2e','#ffb02e','#5b9eff','#2bd47d','#a05bff','#ff5c93','#5be0ff','#ff8b3d','#9bff5b','#ff6b6b','#c084fc','#34d399'];
+  if (!sorted.length) {
+    container.innerHTML='<p style="color:var(--muted);font-size:13px;text-align:center;padding:24px 0;">No source data yet</p>';
+    return;
+  }
+  let html = '';
+  sorted.forEach(([src,cnt],i) => {
+    const pct = total ? Math.round(cnt/total*100) : 0;
+    const barW = Math.round(cnt/max*100);
+    const col = colors[i % colors.length];
+    const concern = pct < 5 ? '<span title="Low - area of concern" style="color:var(--warn);">&#9888;</span>' : '';
+    html += '<div style="display:grid;grid-template-columns:118px 1fr 42px 36px 20px;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid var(--line);">'
+          + '<span style="font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+escapeHtml(src)+'">'+escapeHtml(src)+'</span>'
+          + '<div style="background:var(--panel-2);border-radius:4px;height:9px;overflow:hidden;">'
+          + '<div style="height:100%;width:'+barW+'%;background:'+col+';border-radius:4px;transition:width .5s;"></div>'
+          + '</div>'
+          + '<span style="font-size:13px;font-weight:700;color:'+col+';text-align:right;">'+cnt+'</span>'
+          + '<span style="font-size:11px;color:var(--muted);text-align:right;">'+pct+'%</span>'
+          + '<span style="text-align:center;">'+concern+'</span>'
+          + '</div>';
+  });
+  const topSrc = sorted[0] ? sorted[0][0] : '-';
+  const topPct = sorted[0] ? Math.round(sorted[0][1]/total*100) : 0;
+  const lowCount = sorted.filter(([,n])=> total ? (n/total*100) < 5 : false).length;
+  html += '<div style="margin-top:10px;padding:8px 4px;font-size:11px;color:var(--muted);display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;">'
+        + '<span>Top: <strong style="color:var(--text)">'+escapeHtml(topSrc)+'</strong> ('+topPct+'%)</span>'
+        + (lowCount
+            ? '<span style="color:var(--warn);">&#9888; '+lowCount+' source'+(lowCount>1?'s':'')+' below 5% - review</span>'
+            : '<span style="color:var(--ok);">All sources &ge;5% &#10003;</span>')
+        + '</div>';
+  container.innerHTML = html;
+}
+
+/* NEW: Live Bookings collapse & row-limit controls */
+function toggleBookings() {
+  bookingsCollapsed = !bookingsCollapsed;
+  renderLiveBookings();
+}
+function setBookingsLimit(delta) {
+  const total = enquiries.filter(e=>e.stage==='Booked').length;
+  bookingsLimit = Math.max(1, Math.min(total || 1, bookingsLimit + delta));
+  renderLiveBookings();
 }
 
 function renderPacing() {
@@ -788,7 +798,6 @@ function renderPacing() {
   const staleCount = enquiries.filter(e=>ACTIVE_STAGES.includes(e.stage)&&(dateDiff(e.lastContactAt)===null||dateDiff(e.lastContactAt)>STALE_DAYS)).length;
   const paceColor = totalWon >= expectedNow ? '#2bd47d' : totalWon >= expectedNow * 0.8 ? '#ffb02e' : '#ff5c5c';
   const paceLabel = totalWon >= expectedNow ? 'On track' : totalWon >= expectedNow * 0.8 ? 'Slightly behind' : 'Behind pace';
-
   let counterRows = '';
   if(globalTarget > 0) {
     config.counters.forEach(c => {
@@ -797,119 +806,105 @@ function renderPacing() {
       const cExpected = Math.round(cTarget * day / daysInMonth);
       const cPct = cTarget ? Math.min(100, Math.round(cWon/cTarget*100)) : 0;
       const cColor = cWon >= cExpected ? '#2bd47d' : cWon >= cExpected*0.7 ? '#ffb02e' : '#ff5c5c';
-      counterRows += `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);">
-        <span style="min-width:110px;font-size:13px;font-weight:500">${escapeHtml(c)}</span>
-        <div style="flex:1;background:var(--panel-2);border-radius:4px;height:8px;overflow:hidden;">
-          <div style="height:100%;width:${cPct}%;background:${cColor};border-radius:4px;transition:width .4s;"></div>
-        </div>
-        <span style="font-size:12px;color:var(--muted);min-width:80px;text-align:right">${cWon} / ${cTarget} (exp. ${cExpected})</span>
-      </div>`;
+      counterRows += '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);">'
+        + '<span style="min-width:110px;font-size:13px;font-weight:500">'+escapeHtml(c)+'</span>'
+        + '<div style="flex:1;background:var(--panel-2);border-radius:4px;height:8px;overflow:hidden;">'
+        + '<div style="height:100%;width:'+cPct+'%;background:'+cColor+';border-radius:4px;transition:width .4s;"></div>'
+        + '</div>'
+        + '<span style="font-size:12px;color:var(--muted);min-width:80px;text-align:right">'+cWon+' / '+cTarget+' (exp. '+cExpected+')</span>'
+        + '</div>';
     });
   }
-
-  wrap.innerHTML = globalTarget ? `
-    <div class="card" style="padding:16px 20px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-        <h3 style="margin:0;">Target pacing — ${now.toLocaleString('en-IN',{month:'long'})}</h3>
-        <span style="font-size:12px;color:var(--muted);">Day ${day} of ${daysInMonth} · ${daysLeft} days left</span>
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px;">
-        <div style="text-align:center;padding:10px;background:var(--panel-2);border-radius:8px;">
-          <div style="font-size:24px;font-weight:700;color:${paceColor}">${totalWon}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px;">Bookings won</div>
-        </div>
-        <div style="text-align:center;padding:10px;background:var(--panel-2);border-radius:8px;">
-          <div style="font-size:24px;font-weight:700;color:var(--muted)">${expectedNow}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px;">Expected today</div>
-        </div>
-        <div style="text-align:center;padding:10px;background:var(--panel-2);border-radius:8px;">
-          <div style="font-size:24px;font-weight:700;">${globalTarget}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px;">Monthly target</div>
-        </div>
-        <div style="text-align:center;padding:10px;background:var(--panel-2);border-radius:8px;">
-          <div style="font-size:24px;font-weight:700;color:${needed>daysLeft?'#ff5c5c':'var(--ok)'}">${needed}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px;">Still needed</div>
-        </div>
-        <div style="text-align:center;padding:10px;background:var(--panel-2);border-radius:8px;">
-          <div style="font-size:24px;font-weight:700;color:var(--danger)">${staleCount}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px;">Stale leads</div>
-        </div>
-      </div>
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
-        <div style="flex:1;background:var(--panel-2);border-radius:6px;height:12px;overflow:hidden;position:relative;">
-          <div style="position:absolute;left:0;top:0;height:100%;width:${expectedPct}%;background:var(--line);"></div>
-          <div style="position:absolute;left:0;top:0;height:100%;width:${pacePct}%;background:${paceColor};border-radius:6px;transition:width .4s;"></div>
-        </div>
-        <span style="font-size:12px;font-weight:600;color:${paceColor};min-width:90px;">${paceLabel}</span>
-      </div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">Gray bar = expected pace today · Colored bar = actual bookings</div>
-      ${counterRows ? `<div style="margin-top:4px;">${counterRows}</div>` : ''}
-    </div>` : `<div class="card" style="padding:14px 20px;display:flex;align-items:center;gap:12px;">
-      <span style="font-size:22px;">🎯</span>
-      <div><p style="margin:0;font-size:13px;font-weight:500;">No monthly target set</p>
-      <p style="margin:4px 0 0;font-size:12px;color:var(--muted);">Go to Settings → Monthly Targets to set your booking goal. The pacing bar will appear here.</p></div>
-      <button class="btn btn-sm btn-primary" onclick="setView('settings')" style="margin-left:auto;white-space:nowrap;">Set Target →</button>
-    </div>`;
+  wrap.innerHTML = globalTarget ? '<div class="card" style="padding:16px 20px;">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">'
+    + '<h3 style="margin:0;">Target pacing &mdash; '+now.toLocaleString('en-IN',{month:'long'})+'</h3>'
+    + '<span style="font-size:12px;color:var(--muted);">Day '+day+' of '+daysInMonth+' &middot; '+daysLeft+' days left</span>'
+    + '</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px;">'
+    + '<div style="text-align:center;padding:10px;background:var(--panel-2);border-radius:8px;"><div style="font-size:24px;font-weight:700;color:'+paceColor+'">'+totalWon+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">Bookings won</div></div>'
+    + '<div style="text-align:center;padding:10px;background:var(--panel-2);border-radius:8px;"><div style="font-size:24px;font-weight:700;color:var(--muted)">'+expectedNow+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">Expected today</div></div>'
+    + '<div style="text-align:center;padding:10px;background:var(--panel-2);border-radius:8px;"><div style="font-size:24px;font-weight:700;">'+globalTarget+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">Monthly target</div></div>'
+    + '<div style="text-align:center;padding:10px;background:var(--panel-2);border-radius:8px;"><div style="font-size:24px;font-weight:700;color:'+(needed>daysLeft?'#ff5c5c':'var(--ok)')+'">'+needed+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">Still needed</div></div>'
+    + '<div style="text-align:center;padding:10px;background:var(--panel-2);border-radius:8px;"><div style="font-size:24px;font-weight:700;color:var(--danger)">'+staleCount+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">Stale leads</div></div>'
+    + '</div>'
+    + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">'
+    + '<div style="flex:1;background:var(--panel-2);border-radius:6px;height:12px;overflow:hidden;position:relative;">'
+    + '<div style="position:absolute;left:0;top:0;height:100%;width:'+expectedPct+'%;background:var(--line);"></div>'
+    + '<div style="position:absolute;left:0;top:0;height:100%;width:'+pacePct+'%;background:'+paceColor+';border-radius:6px;transition:width .4s;"></div>'
+    + '</div>'
+    + '<span style="font-size:12px;font-weight:600;color:'+paceColor+';min-width:90px;">'+paceLabel+'</span>'
+    + '</div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-bottom:14px;">Gray bar = expected pace today &middot; Colored bar = actual bookings</div>'
+    + (counterRows ? '<div style="margin-top:4px;">'+counterRows+'</div>' : '')
+    + '</div>'
+    : '<div class="card" style="padding:14px 20px;display:flex;align-items:center;gap:12px;">'
+    + '<span style="font-size:22px;">&#127919;</span>'
+    + '<div><p style="margin:0;font-size:13px;font-weight:500;">No monthly target set</p>'
+    + '<p style="margin:4px 0 0;font-size:12px;color:var(--muted);">Go to Settings &rarr; Monthly Targets to set your booking goal.</p></div>'
+    + '<button class="btn btn-sm btn-primary" onclick="setView(\'settings\')" style="margin-left:auto;white-space:nowrap;">Set Target &rarr;</button>'
+    + '</div>';
 }
+
+/* NEW: renderLiveBookings with collapse + row count controls */
 function renderLiveBookings() {
   const wrap = document.getElementById('live-bookings-section'); if (!wrap) return;
   const booked = enquiries.filter(e => e.stage === 'Booked');
   if (!booked.length) { wrap.innerHTML = ''; return; }
   const today = todayISO();
   const totalAmt = booked.reduce((s,e) => s + (parseFloat(e.bookingAmt)||0), 0);
-  const dueThisWeek = booked.filter(e => e.deliveryDate && e.deliveryDate >= today && dateDiff(today) !== null && new Date(e.deliveryDate) - new Date(today) <= 7*86400000).length;
+  const dueThisWeek = booked.filter(e => e.deliveryDate && e.deliveryDate >= today && new Date(e.deliveryDate) - new Date(today) <= 7*86400000).length;
   const overdue = booked.filter(e => e.deliveryDate && e.deliveryDate < today);
-  // Counter breakdown
   const counterCounts = {};
   config.counters.forEach(c => { const n = booked.filter(e=>e.counter===c).length; if(n>0) counterCounts[c]=n; });
-  const counterBadges = Object.entries(counterCounts).map(([c,n])=>`<span style="background:rgba(160,91,255,0.15);color:#a05bff;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600">${escapeHtml(c)}: ${n}</span>`).join(' ');
-  // Table rows
+  const counterBadges = Object.entries(counterCounts).map(([c,n])=>'<span style="background:rgba(160,91,255,0.15);color:#a05bff;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600">'+escapeHtml(c)+': '+n+'</span>').join(' ');
+  const displayLimit = Math.min(bookingsLimit, booked.length);
   const rows = [...booked].sort((a,b)=>(a.deliveryDate||'9999').localeCompare(b.deliveryDate||'9999'));
-  const tableRows = rows.map(e => {
-    const daysBooked = dateDiff(e.lastContactAt);
+  const tableRows = rows.slice(0, displayLimit).map(e => {
     const delDiff = e.deliveryDate ? Math.round((new Date(e.deliveryDate)-new Date(today))/86400000) : null;
     const delColor = delDiff===null?'var(--muted)':delDiff<0?'var(--danger)':delDiff<=3?'var(--warn)':'var(--ok)';
-    const delLabel = delDiff===null?'—':delDiff<0?Math.abs(delDiff)+' days overdue':delDiff===0?'Today':delDiff+' days';
-    return `<tr onclick="openModal('${escapeHtml(e.id)}')" style="cursor:pointer" class="booking-row">
-      <td>${escapeHtml(e.id)}</td>
-      <td><strong>${escapeHtml(e.customer)}</strong><br><span style="color:var(--muted);font-size:11px">${escapeHtml(e.phone)}</span></td>
-      <td>${escapeHtml(e.counter||'')}</td>
-      <td>${escapeHtml(e.model)}</td>
-      <td>${escapeHtml(e.rep)}</td>
-      <td style="color:var(--ok);font-weight:600">${e.bookingAmt?'₹'+(e.bookingAmt):'-'}</td>
-      <td style="color:${delColor};font-weight:600">${delLabel}</td>
-    </tr>`;
+    const delLabel = delDiff===null?'-':delDiff<0?Math.abs(delDiff)+' days overdue':delDiff===0?'Today':delDiff+' days';
+    return '<tr onclick="openModal(\''+escapeHtml(e.id)+'\')" style="cursor:pointer" class="booking-row">'
+      + '<td>'+escapeHtml(e.id)+'</td>'
+      + '<td><strong>'+escapeHtml(e.customer)+'</strong><br><span style="color:var(--muted);font-size:11px">'+escapeHtml(e.phone)+'</span></td>'
+      + '<td>'+escapeHtml(e.counter||'')+'</td>'
+      + '<td>'+escapeHtml(e.model)+'</td>'
+      + '<td>'+escapeHtml(e.rep)+'</td>'
+      + '<td style="color:var(--ok);font-weight:600">'+(e.bookingAmt?'Rs '+e.bookingAmt:'-')+'</td>'
+      + '<td style="color:'+delColor+';font-weight:600">'+delLabel+'</td>'
+      + '</tr>';
   }).join('');
-  wrap.innerHTML = `<div class="card" style="border-left:4px solid #a05bff;">
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
-      <h3 style="margin:0;color:#a05bff;font-size:16px;">🚀 Live Bookings</h3>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">${counterBadges}</div>
-    </div>
-    <div class="grid grid-4" style="gap:10px;margin-bottom:14px;">
-      <div style="background:var(--panel-2);border-radius:8px;padding:10px;text-align:center">
-        <div style="font-size:26px;font-weight:700;color:#a05bff">${booked.length}</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px">Vehicles booked</div>
-      </div>
-      <div style="background:var(--panel-2);border-radius:8px;padding:10px;text-align:center">
-        <div style="font-size:26px;font-weight:700;color:var(--ok)">${totalAmt?'₹'+totalAmt+'':'-'}</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px">Advance collected</div>
-      </div>
-      <div style="background:var(--panel-2);border-radius:8px;padding:10px;text-align:center">
-        <div style="font-size:26px;font-weight:700;color:var(--warn)">${dueThisWeek}</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px">Deliveries this week</div>
-      </div>
-      <div style="background:var(--panel-2);border-radius:8px;padding:10px;text-align:center">
-        <div style="font-size:26px;font-weight:700;color:${overdue.length?'var(--danger)':'var(--ok)'}">${overdue.length}</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px">Delivery overdue</div>
-      </div>
-    </div>
-    <div style="overflow-x:auto">
-      <table class="table">
-        <thead><tr><th>ID</th><th>Customer</th><th>Counter</th><th>Model</th><th>Rep</th><th>Advance (₹)</th><th>Delivery</th></tr></thead>
-        <tbody>${tableRows}</tbody>
-      </table>
-    </div>
-  </div>`;
+  const showingLabel = booked.length > displayLimit
+    ? '<span style="font-size:12px;color:var(--warn);">Showing '+displayLimit+' of '+booked.length+'</span>'
+    : '<span style="font-size:12px;color:var(--muted);">'+booked.length+' booking'+(booked.length!==1?'s':'')+'</span>';
+  wrap.innerHTML = '<div class="card" style="border-left:4px solid #a05bff;">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:'+(bookingsCollapsed?'0':'14px')+';">'
+    + '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+    + '<h3 style="margin:0;color:#a05bff;font-size:16px;">&#128640; Live Bookings</h3>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;">'+counterBadges+'</div>'
+    + '</div>'
+    + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+    + showingLabel
+    + '<div style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;font-size:12px;">'
+    + '<span style="color:var(--muted);">Show</span>'
+    + '<button onclick="setBookingsLimit(-1)" style="background:none;border:none;color:var(--text);cursor:pointer;font-size:18px;line-height:1;padding:0 3px;" title="Fewer rows">&minus;</button>'
+    + '<strong style="min-width:22px;text-align:center;">'+displayLimit+'</strong>'
+    + '<button onclick="setBookingsLimit(1)" style="background:none;border:none;color:var(--text);cursor:pointer;font-size:18px;line-height:1;padding:0 3px;" title="More rows">+</button>'
+    + '</div>'
+    + '<button onclick="toggleBookings()" style="padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);cursor:pointer;font-size:12px;white-space:nowrap;">'+(bookingsCollapsed?'&#9660; Expand':'&#9650; Minimise')+'</button>'
+    + '</div>'
+    + '</div>'
+    + (bookingsCollapsed ? '' :
+        '<div class="grid grid-4" style="gap:10px;margin-bottom:14px;">'
+        + '<div style="background:var(--panel-2);border-radius:8px;padding:10px;text-align:center"><div style="font-size:26px;font-weight:700;color:#a05bff">'+booked.length+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Vehicles booked</div></div>'
+        + '<div style="background:var(--panel-2);border-radius:8px;padding:10px;text-align:center"><div style="font-size:26px;font-weight:700;color:var(--ok)">'+(totalAmt?'Rs '+totalAmt:'-')+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Advance collected</div></div>'
+        + '<div style="background:var(--panel-2);border-radius:8px;padding:10px;text-align:center"><div style="font-size:26px;font-weight:700;color:var(--warn)">'+dueThisWeek+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Deliveries this week</div></div>'
+        + '<div style="background:var(--panel-2);border-radius:8px;padding:10px;text-align:center"><div style="font-size:26px;font-weight:700;color:'+(overdue.length?'var(--danger)':'var(--ok)')+'">'+overdue.length+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Delivery overdue</div></div>'
+        + '</div>'
+        + '<div style="overflow-x:auto">'
+        + '<table class="table"><thead><tr><th>ID</th><th>Customer</th><th>Counter</th><th>Model</th><th>Rep</th><th>Advance</th><th>Delivery</th></tr></thead>'
+        + '<tbody>'+tableRows+'</tbody></table>'
+        + '</div>')
+    + '</div>';
 }
 
 function renderCounterSummary() {
@@ -922,520 +917,3 @@ function renderLeaderboard() {
   const data=config.reps.map(r=>{const list=E.filter(e=>e.rep===r),won=list.filter(e=>e.stage==='Won').length,conv=list.length?Math.round(won/list.length*100):0;return{rep:r,total:list.length,won,conv};}).sort((a,b)=>b.won-a.won||b.conv-a.conv);
   let html=''; data.forEach((d,i)=>{html+='<div class="lb-row"><div class="lb-rank">'+(i+1)+'</div><div class="lb-name">'+escapeHtml(d.rep)+'</div><div class="lb-stats">'+d.won+'/'+d.total+'</div><div class="lb-conv">'+d.conv+'%</div></div>';}); lb.innerHTML=html;
 }
-
-/* ====================== ENQUIRIES TABLE ====================== */
-function renderTable() {
-  const search=(document.getElementById('f-search').value||'').toLowerCase();
-  const fStage=document.getElementById('f-stage').value,fSource=document.getElementById('f-source').value;
-  const fRep=document.getElementById('f-rep').value,fCounter=document.getElementById('f-counter').value;
-  const fFinance=document.getElementById('f-finance').value,fFinancier=document.getElementById('f-financier').value;
-  const fExchange=(document.getElementById('f-exchange-filter')||{}).value||'';
-  const fMonth=(document.getElementById('f-month')||{}).value||''; const periodFilter=fMonth||currentPeriod;
-  const rows=enquiries.filter(e=>{
-    if(periodFilter&&getMonthKey(e)!==periodFilter) return false;
-    if(fExchange&&(e.exchange||'No')!==fExchange) return false;
-    if(periodFilter&&getMonthKey(e)!==periodFilter) return false;
-    if(fStage&&e.stage!==fStage) return false; if(fSource&&e.source!==fSource) return false;
-    if(fRep&&e.rep!==fRep) return false; if(fCounter&&e.counter!==fCounter) return false;
-    if(fFinance&&e.financeRequired!==fFinance) return false; if(fFinancier&&e.financier!==fFinancier) return false;
-    if(search){const blob=(e.customer+' '+e.phone+' '+e.email+' '+e.notes+' '+e.id).toLowerCase();if(!blob.includes(search)) return false;}
-    return true;
-  });
-  lastFilteredIds=rows.map(e=>e.id);
-  const tbody=document.getElementById('enquiry-tbody'); let html='';
-  rows.forEach(e=>{
-    const dsc=dateDiff(e.lastContactAt),stale=ACTIVE_STAGES.includes(e.stage)&&(dsc===null||dsc>STALE_DAYS);
-    const stageCls='badge-'+e.stage.toLowerCase().replace(/ /g,'-');
-    const finBadge=e.financeRequired==='Yes'?'<span class="badge badge-yes">'+escapeHtml(e.financier||'Yes')+'</span>':'<span class="badge badge-no">Cash</span>';
-    const checked=selectedIds.has(e.id)?' checked':'';
-    html+='<tr class="'+(stale?'leak-row':'')+'" onclick="openModal(\''+e.id+'\')" style="cursor:pointer">';
-    html+='<td onclick="event.stopPropagation()"><input type="checkbox" class="row-check" data-id="'+escapeHtml(e.id)+'"'+checked+' onclick="toggleSelectRow(\''+e.id+'\',this.checked)"/></td>';
-    html+='<td>'+escapeHtml(e.id)+'</td>';
-    html+='<td><strong>'+escapeHtml(e.customer)+'</strong>'+(e.exchange==='Yes'?' <span class="badge" style="background:rgba(255,176,46,0.2);color:var(--warn);font-size:10px">EX</span>':'')+'<br><span style="color:var(--muted);font-size:11px">'+escapeHtml(e.phone)+'</span></td>';
-    html+='<td>'+escapeHtml(e.counter||'')+'</td><td>'+escapeHtml(e.source)+'</td><td>'+escapeHtml(e.model)+'</td>';
-    html+='<td>₹'+(e.budget||0)+'</td><td>'+escapeHtml(e.rep)+'</td>';
-    html+='<td><span class="badge '+stageCls+'">'+escapeHtml(e.stage)+'</span></td>';
-    html+='<td>'+finBadge+'</td><td>'+(e.lastContactAt||'—')+'</td><td>'+(e.nextFollowUp||'—')+'</td>';
-    html+='<td><button class="btn btn-sm" onclick="event.stopPropagation();openModal(\''+e.id+'\')">Edit</button></td>';
-    html+='</tr>';
-  });
-  if(!rows.length) html='<tr><td colspan="13" style="text-align:center;padding:30px;color:var(--muted)">No enquiries match the filters.</td></tr>';
-  tbody.innerHTML=html; updateBulkBar();
-}
-function toggleSelectAll(checked){if(checked)lastFilteredIds.forEach(id=>selectedIds.add(id));else lastFilteredIds.forEach(id=>selectedIds.delete(id));document.querySelectorAll('.row-check').forEach(cb=>{cb.checked=selectedIds.has(cb.dataset.id);});updateBulkBar();}
-function selectAllVisible(){lastFilteredIds.forEach(id=>selectedIds.add(id));document.querySelectorAll('.row-check').forEach(cb=>{cb.checked=selectedIds.has(cb.dataset.id);});updateBulkBar();}
-function selectAllEnquiries(){enquiries.forEach(e=>selectedIds.add(e.id));document.querySelectorAll('.row-check').forEach(cb=>{cb.checked=selectedIds.has(cb.dataset.id);});updateBulkBar();}
-function deleteAllEnquiries(){const total=enquiries.length;if(!total){alert('No enquiries to delete.');return;}if(!confirm('Delete ALL '+total+' enquiries permanently?')) return;if(!confirm('Are you absolutely sure? This cannot be undone.')) return;enquiries=[];selectedIds.clear();saveData();refreshAllSelects();setView('enquiries');}
-function toggleSelectRow(id,checked){if(checked)selectedIds.add(id);else selectedIds.delete(id);updateBulkBar();}
-function clearSelection(){selectedIds.clear();document.querySelectorAll('.row-check').forEach(cb=>cb.checked=false);const sa=document.getElementById('select-all');if(sa)sa.checked=false;updateBulkBar();}
-function updateBulkBar(){
-  const bar=document.getElementById('bulk-bar'),count=selectedIds.size;
-  if(bar){bar.style.display='flex';document.getElementById('bulk-count').textContent=count===0?'Bulk actions:':count+' selected';}
-  const sa=document.getElementById('select-all');
-  if(sa){const visible=lastFilteredIds.length,visibleSelected=lastFilteredIds.filter(id=>selectedIds.has(id)).length;sa.checked=visible>0&&visibleSelected===visible;sa.indeterminate=visibleSelected>0&&visibleSelected<visible;}
-}
-function deleteSelected(){const count=selectedIds.size;if(!count)return;if(!confirm(count===1?'Delete this 1 enquiry?':'Delete these '+count+' enquiries?')) return;enquiries=enquiries.filter(e=>!selectedIds.has(e.id));selectedIds.clear();saveData();renderTable();}
-function clearFilters(){['f-search','f-stage','f-source','f-rep','f-counter','f-finance','f-financier','f-month','f-exchange-filter'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});renderTable();}
-
-/* ====================== COUNTERS ====================== */
-function renderCounters(){
-  const wrap=document.getElementById('counter-detail'),E=getActiveEnquiries();
-  let html='<div style="overflow-x:auto"><table class="table"><thead><tr><th>Counter</th><th>Total</th><th>Active</th><th>Won</th><th>Lost</th><th>Conv %</th><th>Win Rate</th><th>Finance %</th><th>Stale</th></tr></thead><tbody>';
-  config.counters.forEach(c=>{
-    const list=E.filter(e=>e.counter===c),active=list.filter(e=>ACTIVE_STAGES.includes(e.stage)).length,won=list.filter(e=>e.stage==='Won').length,lost=list.filter(e=>e.stage==='Lost').length,closed=won+lost;
-    const conv=list.length?Math.round(won/list.length*100):0,winRate=closed?Math.round(won/closed*100):0;
-    const fin=list.filter(e=>e.financeRequired==='Yes').length,finPct=list.length?Math.round(fin/list.length*100):0;
-    const stale=list.filter(e=>ACTIVE_STAGES.includes(e.stage)&&(dateDiff(e.lastContactAt)===null||dateDiff(e.lastContactAt)>STALE_DAYS)).length;
-    html+='<tr><td><strong>'+escapeHtml(c)+'</strong></td><td>'+list.length+'</td><td>'+active+'</td><td style="color:var(--ok)">'+won+'</td><td style="color:var(--danger)">'+lost+'</td><td><strong>'+conv+'%</strong><div class="pb"><div class="pb-fill ok" style="width:'+conv+'%"></div></div></td><td>'+winRate+'%</td><td>'+finPct+'%</td><td'+(stale?' style="color:var(--danger);font-weight:600"':'')+'>'+stale+'</td></tr>';
-  });
-  html+='</tbody></table></div>'; wrap.innerHTML=html;
-  const labels=config.counters,counts=labels.map(c=>E.filter(e=>e.counter===c).length);
-  drawChart('chart-counter','bar',{labels,datasets:[{data:counts,backgroundColor:'#ff2e2e'}]},{plugins:{legend:{display:false}}});
-  const convs=labels.map(c=>{const list=E.filter(e=>e.counter===c),won=list.filter(e=>e.stage==='Won').length;return list.length?Math.round(won/list.length*100):0;});
-  drawChart('chart-counter-conv','bar',{labels,datasets:[{data:convs,backgroundColor:'#2bd47d'}]},{plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>v+'%'}}}});
-}
-
-/* ====================== FINANCE ====================== */
-function renderFinance(){
-  const E=getActiveEnquiries(),total=E.length,finReq=E.filter(e=>e.financeRequired==='Yes'),finWon=finReq.filter(e=>e.stage==='Won').length,cashWon=E.filter(e=>e.stage==='Won'&&e.financeRequired!=='Yes').length;
-  document.getElementById('fin-total').textContent=finReq.length;
-  document.getElementById('fin-share').textContent=total?Math.round(finReq.length/total*100)+'% of all enquiries':'';
-  document.getElementById('fin-won').textContent=finWon; document.getElementById('cash-won').textContent=cashWon;
-  const labels=config.financiers,counts=labels.map(f=>finReq.filter(e=>e.financier===f).length);
-  drawChart('chart-financier','bar',{labels,datasets:[{data:counts,backgroundColor:['#ff2e2e','#ffb02e','#5b9eff','#2bd47d','#a05bff','#ff5c93']}]},{plugins:{legend:{display:false}}});
-  let html='<div style="overflow-x:auto"><table class="table"><thead><tr><th>Financier</th><th>Enquiries</th><th>Won</th><th>Lost</th><th>Active</th><th>Conv %</th><th>Win Rate</th></tr></thead><tbody>';
-  config.financiers.forEach(f=>{const list=finReq.filter(e=>e.financier===f),won=list.filter(e=>e.stage==='Won').length,lost=list.filter(e=>e.stage==='Lost').length,active=list.filter(e=>ACTIVE_STAGES.includes(e.stage)).length,closed=won+lost;html+='<tr><td><strong>'+escapeHtml(f)+'</strong></td><td>'+list.length+'</td><td style="color:var(--ok)">'+won+'</td><td style="color:var(--danger)">'+lost+'</td><td>'+active+'</td><td><strong>'+(list.length?Math.round(won/list.length*100):0)+'%</strong></td><td>'+(closed?Math.round(won/closed*100):0)+'%</td></tr>';});
-  html+='</tbody></table></div>'; document.getElementById('financier-table').innerHTML=html;
-}
-
-/* ====================== PERFORMANCE ====================== */
-function renderPerformance(){
-  const E=getActiveEnquiries();
-  // Rep table
-  let html='<div style="overflow-x:auto"><table class="table"><thead><tr><th>Rep</th><th>Total</th><th>Active</th><th>Won</th><th>Lost</th><th>Conv %</th><th>TD offered %</th><th>TD → Won %</th></tr></thead><tbody>';
-  config.reps.forEach(r=>{
-    const list=E.filter(e=>e.rep===r),won=list.filter(e=>e.stage==='Won').length,lost=list.filter(e=>e.stage==='Lost').length,active=list.filter(e=>ACTIVE_STAGES.includes(e.stage)).length,closed=won+lost;
-    const tdEligible=list.filter(e=>['Qualified','Test Drive','Negotiation','Won','Lost'].includes(e.stage)&&isTDModel(e.model));
-    const tdOffered=tdEligible.filter(e=>e.tdOffered&&e.tdOffered!=='Not yet offered').length;
-    const tdCompleted=list.filter(e=>e.tdOffered==='Yes — completed').length;
-    const tdOfferPct=tdEligible.length?Math.round(tdOffered/tdEligible.length*100):0;
-    const tdWonPct=tdCompleted?Math.round(won/tdCompleted*100):0;
-    const offerColor=tdOfferPct>=70?'var(--ok)':tdOfferPct>=40?'var(--warn)':'var(--danger)';
-    html+='<tr><td><strong>'+escapeHtml(r)+'</strong></td><td>'+list.length+'</td><td>'+active+'</td><td style="color:var(--ok)">'+won+'</td><td style="color:var(--danger)">'+lost+'</td>';
-    html+='<td><strong>'+(list.length?Math.round(won/list.length*100):0)+'%</strong><div class="pb"><div class="pb-fill ok" style="width:'+(list.length?Math.round(won/list.length*100):0)+'%"></div></div></td>';
-    html+='<td><strong style="color:'+offerColor+'">'+tdOfferPct+'%</strong><div class="pb"><div class="pb-fill" style="width:'+tdOfferPct+'%;background:'+offerColor+'"></div></div></td>';
-    html+='<td><strong>'+(tdCompleted?tdWonPct:0)+'%</strong></td>';
-    html+='</tr>';
-  });
-  html+='</tbody></table></div>'; document.getElementById('rep-detail').innerHTML=html;
-  // TD summary card
-  const tdEligAll=E.filter(e=>['Qualified','Test Drive','Negotiation','Won','Lost'].includes(e.stage)&&isTDModel(e.model));
-  const tdOffAll=tdEligAll.filter(e=>e.tdOffered&&e.tdOffered!=='Not yet offered').length;
-  const tdCompAll=E.filter(e=>e.tdOffered==='Yes — completed').length;
-  const tdDecAll=E.filter(e=>e.tdOffered==='Yes — customer declined').length;
-  const tdNotYet=tdEligAll.filter(e=>!e.tdOffered||e.tdOffered==='Not yet offered').length;
-  const tdWonAll=E.filter(e=>e.tdOffered==='Yes — completed'&&e.stage==='Won').length;
-  const tdOfferPctAll=tdEligAll.length?Math.round(tdOffAll/tdEligAll.length*100):0;
-  const tdConvAll=tdCompAll?Math.round(tdWonAll/tdCompAll*100):0;
-  const existing=document.getElementById('td-analytics-card');
-  const card=existing||document.createElement('div');
-  card.id='td-analytics-card';card.className='card';card.style.marginTop='14px';
-  card.innerHTML='<h3>🏍️ Test Ride Analytics</h3><div class="grid grid-4" style="gap:10px;margin-bottom:14px;">'+
-    '<div style="background:var(--panel-2);border-radius:8px;padding:10px;text-align:center"><div style="font-size:22px;font-weight:700;color:'+(tdOfferPctAll>=70?'var(--ok)':tdOfferPctAll>=40?'var(--warn)':'var(--danger)')+'">'+tdOfferPctAll+'%</div><div style="font-size:11px;color:var(--muted);margin-top:2px">TD offer rate</div></div>'+
-    '<div style="background:var(--panel-2);border-radius:8px;padding:10px;text-align:center"><div style="font-size:22px;font-weight:700;color:var(--ok)">'+tdCompAll+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Completed rides</div></div>'+
-    '<div style="background:var(--panel-2);border-radius:8px;padding:10px;text-align:center"><div style="font-size:22px;font-weight:700;color:var(--danger)">'+tdNotYet+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Still not offered</div></div>'+
-    '<div style="background:var(--panel-2);border-radius:8px;padding:10px;text-align:center"><div style="font-size:22px;font-weight:700;color:var(--ok)">'+tdConvAll+'%</div><div style="font-size:11px;color:var(--muted);margin-top:2px">TD → booking rate</div></div>'+
-    '</div><p class="help-text">Target: offer rate ≥ 70% of all Qualified+ enquiries. A TD offer rate below 40% by any rep is a coaching priority.</p>';
-  if(!existing){const repView=document.getElementById('view-performance');if(repView)repView.appendChild(card);}
-  const labels=[],counts=[]; for(let i=29;i>=0;i--){const d=daysAgo(i);labels.push(d.slice(5));counts.push(E.filter(e=>e.stage==='Won'&&e.lastContactAt===d).length);}
-  drawChart('chart-trend','line',{labels,datasets:[{data:counts,borderColor:'#2bd47d',backgroundColor:'rgba(43,212,125,0.15)',fill:true,tension:0.3}]},{plugins:{legend:{display:false}}});
-  const modelMap={};E.forEach(e=>{if(!modelMap[e.model])modelMap[e.model]={total:0,won:0};modelMap[e.model].total++;if(e.stage==='Won')modelMap[e.model].won++;});
-  const sorted=Object.entries(modelMap).sort((a,b)=>b[1].total-a[1].total);
-  let mh='<div style="overflow-x:auto"><table class="table"><thead><tr><th>Model</th><th>Enquiries</th><th>Won</th><th>Win Rate</th></tr></thead><tbody>';
-  sorted.forEach(([m,d])=>{const wr=d.total?Math.round(d.won/d.total*100):0;mh+='<tr><td><strong>'+escapeHtml(m)+'</strong></td><td>'+d.total+'</td><td>'+d.won+'</td><td>'+wr+'%</td></tr>';});
-  mh+='</tbody></table></div>'; document.getElementById('model-table').innerHTML=mh;
-
-  // ── Exchange analytics ──────────────────────────────────────
-  const exAll = E.filter(e=>e.exchange==='Yes');
-  const exWon = exAll.filter(e=>e.stage==='Won').length;
-  const exConv = exAll.length ? Math.round(exWon/exAll.length*100) : 0;
-  const nonExConv = (E.length-exAll.length) ? Math.round(E.filter(e=>e.exchange!=='Yes'&&e.stage==='Won').length/(E.length-exAll.length)*100) : 0;
-  // Brand breakdown
-  const brandMap = {};
-  exAll.forEach(e => { if(e.exBrand) brandMap[e.exBrand]=(brandMap[e.exBrand]||0)+1; });
-  const brands = Object.entries(brandMap).sort((a,b)=>b[1]-a[1]);
-  // Value gap
-  const withValues = exAll.filter(e=>e.exAsking>0&&e.exOffered>0);
-  const avgGap = withValues.length ? Math.round(withValues.reduce((s,e)=>s+(e.exAsking-e.exOffered),0)/withValues.length) : null;
-
-  let exCard = document.getElementById('ex-analytics-card');
-  if (!exCard) { exCard=document.createElement('div'); exCard.id='ex-analytics-card'; exCard.className='card'; exCard.style.marginTop='14px'; document.getElementById('view-performance').appendChild(exCard); }
-
-  const brandRows = brands.map(([b,n])=>{
-    const bWon=exAll.filter(e=>e.exBrand===b&&e.stage==='Won').length;
-    const bConv=Math.round(bWon/n*100);
-    const pct=brands[0]?Math.round(n/brands[0][1]*100):0;
-    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);">
-      <span style="min-width:90px;font-size:13px;font-weight:500">${escapeHtml(b)}</span>
-      <div style="flex:1;background:var(--panel-2);border-radius:4px;height:8px;overflow:hidden;">
-        <div style="height:100%;width:${pct}%;background:var(--warn);border-radius:4px;"></div>
-      </div>
-      <span style="font-size:12px;color:var(--muted);min-width:110px;text-align:right">${n} enquiries · ${bConv}% conv</span>
-    </div>`;
-  }).join('');
-
-  exCard.innerHTML = `<h3>🔄 Exchange Vehicle Analytics</h3>
-    <div class="grid grid-4" style="gap:10px;margin-bottom:16px;">
-      <div style="background:var(--panel-2);border-radius:8px;padding:10px;text-align:center"><div style="font-size:22px;font-weight:700">${exAll.length}</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Exchange enquiries</div></div>
-      <div style="background:var(--panel-2);border-radius:8px;padding:10px;text-align:center"><div style="font-size:22px;font-weight:700;color:var(--ok)">${E.length?Math.round(exAll.length/E.length*100):0}%</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Of all enquiries</div></div>
-      <div style="background:var(--panel-2);border-radius:8px;padding:10px;text-align:center">
-        <div style="font-size:22px;font-weight:700;color:${exConv>=nonExConv?'var(--ok)':'var(--warn)'}">${exConv}%</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px">Exchange conv rate</div>
-        <div style="font-size:10px;color:var(--muted)">(non-exchange: ${nonExConv}%)</div>
-      </div>
-      <div style="background:var(--panel-2);border-radius:8px;padding:10px;text-align:center">
-        <div style="font-size:22px;font-weight:700;color:var(--danger)">${avgGap!==null?'₹'+avgGap+'k':'—'}</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px">Avg value gap</div>
-        <div style="font-size:10px;color:var(--muted)">(asking minus offered)</div>
-      </div>
-    </div>
-    ${brands.length ? `<h3 style="margin:0 0 10px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Brands being traded in</h3>${brandRows}` : '<p class="help-text">No exchange brand data yet. Start logging exchange vehicles in enquiries.</p>'}
-    <p class="help-text" style="margin-top:12px">Exchange customers are higher-intent buyers. A value gap above ₹15k is typically where deals fall through — coach your reps to close the gap or offer accessories to compensate.</p>`;
-}
-/* renderPerformance ends above */
-
-/* ====================== LEAKAGE ====================== */
-function renderLeakage(){
-  const E=getActiveEnquiries(),today=todayISO();
-  const stale=E.filter(e=>ACTIVE_STAGES.includes(e.stage)&&(dateDiff(e.lastContactAt)===null||dateDiff(e.lastContactAt)>STALE_DAYS));
-  let html=''; stale.forEach(e=>{const days=dateDiff(e.lastContactAt);html+='<tr onclick="openModal(\''+e.id+'\')" style="cursor:pointer"><td>'+escapeHtml(e.id)+'</td><td><strong>'+escapeHtml(e.customer)+'</strong><br><span style="color:var(--muted);font-size:11px">'+escapeHtml(e.phone)+'</span></td><td>'+escapeHtml(e.counter||'')+'</td><td><span class="badge badge-'+e.stage.toLowerCase().replace(/ /g,'-')+'">'+escapeHtml(e.stage)+'</span></td><td>'+escapeHtml(e.rep)+'</td><td style="color:var(--danger);font-weight:600">'+(days===null?'Never':days+' days')+'</td><td>'+(e.nextFollowUp||'—')+'</td></tr>';});
-  if(!stale.length) html='<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--muted)">No stale enquiries 🎉</td></tr>';
-  document.getElementById('leak-tbody').innerHTML=html;
-  // No test ride table — only TD-priority models (125cc + scooters)
-  const noTD=E.filter(e=>['Qualified','Test Drive','Negotiation'].includes(e.stage)&&isTDModel(e.model)&&(!e.tdOffered||e.tdOffered==='Not yet offered'));
-  let tdHtml=''; noTD.forEach(e=>{const days=dateDiff(e.createdAt);tdHtml+='<tr onclick="openModal(\''+e.id+'\')" style="cursor:pointer;background:rgba(255,176,46,0.05)"><td>'+escapeHtml(e.id)+'</td><td><strong>'+escapeHtml(e.customer)+'</strong><br><span style="color:var(--muted);font-size:11px">'+escapeHtml(e.phone)+'</span></td><td>'+escapeHtml(e.counter||'')+'</td><td><span class="badge badge-'+e.stage.toLowerCase().replace(/ /g,'-')+'">'+escapeHtml(e.stage)+'</span></td><td>'+escapeHtml(e.rep)+'</td><td style="color:var(--warn);font-weight:600">'+(days!==null?days+' days':'—')+'</td></tr>';});
-  if(!noTD.length) tdHtml='<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--muted)">All qualified leads have been offered a test ride ✅</td></tr>';
-  document.getElementById('no-td-tbody').innerHTML=tdHtml;
-  const overdue=E.filter(e=>ACTIVE_STAGES.includes(e.stage)&&e.nextFollowUp&&e.nextFollowUp<today);
-  let oh=''; overdue.forEach(e=>{const days=dateDiff(e.nextFollowUp);oh+='<tr onclick="openModal(\''+e.id+'\')" style="cursor:pointer"><td>'+escapeHtml(e.id)+'</td><td><strong>'+escapeHtml(e.customer)+'</strong></td><td>'+escapeHtml(e.counter||'')+'</td><td><span class="badge badge-'+e.stage.toLowerCase().replace(/ /g,'-')+'">'+escapeHtml(e.stage)+'</span></td><td>'+escapeHtml(e.rep)+'</td><td>'+e.nextFollowUp+'</td><td style="color:var(--danger);font-weight:600">'+days+' days</td></tr>';});
-  if(!overdue.length) oh='<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--muted)">No overdue follow-ups</td></tr>';
-  document.getElementById('overdue-tbody').innerHTML=oh;
-}
-
-/* ====================== SETTINGS ====================== */
-function renderSettings(){
-  renderCrudList('counter-list',config.counters,'Counter',renameCounter,deleteCounter);
-  renderCrudList('rep-list',config.reps,'Rep',renameRep,deleteRep);
-  renderCrudList('model-list',config.models,'Model',renameModel,deleteModel);
-  renderCrudList('financier-list',config.financiers,'Financier',renameFinancier,deleteFinancier);
-  renderColumnMapping(); updateSyncUI(); updateScriptSyncUI(); renderTargetInputs();
-}
-function renderTargetInputs() {
-  const gi = document.getElementById('target-global');
-  if(gi) gi.value = config.targets.global || '';
-  const wrap = document.getElementById('target-counter-list'); if(!wrap) return;
-  let html = '';
-  config.counters.forEach(c => {
-    const val = config.targets.counters[c] || '';
-    html += `<div style="background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;">
-      <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">${escapeHtml(c)}</label>
-      <input type="number" class="counter-target-input" data-counter="${escapeHtml(c)}" value="${val}" min="0" placeholder="e.g. 40" style="width:100%;background:var(--panel);border:1px solid var(--line);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;"/>
-    </div>`;
-  });
-  wrap.innerHTML = html;
-}
-function saveTargets() {
-  config.targets.global = parseInt(document.getElementById('target-global').value) || 0;
-  config.targets.counters = {};
-  document.querySelectorAll('.counter-target-input').forEach(inp => {
-    const c = inp.dataset.counter; const v = parseInt(inp.value);
-    if(c && v > 0) config.targets.counters[c] = v;
-  });
-  saveData(); showToast('Targets saved'); renderPacing();
-}
-function renderColumnMapping(){
-  const wrap=document.getElementById('column-mapping'); if(!wrap) return;
-  const headers=config.lastImportHeaders||[],map=config.lastImportMap||{},overrides=config.columnOverrides||{};
-  if(!headers.length){wrap.innerHTML='<p class="help-text">No imports yet. Use Import → Paste from Google Sheet or CSV File.</p>';return;}
-  let html='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;">';
-  for(const [field,label] of Object.entries(FIELD_LABELS)){
-    const detected=(map[field]!=null&&map[field]>=0)?headers[map[field]]:'',overridden=overrides[field]||'',current=overridden||detected;
-    const status=overridden?'🔧 override':(detected?'✓ auto':'⚠ unmapped'),statusColor=overridden?'var(--info)':(detected?'var(--ok)':'var(--danger)');
-    html+='<label style="display:flex;flex-direction:column;gap:4px;padding:10px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;">';
-    html+='<span style="font-size:12px;color:var(--muted);display:flex;justify-content:space-between;"><strong style="color:var(--text)">'+escapeHtml(label)+'</strong><span style="color:'+statusColor+';font-size:11px">'+status+'</span></span>';
-    html+='<select onchange="setColumnOverride(\''+field+'\',this.value)" style="background:var(--panel);border:1px solid var(--line);color:var(--text);padding:6px 8px;border-radius:6px;font-size:12px;"><option value="">— Not mapped —</option>';
-    headers.forEach(h=>{html+='<option value="'+escapeHtml(h)+'"'+(h===current?' selected':'')+'>'+escapeHtml(h)+'</option>';});
-    html+='</select></label>';
-  }
-  html+='</div>'; wrap.innerHTML=html;
-}
-function setColumnOverride(field,headerName){if(!config.columnOverrides)config.columnOverrides={};if(headerName)config.columnOverrides[field]=headerName;else delete config.columnOverrides[field];saveData();renderColumnMapping();}
-function clearColumnOverrides(){if(!confirm('Clear all manual column overrides?'))return;config.columnOverrides={};saveData();renderColumnMapping();alert('Cleared. Re-import to re-process.');}
-function renderCrudList(elemId,arr,label,renameFn,deleteFn){
-  let html='';arr.forEach((v,i)=>{html+='<li><input value="'+escapeHtml(v)+'" data-idx="'+i+'"/><button class="btn btn-sm icon-btn danger" title="Delete" data-idx="'+i+'" data-list="'+elemId+'">×</button></li>';});
-  const el=document.getElementById(elemId);el.innerHTML=html;
-  el.querySelectorAll('input').forEach(inp=>{inp.onchange=function(){renameFn(parseInt(this.dataset.idx),this.value);};});
-  el.querySelectorAll('button[title="Delete"]').forEach(btn=>{btn.onclick=function(){deleteFn(parseInt(this.dataset.idx));};});
-}
-function addCounter(){const name=document.getElementById('new-counter').value.trim();if(!name)return;if(config.counters.includes(name)){alert('Counter already exists.');return;}config.counters.push(name);document.getElementById('new-counter').value='';saveData();renderSettings();refreshAllSelects();}
-function renameCounter(idx,newName){const trimmed=newName.trim();if(!trimmed){renderSettings();return;}const old=config.counters[idx];if(trimmed===old)return;if(config.counters.includes(trimmed)){alert('Counter name already exists.');renderSettings();return;}config.counters[idx]=trimmed;enquiries.forEach(e=>{if(e.counter===old)e.counter=trimmed;});saveData();refreshAllSelects();}
-function deleteCounter(idx){const name=config.counters[idx],used=enquiries.filter(e=>e.counter===name).length;if(used>0){const reassign=prompt(name+' is used by '+used+' enquiries. Reassign to which counter?\n\nOptions: '+config.counters.filter((_,i)=>i!==idx).join(', '));if(!reassign||!config.counters.includes(reassign)||reassign===name){alert('Cancelled.');return;}enquiries.forEach(e=>{if(e.counter===name)e.counter=reassign;});}config.counters.splice(idx,1);saveData();renderSettings();refreshAllSelects();}
-function addRep(){const name=document.getElementById('new-rep').value.trim();if(!name)return;if(config.reps.includes(name)){alert('Rep already exists.');return;}config.reps.push(name);document.getElementById('new-rep').value='';saveData();renderSettings();refreshAllSelects();}
-function renameRep(idx,newName){const trimmed=newName.trim();if(!trimmed){renderSettings();return;}const old=config.reps[idx];if(trimmed===old)return;if(config.reps.includes(trimmed)){alert('Rep name already exists.');renderSettings();return;}config.reps[idx]=trimmed;enquiries.forEach(e=>{if(e.rep===old)e.rep=trimmed;});saveData();refreshAllSelects();}
-function deleteRep(idx){const name=config.reps[idx],used=enquiries.filter(e=>e.rep===name).length;if(used>0){const reassign=prompt(name+' is assigned to '+used+' enquiries. Reassign to which rep?\n\nOptions: '+config.reps.filter((_,i)=>i!==idx).join(', '));if(!reassign||!config.reps.includes(reassign)||reassign===name){alert('Cancelled.');return;}enquiries.forEach(e=>{if(e.rep===name)e.rep=reassign;});}config.reps.splice(idx,1);saveData();renderSettings();refreshAllSelects();}
-function addModel(){const name=document.getElementById('new-model').value.trim();if(!name)return;if(config.models.includes(name)){alert('Model already exists.');return;}config.models.push(name);document.getElementById('new-model').value='';saveData();renderSettings();refreshAllSelects();}
-function renameModel(idx,newName){const trimmed=newName.trim();if(!trimmed){renderSettings();return;}const old=config.models[idx];if(trimmed===old)return;if(config.models.includes(trimmed)){alert('Model already exists.');renderSettings();return;}config.models[idx]=trimmed;enquiries.forEach(e=>{if(e.model===old)e.model=trimmed;});saveData();refreshAllSelects();}
-function deleteModel(idx){const name=config.models[idx],used=enquiries.filter(e=>e.model===name).length;if(used>0){const reassign=prompt(name+' is on '+used+' enquiries. Reassign to which model?\n\nOptions: '+config.models.filter((_,i)=>i!==idx).join(', '));if(!reassign||!config.models.includes(reassign)||reassign===name){alert('Cancelled.');return;}enquiries.forEach(e=>{if(e.model===name)e.model=reassign;});}config.models.splice(idx,1);saveData();renderSettings();refreshAllSelects();}
-function addFinancier(){const name=document.getElementById('new-financier').value.trim();if(!name)return;if(config.financiers.includes(name)){alert('Financier already exists.');return;}config.financiers.push(name);document.getElementById('new-financier').value='';saveData();renderSettings();refreshAllSelects();}
-function renameFinancier(idx,newName){const trimmed=newName.trim();if(!trimmed){renderSettings();return;}const old=config.financiers[idx];if(trimmed===old)return;if(config.financiers.includes(trimmed)){alert('Financier already exists.');renderSettings();return;}config.financiers[idx]=trimmed;enquiries.forEach(e=>{if(e.financier===old)e.financier=trimmed;});saveData();refreshAllSelects();}
-function deleteFinancier(idx){const name=config.financiers[idx],used=enquiries.filter(e=>e.financier===name).length;if(used>0){const reassign=prompt(name+' is on '+used+' enquiries. Reassign to which financier? (blank to clear)\n\nOptions: '+config.financiers.filter((_,i)=>i!==idx).join(', '));if(reassign&&!config.financiers.includes(reassign)){alert('Invalid choice. Cancelled.');return;}enquiries.forEach(e=>{if(e.financier===name)e.financier=reassign||'';});}config.financiers.splice(idx,1);saveData();renderSettings();refreshAllSelects();}
-function resetAllData(){
-  if(!confirm('This will erase ALL enquiries and reset to defaults. Continue?')) return;
-  localStorage.removeItem(STORAGE_KEY);localStorage.removeItem(CONFIG_KEY);
-  config={counters:[...DEFAULT_COUNTERS],reps:[...DEFAULT_REPS],models:[...DEFAULT_MODELS],financiers:[...DEFAULT_FINANCIERS],sheet:{url:'',autoOpen:false,autoIntervalEnabled:false,intervalMin:15,lastSync:''},script:{url:DEFAULT_SCRIPT_URL,lastSync:''},targets:{global:0,counters:{}},lastImportHeaders:[],lastImportMap:{},columnOverrides:{}};
-  enquiries=[];seedData();refreshAllSelects();renderSettings();setView('dashboard');
-  if(config.script.url) syncToScript(false);
-}
-function cleanJunkEnquiries(){
-  const before=enquiries.length;
-  const junk=enquiries.filter(e=>{const noName=!e.customer||e.customer.trim()===''||e.customer.trim()==='(no name)';const noPhone=!e.phone||!/\d/.test(e.phone);const noEmail=!e.email||!e.email.includes('@');return noName&&noPhone&&noEmail;});
-  if(!junk.length){alert('No junk rows found — your data is clean.');return;}
-  if(!confirm('Found '+junk.length+' enquiries with no name, phone, or email.\n\nDelete them all?')) return;
-  enquiries=enquiries.filter(e=>{const noName=!e.customer||e.customer.trim()===''||e.customer.trim()==='(no name)';const noPhone=!e.phone||!/\d/.test(e.phone);const noEmail=!e.email||!e.email.includes('@');return!(noName&&noPhone&&noEmail);});
-  saveData();refreshAllSelects();setView(document.querySelector('.nav-item.active').dataset.view);
-  alert('Removed '+(before-enquiries.length)+' junk rows.\nRemaining: '+enquiries.length);
-}
-function redetectDates(){
-  let fixed=0; enquiries.forEach(e=>{['createdAt','lastContactAt','nextFollowUp'].forEach(k=>{const v=e[k];if(!v)return;const parsed=parseDate(v);if(parsed&&parsed!==v){e[k]=parsed;fixed++;}});const isoOk=/^\d{4}-\d{2}-\d{2}$/;if(e.lastContactAt&&isoOk.test(e.lastContactAt)&&e.createdAt&&isoOk.test(e.createdAt)&&e.lastContactAt<e.createdAt){e.createdAt=e.lastContactAt;fixed++;}});
-  saveData();refreshAllSelects();setView(document.querySelector('.nav-item.active').dataset.view);
-  const months=getAvailableMonths();alert('Re-detected '+fixed+' date fields.\n\nMonths in data:\n'+(months.length?months.map(formatMonthLabel).join(', '):'(none)'));
-}
-
-/* ====================== MODAL: NEW/EDIT ====================== */
-function openModal(id){
-  refreshAllSelects();editingId=id||null;const isEdit=!!id;
-  document.getElementById('modal-title').textContent=isEdit?'Edit Enquiry':'New Enquiry';
-  document.getElementById('del-btn').style.display=isEdit?'inline-block':'none';
-  let e=isEdit?enquiries.find(x=>x.id===id):{customer:'',phone:'',email:'',counter:config.counters[0]||'',source:SOURCES[0],model:config.models[0]||'',variant:'',budget:'',rep:config.reps[0]||'',stage:'New',financeRequired:'No',financier:'',createdAt:todayISO(),lastContactAt:'',nextFollowUp:'',notes:'',dropReason:''};
-  document.getElementById('f-customer').value=e.customer;document.getElementById('f-phone').value=e.phone;document.getElementById('f-email').value=e.email;
-  document.getElementById('f-counter-in').value=e.counter||(config.counters[0]||'');document.getElementById('f-source-in').value=e.source;
-  document.getElementById('f-model').value=e.model;document.getElementById('f-variant').value=e.variant;document.getElementById('f-budget').value=e.budget;
-  document.getElementById('f-rep-in').value=e.rep;document.getElementById('f-stage-in').value=e.stage;
-  document.getElementById('f-finance-in').value=e.financeRequired||'No';document.getElementById('f-financier-in').value=e.financier||'';
-  document.getElementById('f-last').value=e.lastContactAt||'';document.getElementById('f-next').value=e.nextFollowUp||'';
-  document.getElementById('f-notes').value=e.notes||'';document.getElementById('f-drop').value=e.dropReason||'';
-  document.getElementById('f-booking-amt').value=e.bookingAmt||'';document.getElementById('f-delivery-date').value=e.deliveryDate||'';
-  document.getElementById('booking-amount-wrap').style.display=e.stage==='Booked'?'flex':'none';
-  document.getElementById('delivery-date-wrap').style.display=e.stage==='Booked'?'flex':'none';
-  document.getElementById('f-td-offered').value=e.tdOffered||'';document.getElementById('f-td-date').value=e.tdDate||'';
-  document.getElementById('f-exchange').value=e.exchange||'No';
-  document.getElementById('f-ex-brand').value=e.exBrand||'';document.getElementById('f-ex-model').value=e.exModel||'';
-  document.getElementById('f-ex-year').value=e.exYear||'';document.getElementById('f-ex-kms').value=e.exKms||'';
-  document.getElementById('f-ex-asking').value=e.exAsking||'';document.getElementById('f-ex-offered').value=e.exOffered||'';
-  toggleExchangeFields(e.exchange||'No');
-  const tdStages=['Qualified','Test Drive','Negotiation','Won'];
-  const showTD = tdStages.includes(e.stage) && isTDModel(e.model);
-  document.getElementById('td-offer-wrap').style.display=showTD?'flex':'none';
-  document.getElementById('td-date-wrap').style.display=(e.tdOffered==='Yes — completed')?'flex':'none';
-  document.getElementById('drop-wrap').style.display=(e.stage==='Lost')?'flex':'none';
-  document.getElementById('modal-bg').classList.add('open');
-}
-function closeModal(){document.getElementById('modal-bg').classList.remove('open');editingId=null;}
-function saveEnquiry(){
-  const data={customer:document.getElementById('f-customer').value.trim(),phone:document.getElementById('f-phone').value.trim(),email:document.getElementById('f-email').value.trim(),counter:document.getElementById('f-counter-in').value,source:document.getElementById('f-source-in').value,model:document.getElementById('f-model').value,variant:document.getElementById('f-variant').value.trim(),budget:parseFloat(document.getElementById('f-budget').value)||0,rep:document.getElementById('f-rep-in').value,stage:document.getElementById('f-stage-in').value,financeRequired:document.getElementById('f-finance-in').value,financier:document.getElementById('f-financier-in').value,lastContactAt:document.getElementById('f-last').value,nextFollowUp:document.getElementById('f-next').value,notes:document.getElementById('f-notes').value,dropReason:document.getElementById('f-drop').value,tdOffered:document.getElementById('f-td-offered').value,tdDate:document.getElementById('f-td-date').value,
-    exchange:document.getElementById('f-exchange').value,exBrand:document.getElementById('f-ex-brand').value,exModel:document.getElementById('f-ex-model').value.trim(),exYear:parseInt(document.getElementById('f-ex-year').value)||0,exKms:parseInt(document.getElementById('f-ex-kms').value)||0,exAsking:parseFloat(document.getElementById('f-ex-asking').value)||0,exOffered:parseFloat(document.getElementById('f-ex-offered').value)||0,
-    bookingAmt:parseFloat(document.getElementById('f-booking-amt').value)||0,deliveryDate:document.getElementById('f-delivery-date').value};
-  if(!data.customer){alert('Customer name is required');return;}
-  if(ACTIVE_STAGES.includes(data.stage)&&!data.nextFollowUp){alert('Next Follow-up date is required for active enquiries.\n\nThis ensures no lead goes unattended.');document.getElementById('f-next').focus();return;}
-  if(['Qualified','Test Drive','Negotiation','Won'].includes(data.stage)&&isTDModel(data.model)&&!data.tdOffered){alert('Test Ride status is required for '+data.model+' at Qualified stage and above.\n\nThis is your highest conversion lever — always log whether a test ride was offered.');document.getElementById('f-td-offered').focus();return;}
-  if(data.stage==='Lost'&&!data.dropReason){alert('Lost Reason is required.\n\nThis data helps identify where sales are being lost.');document.getElementById('f-drop').focus();return;}
-  if(data.financeRequired!=='Yes') data.financier='';
-  if(editingId){const idx=enquiries.findIndex(e=>e.id===editingId);if(idx>=0)enquiries[idx]=Object.assign({},enquiries[idx],data);}
-  else{data.id=nextId();data.createdAt=todayISO();enquiries.unshift(data);}
-  saveData();closeModal();setView(document.querySelector('.nav-item.active').dataset.view);
-}
-function deleteEnquiry(){if(!editingId)return;if(!confirm('Delete this enquiry permanently?'))return;enquiries=enquiries.filter(e=>e.id!==editingId);saveData();closeModal();setView(document.querySelector('.nav-item.active').dataset.view);}
-function toggleExchangeFields(val) {
-  const wrap = document.getElementById('exchange-fields');
-  if (!wrap) return;
-  if (val === 'Yes') { wrap.style.display='grid'; }
-  else { wrap.style.display='none'; ['f-ex-brand','f-ex-model','f-ex-year','f-ex-kms','f-ex-asking','f-ex-offered'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';}); }
-}
-function updateTDVisibility() {
-  const stage = document.getElementById('f-stage-in').value;
-  const model = document.getElementById('f-model').value;
-  const tdStages = ['Qualified','Test Drive','Negotiation','Won'];
-  const show = tdStages.includes(stage) && isTDModel(model);
-  document.getElementById('td-offer-wrap').style.display = show ? 'flex' : 'none';
-  if (!show) { document.getElementById('f-td-offered').value=''; document.getElementById('td-date-wrap').style.display='none'; }
-  const fuReq = document.getElementById('fu-required');
-  if (fuReq) fuReq.textContent = ['New','Contacted','Qualified','Test Drive','Negotiation'].includes(stage) ? '(required)' : '';
-}
-document.getElementById('f-stage-in').addEventListener('change', function(){
-  document.getElementById('drop-wrap').style.display = this.value==='Lost' ? 'flex' : 'none';
-  document.getElementById('booking-amount-wrap').style.display = this.value==='Booked' ? 'flex' : 'none';
-  document.getElementById('delivery-date-wrap').style.display = this.value==='Booked' ? 'flex' : 'none';
-  updateTDVisibility();
-});
-document.getElementById('f-model').addEventListener('change', updateTDVisibility);
-document.getElementById('f-td-offered').addEventListener('change',function(){
-  document.getElementById('td-date-wrap').style.display=(this.value==='Yes — completed')?'flex':'none';
-});
-document.getElementById('f-finance-in').addEventListener('change',function(){if(this.value!=='Yes')document.getElementById('f-financier-in').value='';});
-
-/* ====================== CHARTS ====================== */
-function drawChart(id,type,data,opts){
-  const ctx=document.getElementById(id);if(!ctx)return;if(charts[id])charts[id].destroy();
-  charts[id]=new Chart(ctx,{type,data,options:Object.assign({responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#94a0c8'}}},scales:type==='doughnut'||type==='pie'?{}:{x:{ticks:{color:'#94a0c8'},grid:{color:'rgba(255,255,255,0.05)'}},y:{ticks:{color:'#94a0c8'},grid:{color:'rgba(255,255,255,0.05)'},beginAtZero:true}}},opts||{})});
-}
-
-/* ====================== GOOGLE SHEET CSV SYNC (ONE-WAY) ====================== */
-function parseCSV(text){const lines=text.split(/\r?\n/),result=[];let inQ=false,cur='',fields=[];for(let i=0;i<text.length;i++){const c=text[i];if(c==='"'){if(inQ&&text[i+1]==='"'){cur+='"';i++;}else inQ=!inQ;}else if(c===','&&!inQ){fields.push(cur);cur='';}else if((c==='\n'||(c==='\r'&&text[i+1]==='\n'))&&!inQ){if(c==='\r')i++;fields.push(cur);cur='';result.push(fields);fields=[];}else cur+=c;}if(cur||fields.length){fields.push(cur);if(fields.some(f=>f))result.push(fields);}return result;}
-function detectColumnMap(headers,overrides){
-  const map={};const norm=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
-  const aliases={customer:['customer','customername','name','client','leadname','enquiry'],phone:['phone','mobile','contact','cell','tel','number'],email:['email','mail','emailid'],counter:['counter','showroom','dealership','branch','location','outlet'],source:['source','channel','leadsource','enquirysource','how'],model:['model','bike','vehicle','product','interest'],variant:['variant','version','spec'],budget:['budget','price','amount','expectedprice','cost'],rep:['rep','salesperson','executive','se','salespersonname','name'],stage:['stage','status','pipelinestage'],financeRequired:['finance','financereq','financerequired','financeyn','loan'],financier:['financier','bank','nbfc','financingcompany'],lastContactAt:['lastcontact','lastcontactat','lastdate','contactdate','date'],nextFollowUp:['nextfollowup','followupdate','nextfollowupdate','followup'],notes:['notes','remarks','comments','description'],dropReason:['dropreason','lostreason','reason','whylost']};
-  headers.forEach((h,i)=>{const n=norm(h);for(const[field,aliasList]of Object.entries(aliases)){if(map[field]==null&&aliasList.some(a=>n.includes(a)||a.includes(n)&&n.length>2)){map[field]=i;}}});
-  if(overrides){for(const[field,headerName]of Object.entries(overrides)){const idx=headers.indexOf(headerName);if(idx>=0)map[field]=idx;}}
-  return map;
-}
-function mapRowToEnquiry(row,map,headers){
-  const get=(field,fallback='')=>{const idx=map[field];return idx!=null&&idx<row.length?row[idx].trim():fallback;};
-  const fin=get('financeRequired','').toLowerCase();
-  return {id:'',customer:get('customer'),phone:get('phone'),email:get('email'),counter:get('counter'),source:get('source')||'Walk-in',model:get('model'),variant:get('variant'),budget:parseFloat(get('budget'))||0,rep:get('rep'),stage:get('stage')||'New',financeRequired:fin==='yes'||fin==='y'||fin==='1'?'Yes':'No',financier:get('financier'),createdAt:parseDate(get('lastContactAt'))||todayISO(),lastContactAt:parseDate(get('lastContactAt'))||'',nextFollowUp:parseDate(get('nextFollowUp'))||'',notes:get('notes'),dropReason:get('dropReason')};
-}
-function saveSheetConfig(){
-  const url=document.getElementById('sheet-url').value.trim();config.sheet.url=url;config.sheet.autoOpen=document.getElementById('sheet-auto-open').checked;config.sheet.autoIntervalEnabled=document.getElementById('sheet-auto-interval').checked;config.sheet.intervalMin=parseInt(document.getElementById('sheet-interval-min').value)||15;saveDataLocal();updateSyncUI();scheduleAutoSync();if(url)document.getElementById('sync-btn').style.display='inline-flex';else document.getElementById('sync-btn').style.display='none';showToast(url?'Sheet URL saved — click Sync Now to pull':'Disconnected from sheet');
-}
-function clearSheetConfig(){config.sheet={url:'',autoOpen:false,autoIntervalEnabled:false,intervalMin:15,lastSync:''};saveDataLocal();updateSyncUI();scheduleAutoSync();document.getElementById('sync-btn').style.display='none';}
-function updateSyncUI(){
-  const su=document.getElementById('sheet-url');if(su)su.value=config.sheet.url||'';
-  const ao=document.getElementById('sheet-auto-open');if(ao)ao.checked=!!config.sheet.autoOpen;
-  const ai=document.getElementById('sheet-auto-interval');if(ai)ai.checked=!!config.sheet.autoIntervalEnabled;
-  const im=document.getElementById('sheet-interval-min');if(im)im.value=config.sheet.intervalMin||15;
-  const ls=document.getElementById('sheet-last-sync');if(ls)ls.textContent=config.sheet.lastSync?'Last sync: '+new Date(config.sheet.lastSync).toLocaleString('en-IN'):'';
-  if(config.sheet.url)document.getElementById('sync-btn').style.display='inline-flex';else document.getElementById('sync-btn').style.display='none';
-}
-function scheduleAutoSync(){
-  clearInterval(sheetTimer);sheetTimer=null;
-  if(config.sheet.autoIntervalEnabled&&config.sheet.url&&config.sheet.intervalMin>0){sheetTimer=setInterval(()=>syncFromSheet(true),config.sheet.intervalMin*60000);}
-}
-async function syncFromSheet(silent){
-  const url=config.sheet.url;if(!url){if(!silent)alert('No Google Sheet URL configured. Go to Settings → Google Sheet Live Link.');return;}
-  if(!silent)showToast('⏳ Syncing from Google Sheet…');
-  let csvUrl=url;
-  const m=url.match(/\/spreadsheets\/d\/([^/]+)/);
-  if(m&&!url.includes('pub?output=csv')){const id=m[1];const gidM=url.match(/gid=(\d+)/);csvUrl='https://docs.google.com/spreadsheets/d/'+id+'/export?format=csv'+(gidM?'&gid='+gidM[1]:'');}
-  try{
-    const resp=await fetch(csvUrl,{cache:'no-cache'});if(!resp.ok)throw new Error('HTTP '+resp.status);
-    const text=await resp.text();const rows=parseCSV(text);if(rows.length<2)throw new Error('Sheet appears empty');
-    const headers=rows[0];const map=detectColumnMap(headers,config.columnOverrides);
-    config.lastImportHeaders=headers;config.lastImportMap=map;
-    const counterOverride='';const imported=rows.slice(1).filter(r=>r.some(c=>c.trim())).map(r=>mapRowToEnquiry(r,map,headers));
-    imported.forEach(e=>{if(!e.id)e.id='E'+String(Date.now()).slice(-6)+Math.floor(Math.random()*100);if(counterOverride)e.counter=counterOverride;else if(!e.counter)e.counter=config.counters[0]||'';if(!STAGES.includes(e.stage))e.stage='New';e.counter=normalizeCounter(e.counter,config.counters);});
-    enquiries=imported;config.sheet.lastSync=new Date().toISOString();saveData();migrateDates();refreshAllSelects();setView(document.querySelector('.nav-item.active').dataset.view);
-    if(!silent)showToast('✅ Synced '+imported.length+' enquiries from Google Sheet');
-  }catch(err){if(!silent)showToast('⚠ Sync failed: '+err.message);console.warn('[Sheet sync]',err);}
-}
-
-/* ====================== IMPORT/EXPORT ====================== */
-function importCSV(event){
-  const file=event.target.files[0];if(!file)return;event.target.value='';
-  const reader=new FileReader();reader.onload=e=>{processCSVText(e.target.result,file.name);};reader.readAsText(file);
-}
-function processCSVText(text,filename){
-  const rows=parseCSV(text);if(rows.length<2){alert('CSV appears empty or has no data rows.');return;}
-  const headers=rows[0];const map=detectColumnMap(headers,config.columnOverrides);
-  config.lastImportHeaders=headers;config.lastImportMap=map;saveDataLocal();
-  pendingImport={rows,headers,map,source:filename||'CSV'};
-  const preview=rows.slice(1,6).map(r=>mapRowToEnquiry(r,map,headers));
-  document.getElementById('import-summary').textContent='Found '+rows.slice(1).filter(r=>r.some(c=>c.trim())).length+' data rows in "'+pendingImport.source+'". Preview (first 5):';
-  let html='<thead><tr>'+headers.map(h=>'<th>'+escapeHtml(h)+'</th>').join('')+'</tr></thead><tbody>';
-  rows.slice(1,6).forEach(r=>{html+='<tr>'+r.map(c=>'<td>'+escapeHtml(c)+'</td>').join('')+'</tr>';});
-  html+='</tbody>'; document.getElementById('import-table').innerHTML=html;
-  document.getElementById('import-modal').classList.add('open');
-}
-function importJSON(event){
-  const file=event.target.files[0];if(!file)return;event.target.value='';
-  const reader=new FileReader();
-  reader.onload=e=>{try{const obj=JSON.parse(e.target.result);if(!Array.isArray(obj.enquiries)){alert('Invalid JSON backup: missing enquiries array.');return;}enquiries=obj.enquiries;if(obj.config){if(obj.config.counters)config.counters=obj.config.counters;if(obj.config.reps)config.reps=obj.config.reps;if(obj.config.models)config.models=obj.config.models;if(obj.config.financiers)config.financiers=obj.config.financiers;}saveData();migrateDates();refreshAllSelects();setView(document.querySelector('.nav-item.active').dataset.view);showToast('✅ Imported '+enquiries.length+' enquiries from JSON backup');}catch(err){alert('Failed to parse JSON: '+err.message);}};
-  reader.readAsText(file);
-}
-function confirmImport(mode){
-  if(!pendingImport){cancelImport();return;}
-  const {rows,headers,map}=pendingImport;
-  const counterOverride=document.getElementById('paste-counter-override')?document.getElementById('paste-counter-override').value:'';
-  const imported=rows.slice(1).filter(r=>r.some(c=>c.trim())).map(r=>{const e=mapRowToEnquiry(r,map,headers);if(!e.id)e.id='E'+String(Date.now()).slice(-6)+Math.floor(Math.random()*100);if(counterOverride)e.counter=counterOverride;else if(!e.counter)e.counter=config.counters[0]||'';if(!STAGES.includes(e.stage))e.stage='New';e.counter=normalizeCounter(e.counter,config.counters);return e;});
-  if(mode==='replace')enquiries=imported;else{imported.forEach(e=>{enquiries.push(e);});};
-  saveData();migrateDates();refreshAllSelects();setView(document.querySelector('.nav-item.active').dataset.view);
-  cancelImport();showToast('✅ '+(mode==='replace'?'Replaced with':'Appended')+' '+imported.length+' enquiries');
-}
-function cancelImport(){pendingImport=null;document.getElementById('import-modal').classList.remove('open');}
-function openPasteModal(){populateSelect('paste-counter-override',[''].concat(config.counters),false,'— Auto-detect from sheet —');document.getElementById('paste-modal').classList.add('open');}
-function closePasteModal(){document.getElementById('paste-modal').classList.remove('open');}
-async function processPaste(){
-  const url=document.getElementById('paste-url').value.trim();
-  const raw=document.getElementById('paste-data').value.trim();
-  if(url){
-    document.getElementById('paste-modal').classList.remove('open');
-    let csvUrl=url;const m=url.match(/\/spreadsheets\/d\/([^/]+)/);
-    if(m&&!url.includes('pub?output=csv')){const id=m[1];const gidM=url.match(/gid=(\d+)/);csvUrl='https://docs.google.com/spreadsheets/d/'+id+'/export?format=csv'+(gidM?'&gid='+gidM[1]:'');}
-    try{const resp=await fetch(csvUrl,{cache:'no-cache'});if(!resp.ok)throw new Error('HTTP '+resp.status);const text=await resp.text();processCSVText(text,'Google Sheet');}
-    catch(err){alert('Could not fetch sheet: '+err.message);}
-  } else if(raw){document.getElementById('paste-modal').classList.remove('open');processCSVText(raw,'Pasted data');}
-  else{alert('Please paste data or enter a URL.');}
-}
-
-/* ====================== EXPORT ====================== */
-function exportCSV(){
-  const headers=['ID','Customer','Phone','Email','Counter','Source','Model','Variant','Budget','Rep','Stage','FinanceRequired','Financier','Created','LastContact','NextFollowUp','DropReason','Notes'];
-  const rows=enquiries.map(e=>[e.id,e.customer,e.phone,e.email,e.counter,e.source,e.model,e.variant,e.budget,e.rep,e.stage,e.financeRequired,e.financier,e.createdAt,e.lastContactAt,e.nextFollowUp,e.dropReason,e.notes]);
-  const csv=[headers,...rows].map(r=>r.map(c=>{const s=String(c==null?'':c);return/[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}).join(',')).join('\n');
-  downloadFile('enquiries-'+todayISO()+'.csv',csv,'text/csv');
-}
-function exportJSON(){const payload={exportedAt:new Date().toISOString(),config,enquiries};downloadFile('hero-sales-backup-'+todayISO()+'.json',JSON.stringify(payload,null,2),'application/json');}
-function publishToTeam(){const payload={exportedAt:new Date().toISOString(),config,enquiries};downloadFile('data.json',JSON.stringify(payload,null,2),'application/json');setTimeout(()=>{alert('✅ data.json downloaded.\n\n'+(config.script&&config.script.url?'Note: Live Sync is active — cloud already has your latest data. This file is a manual fallback.':'Upload this file to your GitHub repo to share with team.\n\nTip: Set up ⚡ Live Team Sync in Settings for automatic sync.'));},200);}
-function pullFromServer(){
-  if(config.script&&config.script.url){if(!confirm('Replace local data with latest data from Google Sheets?')) return;showToast('⏳ Pulling from cloud…');loadFromScript().then(ok=>{if(ok){refreshAllSelects();setView(document.querySelector('.nav-item.active').dataset.view);showToast('✅ Pulled '+enquiries.length+' enquiries from Google Sheets');updateScriptSyncUI();}else showToast('⚠ Pull failed — check connection');});}
-  else{if(!confirm('Replace local data with data.json from server?')) return;localStorage.removeItem('hero-last-local-edit');fetch('data.json?t='+Date.now(),{cache:'no-cache'}).then(r=>{if(!r.ok)throw new Error('No data.json (HTTP '+r.status+')');return r.json();}).then(obj=>{if(!Array.isArray(obj.enquiries))throw new Error('Invalid data.json');enquiries=obj.enquiries;if(obj.config){if(obj.config.counters)config.counters=obj.config.counters;if(obj.config.reps)config.reps=obj.config.reps;if(obj.config.models)config.models=obj.config.models;if(obj.config.financiers)config.financiers=obj.config.financiers;}saveDataLocal();refreshAllSelects();setView(document.querySelector('.nav-item.active').dataset.view);showToast('✅ Pulled '+enquiries.length+' enquiries from server');}).catch(err=>showToast('⚠ Pull failed: '+err.message));}
-}
-function downloadFile(name,content,mime){const blob=new Blob([content],{type:mime+';charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},100);}
-
-/* ====================== MENUS ====================== */
-function toggleMenu(id){const m=document.getElementById(id);closeMenus();if(m)m.classList.toggle('open');}
-function closeMenus(){document.querySelectorAll('.menu').forEach(m=>m.classList.remove('open'));}
-document.addEventListener('click',function(e){if(!e.target.closest('.menu-wrap'))closeMenus();});
-
-/* ====================== INIT ====================== */
-document.getElementById('nav').addEventListener('click',function(e){const btn=e.target.closest('.nav-item');if(btn&&btn.dataset.view)setView(btn.dataset.view);});
-document.getElementById('modal-bg').addEventListener('click',function(e){if(e.target===this)closeModal();});
-
-loadData();
-refreshAllSelects();
-updateSyncUI();
-scheduleAutoSync();
-updateScriptSyncUI();
-setView('dashboard');
-
-/* Auto-load from Apps Script on page open */
-(async function initSync() {
-  if (config.script && config.script.url) {
-    const ok = await loadFromScript();
-    if (ok) { refreshAllSelects(); setView(document.querySelector('.nav-item.active').dataset.view); }
-    else { console.warn('[Sync] Could not reach Google Sheets — showing cached data'); }
-  } else {
-    try {
-      const r = await fetch('data.json?t='+Date.now(),{cache:'no-cache'}); if(!r.ok) return;
-      const obj = await r.json(); if(!Array.isArray(obj.enquiries)) return;
-      const serverTime=obj.exportedAt?new Date(obj.exportedAt).getTime():0;
-      const localTime=parseInt(localStorage.getItem('hero-last-local-edit')||'0',10);
-      if(localTime>serverTime&&enquiries.length>0) return;
-      enquiries=obj.enquiries;
-      if(obj.config){if(obj.config.counters)config.counters=obj.config.counters;if(obj.config.reps)config.reps=obj.config.reps;if(obj.config.models)config.models=obj.config.models;if(obj.config.financiers)config.financiers=obj.config.financiers;}
-      saveDataLocal();migrateDates();refreshAllSelects();setView(document.querySelector('.nav-item.active').dataset.view);
-    } catch(e) { /* no data.json fine */ }
-  }
-})();
-
-</script>
-</body>
-</html>
