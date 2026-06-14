@@ -1316,4 +1316,25 @@ function initApp() {
 document.addEventListener('DOMContentLoaded', initApp);
 </script>
 </body>
-</html>
+<script>
+// Auto-pull live data on every open so management/team always see the
+// Google Sheets data, never the demo/seed data.
+(function () {
+  function autoPull() {
+    try {
+      if (typeof config !== 'undefined' && config.script && config.script.url && typeof loadFromScript === 'function') {
+        loadFromScript().then(function (ok) {
+          if (ok && typeof refreshAllSelects === 'function') {
+            refreshAllSelects();
+            var n = document.querySelector('.nav-item.active');
+            if (typeof setView === 'function') setView(n ? n.dataset.view : 'dashboard');
+          }
+        }).catch(function () {});
+      }
+    } catch (e) {}
+  }
+  if (document.readyState !== 'loading') setTimeout(autoPull, 800);
+  else document.addEventListener('DOMContentLoaded', function () { setTimeout(autoPull, 800); });
+})();
+</script>
+  </html>
