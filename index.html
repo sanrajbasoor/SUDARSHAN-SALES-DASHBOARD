@@ -1389,4 +1389,132 @@ document.addEventListener('DOMContentLoaded', initApp);
   document.addEventListener('DOMContentLoaded', function(){ setTimeout(draw, 1500); });
 })();
 </script>
-</html> 
+<!-- ===== DSE Scorecard & Follow-up SLA tab — paste this whole block just ABOVE </body> in index.html ===== -->
+<script>
+(function(){
+  var ACTIVE = ['New','Contacted','Qualified','Test Drive','Negotiation','Booked'];
+  var STALE = 7;
+  var repFilter = '';
+
+  function rows(){
+    try{ if(typeof getActiveEnquiries==='function') return getActiveEnquiries(); }catch(e){}
+    try{ return enquiries||[]; }catch(e){ return []; }
+  }
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function todayISO(){return new Date().toISOString().slice(0,10);}
+  function dsince(d){ if(!d) return 99999; var ms=new Date(todayISO())-new Date(d); return ms>=0?Math.round(ms/86400000):0; }
+  function rkey(r){return (r||'').trim().toUpperCase()||'(UNASSIGNED)';}
+  function rname(r){var k=rkey(r);return k==='(UNASSIGNED)'?'(Unassigned)':k.charAt(0)+k.slice(1).toLowerCase();}
+  function rag(v,good,watch,inv){ if(inv) return v===0?'#2bd47d':(v<=5?'#ffb02e':'#ff5c5c'); return v>=good?'#2bd47d':(v>=watch?'#ffb02e':'#ff5c5c'); }
+  function kpi(v,l,color){return '<div class="card" style="padding:14px 16px"><div style="font-size:26px;font-weight:800;'+(color?('color:'+color):'')+'">'+v+'</div><div style="font-size:12px;color:var(--muted);margin-top:4px">'+l+'</div></div>';}
+
+  function ensureNavAndView(){
+    if(document.getElementById('view-scorecard')) return;
+    var navItems = document.querySelectorAll('.nav-item');
+    if(navItems.length){
+      var last = navItems[navItems.length-1];
+      var clone = last.cloneNode(true);
+      clone.classList.remove('active');
+      clone.setAttribute('data-view','scorecard');
+      clone.textContent = 'DSE Scorecard';
+      clone.onclick = function(){ window.setView('scorecard'); };
+      last.parentNode.appendChild(clone);
+    }
+    var views = document.querySelectorAll('.view');
+    var sec = document.createElement('section');
+    sec.className = 'view';
+    sec.id = 'view-scorecard';
+    sec.innerHTML = '<div id="scorecard-root"></div>';
+    if(views.length) views[views.length-1].parentNode.appendChild(sec);
+    else document.body.appendChild(sec);
+  }
+
+  function render(){
+    var root = document.getElementById('scorecard-root');
+    if(!root) return;
+    var data = rows();
+    var map={};
+    data.forEach(function(e){
+      var k=rkey(e.rep); var s=map[k]||(map[k]={rep:rname(e.rep),total:0,active:0,booked:0,won:0,lost:0,fin:0,stale:0});
+      s.total++;
+      if(ACTIVE.indexOf(e.stage)>-1) s.active++;
+      if(e.stage==='Booked') s.booked++;
+      if(e.stage==='Won') s.won++;
+      if(e.stage==='Lost') s.lost++;
+      if(e.financeRequired==='Yes') s.fin++;
+      if(ACTIVE.indexOf(e.stage)>-1 && dsince(e.lastContactAt||e.createdAt)>STALE) s.stale++;
+    });
+    var scores=Object.keys(map).map(function(k){var s=map[k];s.conv=s.total?Math.round(s.won/s.total*100):0;s.finPct=s.total?Math.round(s.fin/s.total*100):0;return s;});
+    scores.sort(function(a,b){return b.total-a.total;});
+
+    var totActive=data.filter(function(e){return ACTIVE.indexOf(e.stage)>-1;}).length;
+    var totStale=data.filter(function(e){return ACTIVE.indexOf(e.stage)>-1 && dsince(e.lastContactAt||e.createdAt)>STALE;}).length;
+
+    var h='';
+    h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px">';
+    h+=kpi(data.length,'Enquiries in view','');
+    h+=kpi(totActive,'Active pipeline','#5b9eff');
+    h+=kpi(totStale,'Untouched &gt;7 days',totStale>0?'#ff5c5c':'#2bd47d');
+    h+='</div>';
+
+    h+='<div class="card"><h3>DSE Scorecard</h3><p style="color:var(--muted);font-size:12px;margin:2px 0 12px">Per executive for the selected month (use the Month filter up top). Click a DSE to filter the call list. Green/amber/red = good/watch/act.</p>';
+    h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="color:var(--muted);text-align:left">'
+      +'<th style="padding:8px">DSE</th><th style="padding:8px;text-align:right">Enq</th><th style="padding:8px;text-align:right">Active</th><th style="padding:8px;text-align:right">Booked</th><th style="padding:8px;text-align:right">Won</th><th style="padding:8px;text-align:right">Lost</th><th style="padding:8px;text-align:right">Conv%</th><th style="padding:8px;text-align:right">Fin%</th><th style="padding:8px;text-align:right">Untouched&gt;7d</th></tr></thead><tbody>';
+    if(!scores.length) h+='<tr><td colspan="9" style="padding:18px;text-align:center;color:var(--muted)">No data for this period.</td></tr>';
+    scores.forEach(function(s){
+      h+='<tr data-rep="'+esc(s.rep)+'" style="cursor:pointer;border-top:1px solid var(--line)'+(repFilter===s.rep?';background:var(--panel-2)':'')+'">'
+        +'<td style="padding:8px;font-weight:700">'+esc(s.rep)+'</td>'
+        +'<td style="padding:8px;text-align:right">'+s.total+'</td>'
+        +'<td style="padding:8px;text-align:right">'+s.active+'</td>'
+        +'<td style="padding:8px;text-align:right">'+s.booked+'</td>'
+        +'<td style="padding:8px;text-align:right;color:#2bd47d">'+s.won+'</td>'
+        +'<td style="padding:8px;text-align:right;color:#ff5c5c">'+s.lost+'</td>'
+        +'<td style="padding:8px;text-align:right;font-weight:700;color:'+rag(s.conv,50,35)+'">'+s.conv+'%</td>'
+        +'<td style="padding:8px;text-align:right;font-weight:700;color:'+rag(s.finPct,40,25)+'">'+s.finPct+'%</td>'
+        +'<td style="padding:8px;text-align:right;font-weight:700;color:'+rag(s.stale,0,0,true)+'">'+s.stale+'</td></tr>';
+    });
+    h+='</tbody></table></div></div>';
+
+    var calls=data.filter(function(e){return ACTIVE.indexOf(e.stage)>-1 && dsince(e.lastContactAt||e.createdAt)>STALE;})
+      .map(function(e){return {c:e.customer,p:e.phone,co:e.counter,m:e.model,r:rname(e.rep),st:e.stage,n:e.notes,d:dsince(e.lastContactAt||e.createdAt)};});
+    if(repFilter) calls=calls.filter(function(e){return e.r===repFilter;});
+    calls.sort(function(a,b){return b.d-a.d;});
+    h+='<div class="card"><h3>&#128308; Call list — untouched open leads (&gt;7 days)</h3><p style="color:var(--muted);font-size:12px;margin:2px 0 12px">'+(repFilter?('Filtered to <b>'+esc(repFilter)+'</b> — click their row again to clear. '):'')+calls.length+' lead(s) need action.</p>';
+    h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="color:var(--muted);text-align:left">'
+      +'<th style="padding:8px;text-align:right">Days</th><th style="padding:8px">Customer</th><th style="padding:8px">Phone</th><th style="padding:8px">Counter</th><th style="padding:8px">Model</th><th style="padding:8px">DSE</th><th style="padding:8px">Stage</th><th style="padding:8px">Last note</th></tr></thead><tbody>';
+    if(!calls.length) h+='<tr><td colspan="8" style="padding:18px;text-align:center;color:var(--muted)">&#127881; Nothing untouched in this view.</td></tr>';
+    calls.slice(0,300).forEach(function(e){
+      h+='<tr style="border-top:1px solid var(--line)">'
+        +'<td style="padding:8px;text-align:right;font-weight:800;color:'+(e.d>21?'#ff5c5c':e.d>14?'#ffb02e':'var(--text)')+'">'+e.d+'</td>'
+        +'<td style="padding:8px">'+esc(e.c)+'</td>'
+        +'<td style="padding:8px">'+(e.p?('<a href="tel:'+esc(e.p)+'" style="color:#5b9eff;text-decoration:none">'+esc(e.p)+'</a>'):'&mdash;')+'</td>'
+        +'<td style="padding:8px;color:var(--muted)">'+esc(e.co)+'</td>'
+        +'<td style="padding:8px;color:var(--muted)">'+esc(e.m)+'</td>'
+        +'<td style="padding:8px">'+esc(e.r)+'</td>'
+        +'<td style="padding:8px">'+esc(e.st)+'</td>'
+        +'<td style="padding:8px;color:var(--muted)">'+esc((e.n||'').slice(0,40))+'</td></tr>';
+    });
+    h+='</tbody></table></div></div>';
+
+    root.innerHTML=h;
+    var trs=root.querySelectorAll('tr[data-rep]');
+    for(var i=0;i<trs.length;i++){ (function(tr){ tr.onclick=function(){ var r=tr.getAttribute('data-rep'); repFilter=(repFilter===r)?'':r; render(); }; })(trs[i]); }
+  }
+
+  function init(){
+    ensureNavAndView();
+    var orig = window.setView;
+    if(typeof orig==='function' && !orig.__scWrapped){
+      window.setView = function(name){ orig(name); if(name==='scorecard'){ repFilter=''; render(); } };
+      window.setView.__scWrapped = true;
+    }
+    // re-render when the month filter changes while this tab is open
+    function hook(sel){ document.querySelectorAll(sel).forEach(function(el){ el.addEventListener('change',function(){
+      var v=document.getElementById('view-scorecard'); if(v && v.classList.contains('active')) setTimeout(render,30);
+    }); }); }
+    hook('#global-period'); hook('.view-month');
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init); else init();
+})();
+</script>
+</html>
