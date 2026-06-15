@@ -1337,4 +1337,56 @@ document.addEventListener('DOMContentLoaded', initApp);
   else document.addEventListener('DOMContentLoaded', function () { setTimeout(autoPull, 800); });
 })();
 </script>
-  </html>
+  <script>
+// Daily Retail & Bookings chart on the Dashboard tab
+(function () {
+  var chart = null;
+  function getEnq(){ try { return (typeof enquiries !== 'undefined' && enquiries) ? enquiries : []; } catch(e){ return []; } }
+  function fmtMonth(ym){ var n=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; var p=ym.split('-'); return n[parseInt(p[1],10)-1]+' '+p[0]; }
+  function months(){ var s={}; getEnq().forEach(function(e){ var k=(e.createdAt||'').slice(0,7); if(/^\d{4}-\d{2}$/.test(k)) s[k]=1; }); return Object.keys(s).sort().reverse(); }
+  function card(){
+    var view=document.getElementById('view-dashboard'); if(!view) return null;
+    var c=document.getElementById('daily-rb-card');
+    if(!c){
+      c=document.createElement('div'); c.id='daily-rb-card'; c.className='card'; c.style.marginTop='14px';
+      c.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;">'
+        +'<h3 style="margin:0;">Daily Retail &amp; Bookings</h3>'
+        +'<select id="daily-rb-month" style="background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:6px 8px;border-radius:8px;"></select></div>'
+        +'<div style="position:relative;height:300px;"><canvas id="daily-rb-canvas"></canvas></div>'
+        +'<div id="daily-rb-sum" style="margin-top:10px;color:var(--muted);font-size:13px;"></div>';
+      view.insertBefore(c, view.firstChild);
+      c.querySelector('#daily-rb-month').addEventListener('change', draw);
+    }
+    return c;
+  }
+  function draw(){
+    var c=card(); if(!c || typeof Chart==='undefined') return;
+    var sel=c.querySelector('#daily-rb-month'); var ms=months();
+    var keep=sel.value; sel.innerHTML=ms.map(function(m){return '<option value="'+m+'">'+fmtMonth(m)+'</option>';}).join('');
+    sel.value = (ms.indexOf(keep)>-1) ? keep : (ms[0]||'');
+    var ym=sel.value; if(!ym) return;
+    var days={};
+    getEnq().forEach(function(e){ if((e.createdAt||'').slice(0,7)!==ym) return; var d=e.createdAt; if(!days[d])days[d]={r:0,b:0}; if(e.stage==='Won')days[d].r++; else if(e.stage==='Booked')days[d].b++; });
+    var labels=Object.keys(days).sort();
+    var retail=labels.map(function(d){return days[d].r;});
+    var booked=labels.map(function(d){return days[d].b;});
+    var totR=retail.reduce(function(a,b){return a+b;},0), totB=booked.reduce(function(a,b){return a+b;},0);
+    c.querySelector('#daily-rb-sum').innerHTML='<strong style="color:#2bd47d">'+totR+'</strong> retail &nbsp;&middot;&nbsp; <strong style="color:#a05bff">'+totB+'</strong> booked &nbsp;&middot;&nbsp; '+fmtMonth(ym);
+    var ctx=c.querySelector('#daily-rb-canvas').getContext('2d');
+    if(chart) chart.destroy();
+    chart=new Chart(ctx,{type:'bar',
+      data:{labels:labels.map(function(d){return d.slice(8);}),datasets:[
+        {label:'Retail (Won)',data:retail,backgroundColor:'#2bd47d'},
+        {label:'Booked',data:booked,backgroundColor:'#a05bff'}]},
+      options:{responsive:true,maintainAspectRatio:false,
+        scales:{x:{ticks:{color:'#94a0c8'},grid:{display:false}},y:{beginAtZero:true,ticks:{color:'#94a0c8',precision:0}}},
+        plugins:{legend:{labels:{color:'#e7ecf7'}}}}});
+  }
+  if (typeof window.renderDashboard === 'function') {
+    var orig = window.renderDashboard;
+    window.renderDashboard = function(){ orig.apply(this, arguments); try{ draw(); }catch(e){} };
+  }
+  document.addEventListener('DOMContentLoaded', function(){ setTimeout(draw, 1500); });
+})();
+</script>
+</html> 
