@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Sudarshan Motors — DSE Scorecard & Follow-up SLA</title>
+<style>
+  :root{
+    --bg:#0c1430; --panel:#141d3d; --panel2:#1d2950; --line:#2b3768;
+    --text:#eaf0ff; --muted:#8e9bc8; --accent:#ff2e2e;
+    --ok:#2bd47d; --warn:#ffb02e; --bad:#ff5c5c; --blue:#5b9eff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif;font-size:14px}
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+  header h1{font-size:18px;margin:0;display:flex;align-items:center;gap:10px}
+  header h1 .dot{width:10px;height:10px;border-radius:50%;background:var(--accent)}
+  .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  select,button{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:13px;cursor:pointer}
+  button.primary{background:var(--accent);border-color:var(--accent);font-weight:600}
+  .wrap{padding:18px 20px;max-width:1200px;margin:0 auto}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .kpi .v{font-size:28px;font-weight:800;line-height:1}
+  .kpi .l{font-size:12px;color:var(--muted);margin-top:6px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:18px}
+  .card h2{font-size:15px;margin:0 0 4px}
+  .card .sub{font-size:12px;color:var(--muted);margin-bottom:12px}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);font-size:13px;white-space:nowrap}
+  th{color:var(--muted);font-weight:600;cursor:pointer;user-select:none}
+  th.num,td.num{text-align:right}
+  tbody tr:hover{background:var(--panel2)}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-weight:700;font-size:12px}
+  .g{background:rgba(43,212,125,.16);color:var(--ok)}
+  .a{background:rgba(255,176,46,.16);color:var(--warn)}
+  .r{background:rgba(255,92,92,.18);color:var(--bad)}
+  .rep{font-weight:700}
+  .muted{color:var(--muted)}
+  .callrow td{border-bottom:1px solid var(--line)}
+  .days{font-weight:800}
+  .legend{font-size:11px;color:var(--muted);margin-top:8px}
+  a.tel{color:var(--blue);text-decoration:none}
+  .empty{color:var(--muted);text-align:center;padding:22px}
+  .err{background:rgba(255,92,92,.12);border:1px solid var(--bad);color:#ffd5d5;padding:12px 14px;border-radius:10px;margin-bottom:14px;display:none}
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="dot"></span> Sudarshan Motors — DSE Scorecard &amp; Follow-up SLA</h1>
+  <div class="controls">
+    <label class="muted" style="font-size:12px">Month</label>
+    <select id="month"></select>
+    <label class="muted" style="font-size:12px">Counter</label>
+    <select id="counter"><option value="">All counters</option></select>
+    <button class="primary" id="refresh">🔄 Refresh</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="err" id="err"></div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="card">
+    <h2>DSE Scorecard</h2>
+    <div class="sub">One row per sales executive for the selected period. Click any column to sort. Click a DSE to filter the call list below.</div>
+    <table id="scoreTable">
+      <thead><tr>
+        <th data-k="rep">DSE</th>
+        <th data-k="total" class="num">Enquiries</th>
+        <th data-k="active" class="num">Active</th>
+        <th data-k="booked" class="num">Booked</th>
+        <th data-k="won" class="num">Won</th>
+        <th data-k="lost" class="num">Lost</th>
+        <th data-k="conv" class="num">Conv %</th>
+        <th data-k="finPct" class="num">Finance %</th>
+        <th data-k="stale" class="num">Untouched&nbsp;&gt;7d</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="legend">Conv% = Won ÷ Enquiries &nbsp;•&nbsp; Finance% = finance-required ÷ Enquiries &nbsp;•&nbsp; Untouched = still-open leads with no movement in 7+ days. Green/amber/red = good/watch/act.</div>
+  </div>
+
+  <div class="card">
+    <h2>🔴 Today's call list — untouched open leads (&gt;7 days)</h2>
+    <div class="sub" id="callSub">These are leads rotting in the pipeline. Assign them, call them, or mark them lost — but don't leave them. Click a DSE above to filter.</div>
+    <table id="callTable">
+      <thead><tr>
+        <th data-k="days" class="num">Days</th>
+        <th data-k="customer">Customer</th>
+        <th data-k="phone">Phone</th>
+        <th data-k="counter">Counter</th>
+        <th data-k="model">Model</th>
+        <th data-k="rep">DSE</th>
+        <th data-k="stage">Stage</th>
+        <th data-k="notes">Last note</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="legend" id="meta"></div>
+</div>
+
+<script>
+// ── Live feed: reuse the same Apps Script URL the dashboard already uses ──
+const FALLBACK_URL = 'https://script.google.com/macros/s/AKfycbzaw2WYGa5WHLNPH7PMSuXqnZkV5phKO1e01PPZda8YBsmgFHDJmcNetjV7_D8hc_-d/exec';
+function getScriptUrl(){
+  try{
+    const c = JSON.parse(localStorage.getItem('hero-sales-config-v1')||'{}');
+    if(c.script && c.script.url) return c.script.url;
+  }catch(e){}
+  return FALLBACK_URL;
+}
+
+const ACTIVE = ['New','Contacted','Qualified','Test Drive','Negotiation','Booked'];
+const STALE_DAYS = 7;
+let ENQ = [], repFilter = '', sortScore = {k:'total',dir:-1}, sortCall = {k:'days',dir:-1};
+
+const $ = s => document.querySelector(s);
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function daysSince(d){ if(!d) return 9999; const ms = new Date(todayISO()) - new Date(d); return Math.max(0, Math.round(ms/86400000)); }
+function repKey(r){ return (r||'').trim().toUpperCase() || '(UNASSIGNED)'; }
+function repName(r){ const k=repKey(r); return k==='(UNASSIGNED)'?'(Unassigned)':k.charAt(0)+k.slice(1).toLowerCase(); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function monthKey(e){ return (e.createdAt||e.lastContactAt||'').slice(0,7); }
+
+async function load(){
+  $('#err').style.display='none';
+  try{
+    const res = await fetch(getScriptUrl()+'?t='+Date.now(), {cache:'no-cache'});
+    const json = await res.json();
+    ENQ = Array.isArray(json.enquiries) ? json.enquiries : [];
+    populateFilters();
+    render();
+    $('#meta').textContent = 'Loaded '+ENQ.length+' enquiries · generated '+(json.generatedAt||json.exportedAt||'')+' · '+new Date().toLocaleString('en-IN');
+  }catch(err){
+    $('#err').style.display='block';
+    $('#err').textContent = 'Could not load data: '+err.message+'. Check the Apps Script URL is connected in the main dashboard.';
+  }
+}
+
+function populateFilters(){
+  const months = Array.from(new Set(ENQ.map(monthKey).filter(m=>/^\d{4}-\d{2}$/.test(m)))).sort().reverse();
+  const cur = new Date().toISOString().slice(0,7);
+  const monthSel = $('#month');
+  if(!monthSel.dataset.init){
+    monthSel.innerHTML = '<option value="">All time</option>' + months.map(m=>`<option value="${m}">${fmtMonth(m)}</option>`).join('');
+    monthSel.value = months.includes(cur) ? cur : '';   // default: current month
+    monthSel.dataset.init = '1';
+  }
+  const cset = Array.from(new Set(ENQ.map(e=>e.counter).filter(Boolean))).sort();
+  const cSel = $('#counter');
+  if(!cSel.dataset.init){
+    cSel.innerHTML = '<option value="">All counters</option>' + cset.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    cSel.dataset.init = '1';
+  }
+}
+function fmtMonth(ym){ const n=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; const [y,m]=ym.split('-'); return n[+m-1]+' '+y; }
+
+function scope(){
+  const m = $('#month').value, c = $('#counter').value;
+  return ENQ.filter(e => (!m || monthKey(e)===m) && (!c || e.counter===c));
+}
+
+function computeScores(rows){
+  const map = {};
+  rows.forEach(e=>{
+    const k = repKey(e.rep);
+    const s = map[k] || (map[k] = {rep:repName(e.rep), total:0,active:0,booked:0,won:0,lost:0,fin:0,stale:0});
+    s.total++;
+    if(ACTIVE.includes(e.stage)) s.active++;
+    if(e.stage==='Booked') s.booked++;
+    if(e.stage==='Won') s.won++;
+    if(e.stage==='Lost') s.lost++;
+    if(e.financeRequired==='Yes') s.fin++;
+    if(ACTIVE.includes(e.stage) && daysSince(e.lastContactAt||e.createdAt) > STALE_DAYS) s.stale++;
+  });
+  return Object.values(map).map(s=>{
+    s.conv = s.total ? Math.round(s.won/s.total*100) : 0;
+    s.finPct = s.total ? Math.round(s.fin/s.total*100) : 0;
+    return s;
+  });
+}
+
+function rag(v, good, watch, invert){
+  // invert=true means lower is better (stale)
+  if(invert) return v===0?'g':(v<=5?'a':'r');
+  return v>=good?'g':(v>=watch?'a':'r');
+}
+
+function render(){
+  const rows = scope();
+  const scores = computeScores(rows);
+
+  // KPIs
+  const totActive = rows.filter(e=>ACTIVE.includes(e.stage)).length;
+  const totStale  = rows.filter(e=>ACTIVE.includes(e.stage) && daysSince(e.lastContactAt||e.createdAt)>STALE_DAYS).length;
+  const totWon = rows.filter(e=>e.stage==='Won').length;
+  const conv = rows.length?Math.round(totWon/rows.length*100):0;
+  const worst = scores.slice().sort((a,b)=>b.stale-a.stale)[0];
+  $('#kpis').innerHTML = [
+    kpi(rows.length,'Enquiries in view'),
+    kpi(totActive,'Active pipeline','var(--blue)'),
+    kpi(totStale,'Untouched >7 days', totStale>0?'var(--bad)':'var(--ok)'),
+    kpi(conv+'%','Conversion'),
+    kpi(worst?worst.rep:'—', 'Most untouched leads', 'var(--warn)')
+  ].join('');
+
+  // Scorecard
+  const k=sortScore.k, dir=sortScore.dir;
+  scores.sort((a,b)=> (typeof a[k]==='string') ? dir*String(a[k]).localeCompare(String(b[k])) : dir*((a[k]||0)-(b[k]||0)));
+  $('#scoreTable tbody').innerHTML = scores.length ? scores.map(s=>`
+    <tr data-rep="${esc(s.rep)}" style="cursor:pointer">
+      <td class="rep">${esc(s.rep)}</td>
+      <td class="num">${s.total}</td>
+      <td class="num">${s.active}</td>
+      <td class="num">${s.booked}</td>
+      <td class="num" style="color:var(--ok)">${s.won}</td>
+      <td class="num" style="color:var(--bad)">${s.lost}</td>
+      <td class="num"><span class="pill ${rag(s.conv,50,35)}">${s.conv}%</span></td>
+      <td class="num"><span class="pill ${rag(s.finPct,40,25)}">${s.finPct}%</span></td>
+      <td class="num"><span class="pill ${rag(s.stale,0,0,true)}">${s.stale}</span></td>
+    </tr>`).join('') : '<tr><td colspan="9" class="empty">No data for this period.</td></tr>';
+
+  document.querySelectorAll('#scoreTable tbody tr[data-rep]').forEach(tr=>{
+    tr.onclick = ()=>{ const r=tr.dataset.rep; repFilter = (repFilter===r)?'':r; render(); };
+  });
+
+  // Call list — untouched active leads
+  let calls = rows.filter(e=>ACTIVE.includes(e.stage) && daysSince(e.lastContactAt||e.createdAt)>STALE_DAYS)
+    .map(e=>({...e, days:daysSince(e.lastContactAt||e.createdAt), repd:repName(e.rep)}));
+  if(repFilter) calls = calls.filter(e=>e.repd===repFilter);
+  const ck=sortCall.k, cdir=sortCall.dir;
+  calls.sort((a,b)=>{ const va=a[ck==='rep'?'repd':ck], vb=b[ck==='rep'?'repd':ck];
+    return (typeof va==='string') ? cdir*String(va).localeCompare(String(vb)) : cdir*((va||0)-(vb||0)); });
+
+  $('#callSub').innerHTML = (repFilter?`Filtered to <b>${esc(repFilter)}</b> — click their row again to clear. `:'')
+    + calls.length + ' lead(s) need action.';
+  $('#callTable tbody').innerHTML = calls.length ? calls.slice(0,300).map(e=>`
+    <tr class="callrow">
+      <td class="num days" style="color:${e.days>21?'var(--bad)':e.days>14?'var(--warn)':'var(--text)'}">${e.days}</td>
+      <td>${esc(e.customer)}</td>
+      <td>${e.phone?`<a class="tel" href="tel:${esc(e.phone)}">${esc(e.phone)}</a>`:'<span class="muted">—</span>'}</td>
+      <td class="muted">${esc(e.counter)}</td>
+      <td class="muted">${esc(e.model)}</td>
+      <td>${esc(e.repd)}</td>
+      <td>${esc(e.stage)}</td>
+      <td class="muted">${esc((e.notes||'').slice(0,40))}</td>
+    </tr>`).join('') : '<tr><td colspan="8" class="empty">🎉 Nothing untouched in this view. Pipeline is clean.</td></tr>';
+}
+function kpi(v,l,color){ return `<div class="kpi"><div class="v" style="${color?`color:${color}`:''}">${v}</div><div class="l">${l}</div></div>`; }
+
+// events
+$('#month').onchange = render;
+$('#counter').onchange = ()=>{ repFilter=''; render(); };
+$('#refresh').onclick = load;
+document.querySelectorAll('#scoreTable th[data-k]').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; sortScore = {k, dir: sortScore.k===k?-sortScore.dir:-1}; render(); });
+document.querySelectorAll('#callTable th[data-k]').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; sortCall = {k, dir: sortCall.k===k?-sortCall.dir:-1}; render(); });
+
+load();
+</script>
+</body>
+</html>
