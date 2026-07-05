@@ -1315,6 +1315,30 @@ function initApp() {
 }
 document.addEventListener('DOMContentLoaded', initApp);
 </script>
+<!-- ===== Auto-refresh from Google Sheets — paste this whole block just ABOVE </body> in index.html ===== -->
+<!-- Makes the dashboard pull the latest server feed on every open AND every 5 minutes, with no button click. -->
+<script>
+(function(){
+  var EVERY_MS = 5 * 60 * 1000; // re-pull every 5 minutes
+
+  function repaint(){
+    try{ if(typeof refreshAllSelects === 'function') refreshAllSelects(); }catch(e){}
+    try{ if(typeof refreshMonthOptions === 'function') refreshMonthOptions(); }catch(e){}
+    try{ var a = document.querySelector('.nav-item.active'); if(typeof setView==='function') setView(a ? a.dataset.view : 'dashboard'); }catch(e){}
+  }
+
+  function pull(){
+    try{
+      if(typeof loadFromScript !== 'function') return;
+      var p = loadFromScript();
+      if(p && typeof p.then === 'function'){ p.then(function(ok){ if(ok) repaint(); }).catch(function(){}); }
+    }catch(e){}
+  }
+
+  function start(){ pull(); setInterval(pull, EVERY_MS); }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+})();
+</script>
 </body>
 <script>
 // Auto-pull live data on every open so management/team always see the
