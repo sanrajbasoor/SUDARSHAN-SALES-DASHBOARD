@@ -1904,4 +1904,177 @@ document.addEventListener('DOMContentLoaded', initApp);
 })();
 </script>
 
+<!-- ===== STOCK AGEING & DEADSTOCK CALCULATOR (Floor Plan) — additive, self-contained =====
+     Source: raw DMS STOCK export → "Vehicle Age (In Days)" (col U) + "DLP" (col T).
+     Buckets 0–60 / 61–120 / 121–180 / 180+ (deadstock). Interest = DLP × rate% × days/365. -->
+<script>
+(function(){
+  "use strict";
+  var KEY='hero-ageing-v1';
+  var BUCKETS=[
+    {key:'0-60',   hi:60,       label:'0–60 days',    color:'#2bd47d', tag:'Fresh'},
+    {key:'61-120', hi:120,      label:'61–120 days',  color:'#ffb02e', tag:'Watch'},
+    {key:'121-180',hi:180,      label:'121–180 days', color:'#ff8b3d', tag:'Ageing risk'},
+    {key:'180+',   hi:Infinity, label:'180+ days',    color:'#ff5c5c', tag:'Deadstock'}
+  ];
+  var DEAD='180+';
+  var st;
+  function load(){ try{ st=JSON.parse(localStorage.getItem(KEY)); }catch(e){ st=null; } if(!st||typeof st!=='object') st={rows:[],rate:10,updatedAt:'',source:''}; if(!Array.isArray(st.rows)) st.rows=[]; }
+  function save(){ try{ localStorage.setItem(KEY,JSON.stringify(st)); }catch(e){} }
+  load();
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function INR(n){ n=Math.round(Number(n)||0); var neg=n<0; n=Math.abs(n); var s=String(n),l3=s.slice(-3),rest=s.slice(0,-3); if(rest)l3=','+l3; rest=rest.replace(/\B(?=(\d{2})+(?!\d))/g,','); return (neg?'-':'')+'₹'+rest+l3; }
+  function INRc(n){ n=Number(n)||0; var a=Math.abs(n); if(a>=1e7) return '₹'+(n/1e7).toFixed(2)+' Cr'; if(a>=1e5) return '₹'+(n/1e5).toFixed(2)+' L'; return INR(n); }
+  function num(x){ var n=parseFloat(String(x==null?'':x).replace(/[^0-9.\-]/g,'')); return isNaN(n)?null:n; }
+  function rate(){ var el=document.getElementById('ageing-rate'); if(el&&!isNaN(parseFloat(el.value))) return parseFloat(el.value); var o=document.getElementById('ops-rate'); if(o&&!isNaN(parseFloat(o.value))) return parseFloat(o.value); return st.rate||10; }
+  function bucketOf(age){ for(var i=0;i<BUCKETS.length;i++){ if(age<=BUCKETS[i].hi) return BUCKETS[i]; } return BUCKETS[BUCKETS.length-1]; }
+  function parsePaste(text){
+    var lines=text.split(/\r?\n/).filter(function(l){return l.trim()!=='';});
+    if(!lines.length) return [];
+    function cells(l){ return (l.indexOf('\t')>-1 ? l.split('\t') : l.split(',')).map(function(c){return c.trim();}); }
+    var hdr=cells(lines[0]).map(function(c){return c.toLowerCase();});
+    var ageI=-1,dlpI=-1,modI=-1;
+    hdr.forEach(function(c,i){
+      if(ageI<0 && /vehicle\s*age|age\s*\(?\s*in\s*days|age.*day/.test(c)) ageI=i;
+      if(dlpI<0 && (c==='dlp'||/\bdlp\b/.test(c))) dlpI=i;
+      if(modI<0 && c==='model') modI=i;
+    });
+    var start=1;
+    if(ageI<0){
+      var w=cells(lines[0]).length; start=0;
+      if(w>=21){ modI=6; dlpI=19; ageI=20; }
+      else if(w===2){ dlpI=0; ageI=1; }
+      else if(w===1){ ageI=0; }
+      else return [];
+    }
+    var out=[];
+    for(var r=start;r<lines.length;r++){
+      var c=cells(lines[r]); if(!c.length) continue;
+      var age = ageI>-1 ? num(c[ageI]) : null;
+      if(age==null || age<0 || age>4000) continue;
+      out.push({ model: modI>-1?String(c[modI]||'').trim():'', dlp: dlpI>-1?(num(c[dlpI])||0):0, age:Math.round(age) });
+    }
+    return out;
+  }
+  function compute(){
+    var R=rate(), rows=st.rows, per={};
+    BUCKETS.forEach(function(b){ per[b.key]={units:0,value:0,interest:0}; });
+    var tU=0,tV=0,tI=0,ageSum=0,oldest=0,hasDLP=false;
+    rows.forEach(function(u){
+      var b=bucketOf(u.age), intr=(u.dlp||0)*R/100*u.age/365;
+      per[b.key].units++; per[b.key].value+=(u.dlp||0); per[b.key].interest+=intr;
+      tU++; tV+=(u.dlp||0); tI+=intr; ageSum+=u.age; if(u.age>oldest)oldest=u.age; if(u.dlp)hasDLP=true;
+    });
+    return {per:per,units:tU,value:tV,interest:tI,avg:tU?Math.round(ageSum/tU):0,oldest:oldest,hasDLP:hasDLP,rate:R};
+  }
+  function deadModels(){
+    var m={}; st.rows.forEach(function(u){ if(u.age>180){ var k=u.model||'(unlabelled)'; if(!m[k])m[k]={units:0,value:0,oldest:0}; m[k].units++; m[k].value+=(u.dlp||0); if(u.age>m[k].oldest)m[k].oldest=u.age; } });
+    return Object.keys(m).map(function(k){return {model:k,units:m[k].units,value:m[k].value,oldest:m[k].oldest};}).sort(function(a,b){return b.units-a.units||b.oldest-a.oldest;});
+  }
+  function render(card){
+    var d=compute(), R=d.rate;
+    var h='<h3>&#9203; Stock ageing &amp; floor-plan interest</h3>'
+      +'<p class="help-text">Ageing from the DMS stock export &mdash; <b>Vehicle Age (In Days)</b> (col U). Interest accrues per unit as <b>DLP &times; rate% &times; days &divide; 365</b>. Deadstock = held <b>180+ days</b>.</p>';
+    h+='<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-top:10px">'
+      +'<label style="flex:1;min-width:240px;color:var(--muted);font-size:12px">Paste STOCK export rows (with a "Vehicle Age (In Days)" column; include "DLP" for value &amp; interest)'
+      +'<textarea id="ageing-paste" style="width:100%;min-height:70px;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:8px;font-family:monospace;font-size:12px;margin-top:6px" placeholder="Paste rows here — Tab or comma separated. Header row auto-detected."></textarea></label>'
+      +'<label style="color:var(--muted);font-size:12px">Annual rate %<br><input type="number" id="ageing-rate" value="'+R+'" min="0" max="36" step="0.1" style="width:90px;margin-top:6px;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:6px 8px;border-radius:8px" onchange="ageingSetRate(this.value)"/></label>'
+      +'</div>'
+      +'<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'
+      +'<button class="btn btn-primary btn-sm" onclick="ageingImport()">Load ageing</button>'
+      +'<button class="btn btn-sm" onclick="ageingSyncFromSheet()">&#128260; Sync ageing from Sheet</button>'
+      +'<button class="btn btn-sm btn-ghost" onclick="ageingReset()">Clear</button>'
+      +'<span class="help-text" style="margin-left:auto">'+(st.rows.length?('Loaded '+st.rows.length+' units &middot; '+esc(st.source||'paste')+' &middot; '+esc(st.updatedAt||'')):'No ageing data yet')+'</span>'
+      +'</div>';
+    if(!st.rows.length){
+      h+='<div style="margin-top:14px;padding:16px;border:1px dashed var(--line);border-radius:10px;color:var(--muted);font-size:13px;line-height:1.6">'
+        +'To activate: open the shared Sales sheet &rarr; the raw <b>STOCK</b> export tab, copy the columns <b>Model</b>, <b>DLP</b> and <b>Vehicle Age (In Days)</b> (or the whole export), paste above and click <b>Load ageing</b>. '
+        +'Once your Apps Script feed carries an <code>ageingRows</code> field, <b>Sync ageing from Sheet</b> pulls it automatically.</div>';
+      card.innerHTML=h; return;
+    }
+    var dead=d.per[DEAD];
+    h+='<div class="grid grid-4" style="margin-top:14px">'
+      +'<div class="card kpi"><h3>Units aged</h3><div class="kpi-value" style="color:#5b9eff">'+d.units+'</div><div class="kpi-trend">avg '+d.avg+' d &middot; oldest '+d.oldest+' d</div></div>'
+      +'<div class="card kpi"><h3>Stock value (DLP)</h3><div class="kpi-value">'+(d.hasDLP?INRc(d.value):'&mdash;')+'</div><div class="kpi-trend">'+(d.hasDLP?'sum of DLP':'add DLP column')+'</div></div>'
+      +'<div class="card kpi"><h3>Accrued interest</h3><div class="kpi-value" style="color:#ff8b3d">'+(d.hasDLP?INRc(d.interest):'&mdash;')+'</div><div class="kpi-trend">@ '+R+'% to date</div></div>'
+      +'<div class="card kpi"><h3>Deadstock 180+</h3><div class="kpi-value" style="color:#ff5c5c">'+dead.units+'</div><div class="kpi-trend">'+(d.hasDLP?INRc(dead.value)+' blocked':((d.units?Math.round(dead.units/d.units*100):0)+'% of stock'))+'</div></div>'
+      +'</div>';
+    h+='<div class="card" style="margin-top:14px"><h3>Ageing buckets</h3><div style="overflow-x:auto"><table class="table"><thead><tr>'
+      +'<th>Bucket</th><th>Status</th><th style="text-align:right">Units</th><th style="text-align:right">% of stock</th><th style="text-align:right">Value (DLP)</th><th style="text-align:right">Interest @'+R+'%</th><th style="min-width:140px">Share</th></tr></thead><tbody>';
+    BUCKETS.forEach(function(b){
+      var p=d.per[b.key], pct=d.units?Math.round(p.units/d.units*100):0;
+      h+='<tr>'
+        +'<td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+b.color+';margin-right:6px"></span><b>'+b.label+'</b></td>'
+        +'<td style="color:'+b.color+';font-weight:600">'+b.tag+'</td>'
+        +'<td style="text-align:right;font-weight:700">'+p.units+'</td>'
+        +'<td style="text-align:right;color:var(--muted)">'+pct+'%</td>'
+        +'<td style="text-align:right">'+(d.hasDLP?INR(p.value):'&mdash;')+'</td>'
+        +'<td style="text-align:right;color:#ff8b3d">'+(d.hasDLP?INR(p.interest):'&mdash;')+'</td>'
+        +'<td><div class="pb" style="margin-top:0"><div class="pb-fill" style="width:'+pct+'%;background:'+b.color+'"></div></div></td>'
+        +'</tr>';
+    });
+    h+='<tr style="border-top:2px solid var(--line)"><td style="font-weight:800">Total</td><td></td>'
+      +'<td style="text-align:right;font-weight:800">'+d.units+'</td><td style="text-align:right">100%</td>'
+      +'<td style="text-align:right;font-weight:800">'+(d.hasDLP?INR(d.value):'&mdash;')+'</td>'
+      +'<td style="text-align:right;font-weight:800;color:#ff8b3d">'+(d.hasDLP?INR(d.interest):'&mdash;')+'</td><td></td></tr>';
+    h+='</tbody></table></div>'
+      +'<p class="help-text">Interest is cumulative carrying cost accrued to date on each unit (DLP &times; '+R+'% &times; age&divide;365). Change the rate above to reprice &mdash; it also drives the Interest cost estimator on this tab.</p></div>';
+    var dm=deadModels();
+    if(dm.length){
+      h+='<div class="card" style="margin-top:14px;border-left:4px solid #ff5c5c"><h3 style="color:#ff5c5c">&#128721; Deadstock (180+ days) &mdash; act first</h3>'
+        +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Model</th><th style="text-align:right">Units</th><th style="text-align:right">Value (DLP)</th><th style="text-align:right">Oldest (days)</th></tr></thead><tbody>';
+      dm.slice(0,20).forEach(function(r){ h+='<tr><td>'+esc(r.model)+'</td><td style="text-align:right;font-weight:700">'+r.units+'</td><td style="text-align:right">'+(r.value?INR(r.value):'&mdash;')+'</td><td style="text-align:right;color:#ff5c5c;font-weight:700">'+r.oldest+'</td></tr>'; });
+      h+='</tbody></table></div><p class="help-text">These units are past 180 days &mdash; prioritise for discount, inter-counter transfer, or festival-DC push to release blocked capital and stop interest bleed.</p></div>';
+    }
+    card.innerHTML=h;
+  }
+  function mount(){
+    var root=document.getElementById('ops-floorplan-root'); if(!root) return;
+    var card=document.getElementById('ageing-card');
+    if(!card){ card=document.createElement('div'); card.id='ageing-card'; card.className='card'; card.style.marginTop='14px'; root.appendChild(card); }
+    else if(card.parentNode!==root){ root.appendChild(card); }
+    render(card);
+  }
+  function isFloorplanActive(){ var a=document.querySelector('.nav-item.active'); return a && a.dataset.view==='floorplan'; }
+  function remount(){ if(isFloorplanActive()) setTimeout(mount,20); }
+  window.ageingImport=function(){
+    var ta=document.getElementById('ageing-paste'); if(!ta) return;
+    var rows=parsePaste(ta.value||'');
+    if(!rows.length){ if(typeof showToast==='function') showToast('No "Vehicle Age" rows found — include the age column (U)'); return; }
+    st.rows=rows; st.source='paste'; st.updatedAt=new Date().toLocaleString('en-IN'); save();
+    if(typeof showToast==='function') showToast('Loaded '+rows.length+' units into ageing'); mount();
+  };
+  window.ageingSetRate=function(v){ v=parseFloat(v); if(isNaN(v))return; st.rate=v; save();
+    var o=document.getElementById('ops-rate'); if(o){ o.value=v; if(typeof window.opsRate==='function'){ try{ window.opsRate(v); }catch(e){} } }
+    mount();
+  };
+  window.ageingReset=function(){ if(!confirm('Clear loaded ageing data?'))return; st.rows=[]; st.source=''; st.updatedAt=''; save(); mount(); };
+  window.ageingSyncFromSheet=function(silent){
+    try{ if(!(typeof config!=='undefined'&&config.script&&config.script.url)){ if(!silent&&typeof showToast==='function') showToast('No Apps Script URL saved (Settings)'); return; } }
+    catch(e){ return; }
+    if(!silent&&typeof showToast==='function') showToast('Syncing ageing from Sheet…');
+    fetch(config.script.url+'?t='+Date.now(),{cache:'no-cache',redirect:'follow'}).then(function(r){return r.json();}).then(function(j){
+      var rows=null;
+      if(Array.isArray(j.ageingRows)) rows=j.ageingRows.map(function(u){return {model:u.model||u.Model||'',dlp:Number(u.dlp||u.DLP||0)||0,age:Math.round(Number(u.age||u.vehicleAge||u['Vehicle Age (In Days)']||0))||0};});
+      else if(j.ageing && Array.isArray(j.ageing.rows)) rows=j.ageing.rows;
+      if(rows && rows.length){ st.rows=rows.filter(function(u){return u.age>=0;}); st.source='Apps Script'; st.updatedAt=new Date().toLocaleString('en-IN'); save(); mount(); if(!silent&&typeof showToast==='function') showToast('Ageing synced: '+st.rows.length+' units'); }
+      else if(!silent&&typeof showToast==='function') showToast('Feed has no ageingRows yet — add it in OpsData.gs (see notes)');
+    }).catch(function(e){ if(!silent&&typeof showToast==='function') showToast('Sync failed: '+e.message); });
+  };
+  function wrap(name){ var o=window[name]; if(typeof o==='function' && !o.__ageWrapped){ var w=function(){ var r=o.apply(this,arguments); remount(); return r; }; w.__ageWrapped=true; window[name]=w; } }
+  function init(){
+    var sv=window.setView;
+    if(typeof sv==='function' && !sv.__ageWrapped){ var w=function(name){ var r=sv.apply(this,arguments); if(name==='floorplan') setTimeout(mount,20); return r; }; w.__ageWrapped=true; window.setView=w; }
+    ['opsRate','opsImport','opsResetSnapshot'].forEach(wrap);
+    // auto-refresh ageing on the same cadence as counter sales / ops feed
+    var oss=window.opsSyncFromSheet;
+    if(typeof oss==='function' && !oss.__ageSync){ var w2=function(){ var r=oss.apply(this,arguments); try{ window.ageingSyncFromSheet(true); }catch(e){} remount(); return r; }; w2.__ageSync=true; w2.__ageWrapped=true; window.opsSyncFromSheet=w2; }
+    try{ if(typeof config!=='undefined' && config.script && config.script.url) setTimeout(function(){ window.ageingSyncFromSheet(true); },1600); }catch(e){}
+    if(!window.__ageTimer){ window.__ageTimer=setInterval(function(){ try{ if(typeof config!=='undefined'&&config.script&&config.script.url) window.ageingSyncFromSheet(true); }catch(e){} }, 30*60*1000); }
+    if(isFloorplanActive()) setTimeout(mount,60);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',function(){ setTimeout(init,300); }); else setTimeout(init,300);
+})();
+</script>
+
 </html>
