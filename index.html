@@ -1541,4 +1541,367 @@ document.addEventListener('DOMContentLoaded', initApp);
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init); else init();
 })();
 </script>
+<!-- ===== OPS MODULES: Stock · Floor Plan · Reconcile (additive, self-contained) ===== -->
+<script>
+(function(){
+  "use strict";
+  var OPS_KEY='hero-ops-v1';
+  var LOC=['Adhartal','Festival Counter-DC','Damoh Naka','Godown','Madan Mahal','Napier Town'];
+  var INR=function(n){ n=Math.round(Number(n)||0); var s=String(Math.abs(n)); var last3=s.slice(-3); var rest=s.slice(0,-3); if(rest) last3=','+last3; rest=rest.replace(/\B(?=(\d{2})+(?!\d))/g,','); return (n<0?'-':'')+'₹'+rest+last3; };
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function periodLabel(){ try{ return (typeof currentPeriod!=='undefined'&&currentPeriod)?formatMonthLabel(currentPeriod):'All time'; }catch(e){ return 'All time'; } }
+  function snapshotNote(){ return '<div class="card" style="margin-bottom:14px;border-left:4px solid var(--info);background:rgba(91,158,255,0.06)"><b>&#128246; Live snapshot.</b> <span class="help-text">Stock-in-hand and floor-plan are point-in-time figures as of the last sync ('+esc(ops.updatedAt)+'), so the top month filter does not change them &mdash; there is nothing monthly to filter on a physical stock count. Month-based retail history lives in the <b>Reconcile</b> tab.</span></div>'; }
+
+  var MATRIX={
+   'DESTINI 110':[0,5,5,23,4,2],'DESTINI 125':[1,3,2,11,8,2],'DESTINI PRIME':[0,4,0,10,5,1],
+   'GLAMOUR X':[1,6,4,35,7,5],'HF DELUXE':[5,44,12,77,16,7],'PASSION +':[0,13,1,24,2,3],
+   'PLEASURE+':[1,0,0,0,1,0],'SPLENDOR +':[9,58,14,110,16,12],'SPLENDOR+ XTEC':[1,7,1,1,0,1],
+   'SPLENDOR+ XTEC 2.0':[5,20,4,51,14,3],'SUPER SPLENDOR XTEC':[1,6,1,0,1,2],
+   'SUPER SPLENDOR XTEC 2.0':[1,1,5,10,7,2],'XOOM 125':[0,0,0,0,1,1],'XTREME 125R':[0,6,1,2,6,2]
+  };
+  function seed(){
+    var stock=[];
+    Object.keys(MATRIX).forEach(function(m){ MATRIX[m].forEach(function(q,i){ if(q>0) stock.push({model:m,loc:LOC[i],qty:q,inwardDate:''}); }); });
+    return {
+      updatedAt:'Sheet snapshot',
+      source:'seed',
+      stock:stock,
+      premium:[{model:'H-D X440 T',qty:3},{model:'XOOM 160',qty:4},{model:'XPULSE 210',qty:2}],
+      transit:[{model:'HF DELUXE',qty:45},{model:'SUPER SPLENDOR XTEC 2.0',qty:32}],
+      finance:{stockInHand:733,transit:77,grossStock:810,dcStock:173,netStock:637,dmsHmcl:726,dmsTotal:803,debitBalance:20560568,rate:11,
+               paid:{'HHML':726,'Central Motors':2,'M/S. Sudarshan Motocorp':5}},
+      sales:{segments:{'125cc':39,'Entry':70,'Mc100':181,'Premium':1,'Scooter':29,'VIDA':282},
+             channels:{'Counter (own)':487,'Sub-dealer':115},
+             counterLocs:{'At':27,'DN':123,'MML':142,'NT':195},
+             subDealers:{'Anushka Motors':14,'Ayansh Motors':25,'Gupta Motors':5,'Maa Narmada Traders':23,'Maruti Motors':12,'Mubeena Motors':19,'P.M Motors':12,'Uma Motors':5},
+             total:602}
+    };
+  }
+  var ops;
+  function load(){ try{var r=localStorage.getItem(OPS_KEY); ops=r?JSON.parse(r):seed();}catch(e){ops=seed();} if(!ops||!ops.stock) ops=seed(); }
+  function save(){ try{localStorage.setItem(OPS_KEY,JSON.stringify(ops));}catch(e){} }
+  load();
+
+  /* ---------- derived helpers ---------- */
+  function stockTotal(){ return ops.stock.reduce(function(a,r){return a+(+r.qty||0);},0); }
+  function byLocation(){ var m={}; LOC.forEach(function(l){m[l]=0;}); ops.stock.forEach(function(r){ m[r.loc]=(m[r.loc]||0)+(+r.qty||0); }); return m; }
+  function byModel(){ var m={}; ops.stock.forEach(function(r){ m[r.model]=(m[r.model]||0)+(+r.qty||0); }); return m; }
+  function norm(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+  function stockForEnquiryModel(model){
+    var target=norm(model); if(!target) return null;
+    var tokens=['destini','glamour','hfdeluxe','passion','pleasure','supersplendor','splendor','xoom','xtreme','x440','xpulse','vida','karizma','maestro'];
+    var key=null; tokens.forEach(function(t){ if(target.indexOf(t)>-1 && (!key||t.length>key.length)) key=t; });
+    if(!key) key=target.slice(0,6);
+    var matched={}, total=0, rows=[];
+    ops.stock.forEach(function(r){ if(norm(r.model).indexOf(key)>-1){ matched[r.loc]=(matched[r.loc]||0)+(+r.qty||0); total+=(+r.qty||0); } });
+    var tr=0; ops.transit.forEach(function(r){ if(norm(r.model).indexOf(key)>-1) tr+=(+r.qty||0); });
+    Object.keys(matched).forEach(function(l){ rows.push({loc:l,qty:matched[l]}); });
+    return {total:total,transit:tr,rows:rows,key:key};
+  }
+
+  /* ---------- shared UI bits ---------- */
+  function kpi(v,l,color,sub){ return '<div class="card kpi"><h3>'+l+'</h3><div class="kpi-value"'+(color?(' style="color:'+color+'"'):'')+'>'+v+'</div><div class="kpi-trend">'+(sub||'&nbsp;')+'</div></div>'; }
+  function importPanel(kind){
+    return '<div class="card" style="margin-bottom:14px;border-left:4px solid var(--accent-2)">'
+      +'<h3>&#128229; Update from DMS export</h3>'
+      +'<p class="help-text">Paste the '+kind+' pivot rows copied straight from your Hero DMS export / Google Sheet, then Load. Or leave it &mdash; the panel below shows the current snapshot. When your Apps Script feed carries ops data, this updates automatically.</p>'
+      +'<textarea id="ops-paste-'+kind+'" style="width:100%;min-height:90px;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:8px;font-family:monospace;font-size:12px;margin-top:8px" placeholder="Paste rows here (Tab or comma separated)"></textarea>'
+      +'<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'
+      +'<button class="btn btn-primary btn-sm" onclick="opsImport(\''+kind+'\')">Load '+kind+'</button>'
+      +'<button class="btn btn-sm" onclick="opsSyncFromSheet()">&#128260; Sync ops from Sheet</button>'
+      +'<button class="btn btn-sm btn-ghost" onclick="opsResetSnapshot()">Reset to sheet snapshot</button>'
+      +'<span class="help-text" style="margin-left:auto">Source: '+esc(ops.source==='seed'?'Sheet snapshot':ops.source)+' &middot; '+esc(ops.updatedAt)+'</span>'
+      +'</div>'
+      +'<div id="ops-last-refresh" class="help-text" style="margin-top:8px"></div>'
+      +'</div>';
+  }
+
+  /* ====================== STOCK VIEW ====================== */
+  function renderStock(){
+    var root=document.getElementById('ops-stock-root'); if(!root) return;
+    var loc=byLocation(), mdl=byModel(), total=stockTotal(), f=ops.finance;
+    var transitTot=ops.transit.reduce(function(a,r){return a+(+r.qty||0);},0);
+    var premTot=ops.premium.reduce(function(a,r){return a+(+r.qty||0);},0);
+    var h=snapshotNote()+importPanel('stock');
+    h+='<div class="grid grid-4">';
+    h+=kpi(total,'Stock in hand','#5b9eff',LOC.length+' locations');
+    h+=kpi(transitTot,'In transit','#ffb02e','arriving from HMCL');
+    h+=kpi((total+transitTot),'Gross stock','', 'in hand + transit');
+    h+=kpi(f.netStock,'Net (excl. DC)','#2bd47d','less festival-DC stock');
+    h+='</div>';
+
+    // location tiles
+    h+='<div class="card" style="margin-top:14px"><h3>Stock by location</h3><div class="grid grid-3" style="gap:10px">';
+    LOC.forEach(function(l){ var q=loc[l]||0, pct=total?Math.round(q/total*100):0;
+      h+='<div class="counter-card"><div class="counter-name">'+esc(l)+'<span style="color:var(--muted);font-weight:400;font-size:12px">'+pct+'%</span></div>'
+        +'<div style="font-size:22px;font-weight:800">'+q+'</div>'
+        +'<div class="pb"><div class="pb-fill" style="width:'+pct+'%"></div></div></div>';
+    });
+    h+='</div></div>';
+
+    // top models chart + grid
+    h+='<div class="grid grid-2" style="margin-top:14px">';
+    h+='<div class="card"><h3>Stock concentration by model</h3><div class="chart-wrap"><canvas id="ops-model-chart"></canvas></div></div>';
+    h+='<div class="card"><h3>In transit &amp; big bikes</h3>';
+    h+='<table class="table"><thead><tr><th>Model</th><th style="text-align:right">In transit</th></tr></thead><tbody>';
+    ops.transit.forEach(function(r){ h+='<tr><td>'+esc(r.model)+'</td><td style="text-align:right;color:#ffb02e;font-weight:700">'+r.qty+'</td></tr>'; });
+    h+='<tr><td style="font-weight:700">Total in transit</td><td style="text-align:right;font-weight:800">'+transitTot+'</td></tr></tbody></table>';
+    h+='<h3 style="margin-top:16px">Premium / big bikes ('+premTot+')</h3><table class="table"><tbody>';
+    ops.premium.forEach(function(r){ h+='<tr><td>'+esc(r.model)+'</td><td style="text-align:right;font-weight:700">'+r.qty+'</td></tr>'; });
+    h+='</tbody></table></div>';
+    h+='</div>';
+
+    // model x location grid
+    h+='<div class="card" style="margin-top:14px"><h3>Model &times; location availability</h3><div style="overflow-x:auto"><table class="table"><thead><tr><th>Model</th>';
+    LOC.forEach(function(l){ h+='<th style="text-align:right">'+esc(l.replace('Festival Counter-DC','Fest-DC'))+'</th>'; });
+    h+='<th style="text-align:right">Total</th></tr></thead><tbody>';
+    Object.keys(mdl).sort(function(a,b){return mdl[b]-mdl[a];}).forEach(function(m){
+      var rowLoc={}; ops.stock.forEach(function(r){ if(r.model===m) rowLoc[r.loc]=(rowLoc[r.loc]||0)+(+r.qty||0); });
+      h+='<tr><td style="font-weight:600">'+esc(m)+'</td>';
+      LOC.forEach(function(l){ var q=rowLoc[l]||0; h+='<td style="text-align:right'+(q===0?';color:var(--muted)':'')+'">'+(q||'&middot;')+'</td>'; });
+      h+='<td style="text-align:right;font-weight:800">'+mdl[m]+'</td></tr>';
+    });
+    h+='<tr style="border-top:2px solid var(--line)"><td style="font-weight:800">Grand total</td>';
+    LOC.forEach(function(l){ h+='<td style="text-align:right;font-weight:800">'+(loc[l]||0)+'</td>'; });
+    h+='<td style="text-align:right;font-weight:800">'+total+'</td></tr>';
+    h+='</tbody></table></div></div>';
+
+    // deadstock notice
+    var withDates=ops.stock.filter(function(r){return r.inwardDate;});
+    h+='<div class="card" style="margin-top:14px"><h3>Stock ageing &amp; deadstock</h3>';
+    if(!withDates.length){
+      h+='<p class="help-text">Ageing is not active yet. Add an <b>Inward / GRN date</b> column to the DMS stock export (one date per unit) and this card will automatically flag units held &gt; 45 / 60 / 90 days &mdash; the single change that unlocks deadstock and interest analytics.</p>';
+    } else {
+      var buckets={'>90':0,'60-90':0,'45-60':0}; var today=new Date();
+      withDates.forEach(function(r){ var d=Math.round((today-new Date(r.inwardDate))/86400000); if(d>90)buckets['>90']+=r.qty; else if(d>60)buckets['60-90']+=r.qty; else if(d>45)buckets['45-60']+=r.qty; });
+      h+='<div class="grid grid-3">'+kpi(buckets['45-60'],'45-60 days','#ffb02e')+kpi(buckets['60-90'],'60-90 days','#ff8b3d')+kpi(buckets['>90'],'&gt; 90 days (deadstock)','#ff5c5c')+'</div>';
+    }
+    h+='</div>';
+
+    root.innerHTML=h; opsStamp();
+    // chart
+    var top=Object.keys(mdl).sort(function(a,b){return mdl[b]-mdl[a];}).slice(0,10);
+    if(typeof drawChart==='function') drawChart('ops-model-chart','bar',{labels:top,datasets:[{data:top.map(function(m){return mdl[m];}),backgroundColor:'#5b9eff88'}]},{indexAxis:'y',plugins:{legend:{display:false}}});
+  }
+
+  /* ====================== FLOOR PLAN VIEW ====================== */
+  function renderFloorplan(){
+    var root=document.getElementById('ops-floorplan-root'); if(!root) return;
+    var f=ops.finance;
+    var h=snapshotNote()+importPanel('finance');
+    h+='<div class="grid grid-4">';
+    h+=kpi(INR(f.debitBalance),'Floor-plan debit balance','#ff5c5c','capital tied in stock');
+    h+=kpi(f.dmsHmcl,'DMS HMCL stock','', 'financed by HHML');
+    h+=kpi(f.dmsTotal,'DMS total stock','', 'all accounts');
+    h+=kpi(f.netStock,'Net stock in hand','#2bd47d','excl. DC / network');
+    h+='</div>';
+
+    // reconciliation
+    var physical=stockTotal();
+    var rows=[
+      ['Physical stock in hand (counted)',physical,''],
+      ['DMS HMCL stock (system)',f.dmsHmcl,physical-f.dmsHmcl],
+      ['DMS total stock',f.dmsTotal,''],
+      ['Gross stock (in hand + transit)',f.grossStock,''],
+      ['Less: DC / festival stock',f.dcStock,''],
+      ['Net stock in hand',f.netStock,'']
+    ];
+    h+='<div class="grid grid-2" style="margin-top:14px">';
+    h+='<div class="card"><h3>Physical &harr; DMS &harr; paid-up reconciliation</h3><table class="table"><thead><tr><th>Measure</th><th style="text-align:right">Units</th><th style="text-align:right">Variance</th></tr></thead><tbody>';
+    rows.forEach(function(r){ var v=r[2]; var vtxt = v===''?'&mdash;':(v===0?'&#10003; 0':(v>0?('+'+v):String(v)));
+      var col = v===''?'var(--muted)':(v===0?'#2bd47d':'#ff5c5c');
+      h+='<tr><td>'+r[0]+'</td><td style="text-align:right;font-weight:700">'+r[1]+'</td><td style="text-align:right;color:'+col+'">'+vtxt+'</td></tr>'; });
+    h+='</tbody></table><p class="help-text">A non-zero physical &harr; DMS variance = missing or mis-scanned VINs; investigate same day.</p></div>';
+
+    // paid-up doughnut
+    h+='<div class="card"><h3>Paid-up stock by account</h3><div class="chart-wrap"><canvas id="ops-paid-chart"></canvas></div></div>';
+    h+='</div>';
+
+    // interest estimator
+    h+='<div class="card" style="margin-top:14px"><h3>Interest cost estimator</h3>'
+      +'<p class="help-text">Floor-plan interest bleeds daily on unsold financed stock. Enter your annual rate to see the carrying cost.</p>'
+      +'<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:8px">'
+      +'<label style="color:var(--muted);font-size:13px">Annual rate %<input type="number" id="ops-rate" value="'+(f.rate||11)+'" min="0" max="36" step="0.1" style="width:80px;margin-left:8px;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:6px 8px;border-radius:8px" oninput="opsRate(this.value)"/></label>'
+      +'<div id="ops-interest-out" style="display:flex;gap:22px;flex-wrap:wrap"></div>'
+      +'</div>'
+      +'<p class="help-text" style="margin-top:10px">Aged financed stock needs a <b>funding date</b> per unit in the DMS feed &mdash; add it and this becomes rupee-per-unit interest, oldest first.</p></div>';
+
+    root.innerHTML=h; opsStamp();
+    var pk=Object.keys(f.paid);
+    if(typeof drawChart==='function') drawChart('ops-paid-chart','doughnut',{labels:pk,datasets:[{data:pk.map(function(k){return f.paid[k];}),backgroundColor:['#ff2e2e','#ffb02e','#5b9eff','#2bd47d']}]},{});
+    opsRate(f.rate||11);
+  }
+  window.opsRate=function(v){ v=Number(v)||0; if(ops.finance){ops.finance.rate=v; save();}
+    var bal=ops.finance.debitBalance; var perYear=bal*v/100, perDay=perYear/365, perMonth=perYear/12;
+    var el=document.getElementById('ops-interest-out'); if(!el) return;
+    function b(val,lab){ return '<div><div style="font-size:20px;font-weight:800;color:#ff8b3d">'+INR(val)+'</div><div class="help-text">'+lab+'</div></div>'; }
+    el.innerHTML=b(perDay,'per day')+b(perMonth,'per month')+b(perYear,'per year');
+  };
+
+  /* ====================== RECONCILE VIEW ====================== */
+  function renderReconcile(){
+    var root=document.getElementById('ops-reconcile-root'); if(!root) return;
+    var s=ops.sales; var ev=s.segments['VIDA']||0; var ice=s.total-ev;
+    // live won enquiries
+    var won=0; try{ won=(enquiries||[]).filter(function(e){return e.stage==='Won' && (typeof inPeriod!=='function'||inPeriod(e));}).length; }catch(e){}
+    var unlogged=Math.max(0,s.total-won);
+    var h=importPanel('sales');
+    h+='<div class="grid grid-4">';
+    h+=kpi(s.total,'Invoices (retail)','#5b9eff','from sales register');
+    h+=kpi(ev,'VIDA / EV','#2bd47d',(s.total?Math.round(ev/s.total*100):0)+'% of retail');
+    h+=kpi(ice,'ICE','', (s.total?Math.round(ice/s.total*100):0)+'% of retail');
+    h+=kpi(won,'Enquiries won (CRM)','#ffb02e','month: '+periodLabel());
+    h+='</div>';
+
+    h+='<div class="grid grid-2" style="margin-top:14px">';
+    h+='<div class="card"><h3>EV vs ICE mix</h3><div class="chart-wrap"><canvas id="ops-evice-chart"></canvas></div></div>';
+    h+='<div class="card"><h3>Segment mix</h3><div class="chart-wrap"><canvas id="ops-seg-chart"></canvas></div></div>';
+    h+='</div>';
+
+    // reconciliation card
+    h+='<div class="card" style="margin-top:14px;border-left:4px solid var(--accent)"><h3>Sales register &harr; Enquiry register</h3>'
+      +'<div class="grid grid-3">'
+      +kpi(s.total,'Retail invoices','')
+      +kpi(won,'Enquiries marked Won','')
+      +kpi(unlogged,'Retails not in CRM','#ff5c5c')
+      +'</div>'
+      +'<p class="help-text">Won-enquiries shown for <b>'+periodLabel()+'</b>; retail total reflects the current sales-register feed. '+unlogged+' retail(s) have no matching won-enquiry &mdash; walk-ins never logged. Every one is lost rep credit and understated conversion. Match on customer name / phone once both feeds carry it to pinpoint the exact rows.</p></div>';
+
+    // channel + subdealer
+    h+='<div class="grid grid-2" style="margin-top:14px">';
+    h+='<div class="card"><h3>Channel &amp; counter mix</h3><table class="table"><tbody>';
+    Object.keys(s.channels).forEach(function(k){ h+='<tr><td>'+esc(k)+'</td><td style="text-align:right;font-weight:700">'+s.channels[k]+'</td></tr>'; });
+    h+='</tbody></table><h3 style="margin-top:14px">Own counters</h3><table class="table"><tbody>';
+    Object.keys(s.counterLocs).forEach(function(k){ h+='<tr><td>'+esc(k)+'</td><td style="text-align:right">'+s.counterLocs[k]+'</td></tr>'; });
+    h+='</tbody></table></div>';
+    h+='<div class="card"><h3>Sub-dealer retail</h3><table class="table"><thead><tr><th>Sub-dealer</th><th style="text-align:right">Units</th></tr></thead><tbody>';
+    Object.keys(s.subDealers).sort(function(a,b){return s.subDealers[b]-s.subDealers[a];}).forEach(function(k){ h+='<tr><td>'+esc(k)+'</td><td style="text-align:right;font-weight:700">'+s.subDealers[k]+'</td></tr>'; });
+    h+='<tr style="border-top:2px solid var(--line)"><td style="font-weight:800">Total sub-dealer</td><td style="text-align:right;font-weight:800">'+s.channels['Sub-dealer']+'</td></tr></tbody></table></div>';
+    h+='</div>';
+
+    root.innerHTML=h; opsStamp();
+    if(typeof drawChart==='function'){
+      drawChart('ops-evice-chart','doughnut',{labels:['VIDA / EV','ICE'],datasets:[{data:[ev,ice],backgroundColor:['#2bd47d','#5b9eff']}]},{});
+      var sk=Object.keys(s.segments); drawChart('ops-seg-chart','bar',{labels:sk,datasets:[{data:sk.map(function(k){return s.segments[k];}),backgroundColor:'#ffb02e88'}]},{plugins:{legend:{display:false}}});
+    }
+  }
+
+  /* ====================== IMPORT (DMS paste) ====================== */
+  function splitRows(text){ return text.split(/\r?\n/).map(function(l){return l.split(/\t|,|\s{2,}|\|/).map(function(c){return c.trim();}).filter(function(c,i,a){return !(c===''&&a.length>1&&i===a.length-1);});}).filter(function(r){return r.join('').trim()!=='';}); }
+  function locFromToken(t){ t=t.toLowerCase(); if(t.indexOf('adhar')>-1||t==='adrtl')return 'Adhartal'; if(t.indexOf('festival')>-1||t==='dc'||t.indexOf('counter-dc')>-1)return 'Festival Counter-DC'; if(t.indexOf('damoh')>-1||t==='dn')return 'Damoh Naka'; if(t.indexOf('god')>-1)return 'Godown'; if(t.indexOf('madan')>-1||t==='mm')return 'Madan Mahal'; if(t.indexOf('napier')>-1||t==='nt')return 'Napier Town'; return null; }
+  var MODEL_KEYS=['destini','glamour','hf del','deluxe','passion','pleasure','super splendor','splendor','xoom','xtreme','x440','xpulse','vida','karizma','maestro'];
+  function looksLikeModel(s){ s=s.toLowerCase(); return MODEL_KEYS.some(function(k){return s.indexOf(k)>-1;}); }
+  window.opsImport=function(kind){
+    var ta=document.getElementById('ops-paste-'+kind); if(!ta) return; var text=ta.value.trim();
+    if(!text){ showToast('Paste some rows first'); return; }
+    var rows=splitRows(text);
+    try{
+      if(kind==='stock'){
+        // find header row with location tokens
+        var hdr=-1, colMap=[];
+        for(var i=0;i<rows.length;i++){ var lc=rows[i].map(locFromToken); if(lc.filter(Boolean).length>=2){ hdr=i; colMap=lc; break; } }
+        if(hdr<0){ showToast('Could not find a location header row'); return; }
+        var newStock=[];
+        for(var j=hdr+1;j<rows.length;j++){ var r=rows[j]; if(!r.length) continue; var name=r[0]; if(!looksLikeModel(name)) continue;
+          colMap.forEach(function(loc,ci){ if(!loc) return; var q=parseInt(r[ci],10); if(q>0) newStock.push({model:name.toUpperCase(),loc:loc,qty:q,inwardDate:''}); });
+        }
+        if(!newStock.length){ showToast('No model rows detected'); return; }
+        ops.stock=newStock;
+      } else if(kind==='sales'){
+        // detect segment header
+        var shdr=-1, seg=[];
+        for(var i2=0;i2<rows.length;i2++){ var joined=rows[i2].join(' ').toLowerCase(); if(joined.indexOf('vida')>-1||joined.indexOf('mc100')>-1||joined.indexOf('scooter')>-1){ shdr=i2; seg=rows[i2]; break; } }
+        if(shdr<0){ showToast('Could not find a segment header row'); return; }
+        var segIdx={}; seg.forEach(function(c,i){ var t=c.toLowerCase(); if(/125/.test(t))segIdx['125cc']=i; else if(t.indexOf('entry')>-1)segIdx['Entry']=i; else if(t.indexOf('mc100')>-1)segIdx['Mc100']=i; else if(t.indexOf('premium')>-1)segIdx['Premium']=i; else if(t.indexOf('scooter')>-1)segIdx['Scooter']=i; else if(t.indexOf('vida')>-1)segIdx['VIDA']=i; });
+        var sales=JSON.parse(JSON.stringify(ops.sales)); var grand=null;
+        for(var k=shdr+1;k<rows.length;k++){ var rr=rows[k]; var lab=(rr[0]||'').toLowerCase(); if(!lab) continue;
+          if(lab.indexOf('grand')>-1){ grand=rr; }
+        }
+        if(grand){ var t2=0; Object.keys(segIdx).forEach(function(s2){ var v=parseInt(grand[segIdx[s2]],10)||0; sales.segments[s2]=v; t2+=v; }); if(t2) sales.total=t2; }
+        ops.sales=sales;
+      } else if(kind==='finance'){
+        // key: value lines
+        var f=ops.finance;
+        rows.forEach(function(r){ var lab=(r[0]||'').toLowerCase(); var num=parseInt(String(r[r.length-1]).replace(/[^0-9]/g,''),10); if(isNaN(num))return;
+          if(lab.indexOf('debit')>-1)f.debitBalance=num; else if(lab.indexOf('dms')>-1&&lab.indexOf('total')>-1)f.dmsTotal=num; else if(lab.indexOf('dms')>-1)f.dmsHmcl=num; else if(lab.indexOf('net')>-1)f.netStock=num; else if(lab.indexOf('transit')>-1)f.transit=num; else if(lab.indexOf('gross')>-1)f.grossStock=num; });
+      }
+      ops.source='DMS paste'; ops.updatedAt=new Date().toLocaleString('en-IN'); save();
+      showToast(kind+' updated'); ta.value=''; rerenderActiveOps();
+    }catch(e){ showToast('Import error: '+e.message); }
+  };
+  window.opsResetSnapshot=function(){ if(!confirm('Reset ops data to the original sheet snapshot?'))return; ops=seed(); save(); rerenderActiveOps(); showToast('Reset to snapshot'); };
+  window.opsSyncFromSheet=function(silent){
+    try{ if(!(typeof config!=='undefined'&&config.script&&config.script.url)){ if(!silent) showToast('No Apps Script URL saved (Settings)'); return; } }catch(e){ if(!silent) showToast('No feed configured'); return; }
+    if(!silent) showToast('Syncing ops from Sheet...');
+    fetch(config.script.url+'?t='+Date.now(),{cache:'no-cache',redirect:'follow'}).then(function(r){return r.json();}).then(function(j){
+      var got=false;
+      if(j.stock&&Array.isArray(j.stock)){ ops.stock=j.stock; got=true; }
+      if(j.finance){ ops.finance=Object.assign(ops.finance,j.finance); got=true; }
+      if(j.transit&&Array.isArray(j.transit)){ ops.transit=j.transit; got=true; }
+      if(j.sales){ ops.sales=Object.assign(ops.sales,j.sales); got=true; }
+      if(got){ ops.source='Apps Script'; ops.updatedAt=new Date().toLocaleString('en-IN'); save(); rerenderActiveOps(); opsStamp(); if(!silent) showToast('Ops synced from Sheet'); }
+      else if(!silent) showToast('Feed has no ops data yet (stock/finance/sales keys)');
+    }).catch(function(e){ if(!silent) showToast('Sync failed: '+e.message); });
+  };
+  function opsStamp(){ var el=document.getElementById('ops-last-refresh'); if(el) el.textContent='Ops auto-refresh: every 30 min · last '+new Date().toLocaleTimeString('en-IN'); }
+
+  /* ====================== NAV + VIEWS ====================== */
+  function addNav(view,label){
+    var items=document.querySelectorAll('.nav-item'); if(!items.length) return;
+    if(document.querySelector('.nav-item[data-view="'+view+'"]')) return;
+    var last=items[items.length-1]; var c=last.cloneNode(true); c.classList.remove('active'); c.setAttribute('data-view',view); c.textContent=label;
+    c.onclick=function(){ window.setView(view); };
+    last.parentNode.appendChild(c);
+  }
+  function addView(id,inner){
+    if(document.getElementById('view-'+id)) return;
+    var views=document.querySelectorAll('.view'); var sec=document.createElement('section'); sec.className='view'; sec.id='view-'+id; sec.innerHTML=inner;
+    if(views.length) views[views.length-1].parentNode.appendChild(sec); else document.querySelector('.main').appendChild(sec);
+  }
+  function rerenderActiveOps(){ var a=document.querySelector('.nav-item.active'); if(!a)return; var v=a.dataset.view; if(v==='stock')renderStock(); else if(v==='floorplan')renderFloorplan(); else if(v==='reconcile')renderReconcile(); }
+
+  /* ====================== ENQUIRY STOCK BADGE ====================== */
+  function injectBadge(){
+    var modelLabel=document.getElementById('f-model'); if(!modelLabel) return;
+    if(document.getElementById('stock-badge')) return;
+    var wrap=modelLabel.closest('label'); if(!wrap) return;
+    var b=document.createElement('div'); b.id='stock-badge'; b.style.cssText='margin-top:6px;font-size:12px;padding:6px 10px;border-radius:8px;line-height:1.5;display:none';
+    wrap.appendChild(b);
+    modelLabel.addEventListener('change',updateBadge);
+  }
+  function updateBadge(){
+    var b=document.getElementById('stock-badge'); var sel=document.getElementById('f-model'); if(!b||!sel) return;
+    var info=stockForEnquiryModel(sel.value); if(!info){ b.style.display='none'; return; }
+    var col,txt;
+    if(info.total>5){ col='#2bd47d'; txt='&#9679; In stock: <b>'+info.total+'</b> units'; }
+    else if(info.total>0){ col='#ffb02e'; txt='&#9679; Low stock: <b>'+info.total+'</b> units'; }
+    else if(info.transit>0){ col='#5b9eff'; txt='&#9679; None in hand &mdash; <b>'+info.transit+'</b> in transit'; }
+    else { col='#ff5c5c'; txt='&#9679; Out of stock &mdash; <b>indent needed</b>'; }
+    var locs=info.rows.filter(function(r){return r.qty>0;}).map(function(r){return r.loc.replace('Festival Counter-DC','Fest-DC')+' '+r.qty;}).join(' · ');
+    b.style.display='block'; b.style.background='rgba(255,255,255,0.04)'; b.style.color=col; b.style.border='1px solid '+col+'55';
+    b.innerHTML=txt+(locs?('<span style="color:var(--muted)"> &nbsp;('+locs+(info.transit>0?' · transit '+info.transit:'')+')</span>'):'');
+  }
+  // refresh badge when modal opens
+  var origOpen=window.openModal;
+  if(typeof origOpen==='function'){ window.openModal=function(){ var r=origOpen.apply(this,arguments); setTimeout(function(){ injectBadge(); updateBadge(); },30); return r; }; }
+
+  /* ====================== INIT ====================== */
+  function init(){
+    addNav('stock','Stock'); addNav('floorplan','Floor Plan'); addNav('reconcile','Reconcile');
+    addView('stock','<div class="filters" style="margin-bottom:6px"><span style="color:var(--muted);font-size:13px">&#128230; Live inventory &mdash; sourced from DMS export</span></div><div id="ops-stock-root"></div>');
+    addView('floorplan','<div class="filters" style="margin-bottom:6px"><span style="color:var(--muted);font-size:13px">&#128181; Floor-plan &amp; paid-up stock</span></div><div id="ops-floorplan-root"></div>');
+    addView('reconcile','<div class="filters" style="margin-bottom:6px"><span style="color:var(--muted);font-size:13px">&#128260; Retail &harr; enquiry reconciliation</span></div><div id="ops-reconcile-root"></div>');
+    var orig=window.setView;
+    if(typeof orig==='function' && !orig.__opsWrapped){
+      window.setView=function(name){ orig(name); try{ if(name==='stock')renderStock(); else if(name==='floorplan')renderFloorplan(); else if(name==='reconcile')renderReconcile(); }catch(e){console.warn('[ops]',e);} };
+      window.setView.__opsWrapped=true;
+    }
+    injectBadge();
+    if(!window.__opsTimer){ window.__opsTimer=setInterval(function(){ try{ opsSyncFromSheet(true); }catch(e){} }, 30*60*1000); }
+    setTimeout(function(){ try{ if(typeof config!=='undefined'&&config.script&&config.script.url) opsSyncFromSheet(true); }catch(e){} }, 1500);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init); else init();
+})();
+</script>
+
 </html>
