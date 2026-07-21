@@ -1542,6 +1542,11 @@ document.addEventListener('DOMContentLoaded', initApp);
 })();
 </script>
 <!-- ===== OPS MODULES: Stock · Floor Plan · Reconcile (additive, self-contained) ===== -->
+<style>
+.grid-5{grid-template-columns:repeat(5,minmax(0,1fr));}
+@media(max-width:1100px){.grid-5{grid-template-columns:repeat(2,1fr);}}
+@media(max-width:700px){.grid-5{grid-template-columns:1fr;}}
+</style>
 <script>
 (function(){
   "use strict";
@@ -1550,7 +1555,43 @@ document.addEventListener('DOMContentLoaded', initApp);
   var INR=function(n){ n=Math.round(Number(n)||0); var s=String(Math.abs(n)); var last3=s.slice(-3); var rest=s.slice(0,-3); if(rest) last3=','+last3; rest=rest.replace(/\B(?=(\d{2})+(?!\d))/g,','); return (n<0?'-':'')+'₹'+rest+last3; };
   function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
   function periodLabel(){ try{ return (typeof currentPeriod!=='undefined'&&currentPeriod)?formatMonthLabel(currentPeriod):'All time'; }catch(e){ return 'All time'; } }
-  function snapshotNote(){ return '<div class="card" style="margin-bottom:14px;border-left:4px solid var(--info);background:rgba(91,158,255,0.06)"><b>&#128246; Live snapshot.</b> <span class="help-text">Stock-in-hand and floor-plan are point-in-time figures as of the last sync ('+esc(ops.updatedAt)+'), so the top month filter does not change them &mdash; there is nothing monthly to filter on a physical stock count. Month-based retail history lives in the <b>Reconcile</b> tab.</span></div>'; }
+  /* ---------- CSV export ---------- */
+  function csvCell(v){ v=String(v==null?'':v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
+  function csvDownload(name, rows){
+    if(!rows || rows.length<2){ if(typeof showToast==='function') showToast('Nothing to export'); return; }
+    var body=rows.map(function(r){ return r.map(csvCell).join(','); }).join('\n');
+    var blob=new Blob(['﻿'+body],{type:'text/csv;charset=utf-8;'});
+    var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download=name+'_'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); },2000);
+    if(typeof showToast==='function') showToast('Exported '+(rows.length-1)+' rows');
+  }
+  function exportBar(kind){
+    return '<div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:12px;flex-wrap:wrap">'
+      +'<button class="btn" onclick="opsExport(\''+kind+'\')" title="Download this tab as CSV">&#11015;&#65039; Export CSV</button>'
+      +'<button class="btn" onclick="opsSyncFromSheet()" title="Pull the latest figures now">&#128260; Sync from Sheet</button>'
+      +'</div>';
+  }
+
+  /* ---------- month-aware sales selection ---------- */
+  function blankSales(){ return {total:0,segments:{},models:{},dse:{},channels:{'Counter':0,'Sub-dealer':0},subDealers:{},counterLocs:{}}; }
+  function salesFor(p){
+    var sm=ops.salesByMonth;
+    if(sm && Object.keys(sm).length){
+      if(!p) return { b: ops.salesAll || blankSales(), scope:'All time', live:true, empty:false };
+      if(sm[p]) return { b: sm[p], scope: formatMonthLabel(p), live:true, empty:false };
+      return { b: blankSales(), scope: formatMonthLabel(p), live:true, empty:true };
+    }
+    return { b: ops.sales, scope:'latest sheet pivot', live:false, empty:false };
+  }
+  function scopeNote(sel){
+    if(!sel.live) return '<div class="card" style="margin-bottom:12px;border-left:4px solid var(--warn,#ffb02e);background:rgba(255,176,46,0.07)"><b>&#9888;&#65039; Month filter inactive.</b> <span class="help-text">These figures come from the summary pivot, which holds only one period &mdash; so changing the month above cannot change them. Install <b>OpsData2.gs</b> (row-level sales register) and every month becomes independently filterable.</span></div>';
+    if(sel.empty) return '<div class="card" style="margin-bottom:12px;border-left:4px solid var(--muted);background:rgba(255,255,255,0.03)"><b>No retail invoices in '+esc(sel.scope)+'.</b> <span class="help-text">The sales register has no rows dated in this month. Available: '+(ops.salesMonths||[]).map(function(m){return formatMonthLabel(m);}).join(' &middot; ')+'</span></div>';
+    return '<div class="card" style="margin-bottom:12px;border-left:4px solid var(--success,#2bd47d);background:rgba(43,212,125,0.06)"><b>&#128197; Showing '+esc(sel.scope)+'.</b> <span class="help-text">Retail figures are recalculated from the row-level sales register every time you change the month filter. '+(ops.salesMonths?ops.salesMonths.length:0)+' month(s) of history available.</span></div>';
+  }
+
+  function snapshotNote(){ return '<div class="card" style="margin-bottom:14px;border-left:4px solid var(--info);background:rgba(91,158,255,0.06)"><b>&#128246; Live snapshot.</b> <span class="help-text">Stock-in-hand and floor-plan are point-in-time figures as of the last sync ('+esc(ops.updatedAt)+'), so the top month filter does not change them &mdash; there is nothing monthly to filter on a physical stock count. Month-by-month retail history lives in the <b>Reconcile</b> tab, which does respond to the filter.</span></div>'; }
 
   var MATRIX={
    'DESTINI 110':[0,5,5,23,4,2],'DESTINI 125':[1,3,2,11,8,2],'DESTINI PRIME':[0,4,0,10,5,1],
@@ -1622,7 +1663,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     var loc=byLocation(), mdl=byModel(), total=stockTotal(), f=ops.finance;
     var transitTot=ops.transit.reduce(function(a,r){return a+(+r.qty||0);},0);
     var premTot=ops.premium.reduce(function(a,r){return a+(+r.qty||0);},0);
-    var h=snapshotNote()+importPanel('stock');
+    var h=exportBar('stock')+snapshotNote()+importPanel('stock');
     h+='<div class="grid grid-4">';
     h+=kpi(total,'Stock in hand','#5b9eff',LOC.length+' locations');
     h+=kpi(transitTot,'In transit','#ffb02e','arriving from HMCL');
@@ -1666,15 +1707,37 @@ document.addEventListener('DOMContentLoaded', initApp);
     h+='<td style="text-align:right;font-weight:800">'+total+'</td></tr>';
     h+='</tbody></table></div></div>';
 
-    // deadstock notice
-    var withDates=ops.stock.filter(function(r){return r.inwardDate;});
+    // ---------- ageing & deadstock (from row-level stock register) ----------
+    var reg=ops.stockRegister;
     h+='<div class="card" style="margin-top:14px"><h3>Stock ageing &amp; deadstock</h3>';
-    if(!withDates.length){
-      h+='<p class="help-text">Ageing is not active yet. Add an <b>Inward / GRN date</b> column to the DMS stock export (one date per unit) and this card will automatically flag units held &gt; 45 / 60 / 90 days &mdash; the single change that unlocks deadstock and interest analytics.</p>';
+    if(!reg || !reg.count){
+      h+='<p class="help-text">Ageing is not active yet. Install <b>OpsData2.gs</b> so the dashboard reads the VIN-level stock register &mdash; it already carries <b>Vehicle Age (In Days)</b> and <b>DLP</b>, which is everything this card needs.</p>';
     } else {
-      var buckets={'>90':0,'60-90':0,'45-60':0}; var today=new Date();
-      withDates.forEach(function(r){ var d=Math.round((today-new Date(r.inwardDate))/86400000); if(d>90)buckets['>90']+=r.qty; else if(d>60)buckets['60-90']+=r.qty; else if(d>45)buckets['45-60']+=r.qty; });
-      h+='<div class="grid grid-3">'+kpi(buckets['45-60'],'45-60 days','#ffb02e')+kpi(buckets['60-90'],'60-90 days','#ff8b3d')+kpi(buckets['>90'],'&gt; 90 days (deadstock)','#ff5c5c')+'</div>';
+      var bk=reg.buckets, bv=reg.bucketValue||{}, rate=(ops.finance&&ops.finance.rate)||11;
+      h+='<div class="grid grid-5" style="gap:10px">';
+      [['0-30','#2bd47d','Fresh'],['31-45','#8fd47d','Healthy'],['46-60','#ffb02e','Watch'],['61-90','#ff8b3d','Ageing'],['90+','#ff5c5c','Deadstock']].forEach(function(t){
+        var n=bk[t[0]]||0, pct=reg.count?Math.round(n/reg.count*100):0;
+        h+='<div class="counter-card"><div class="counter-name">'+t[0]+' days<span style="color:var(--muted);font-weight:400;font-size:12px">'+t[2]+'</span></div>'
+          +'<div style="font-size:22px;font-weight:800;color:'+t[1]+'">'+n+'</div>'
+          +'<div class="help-text" style="margin:2px 0 4px">'+INR(bv[t[0]]||0)+'</div>'
+          +'<div class="pb"><div class="pb-fill" style="width:'+pct+'%;background:'+t[1]+'"></div></div></div>';
+      });
+      h+='</div>';
+      var deadInt=(reg.deadValue||0)*rate/100/12;
+      h+='<div class="grid grid-4" style="margin-top:12px">'
+        +kpi(reg.avgAge+'d','Average age','#5b9eff','across '+reg.count+' units')
+        +kpi(reg.deadCount,'Units held &gt; 60 days','#ff5c5c',(reg.count?Math.round(reg.deadCount/reg.count*100):0)+'% of stock')
+        +kpi(INR(reg.deadValue),'Capital stuck &gt; 60 days','#ff5c5c','at dealer landed price')
+        +kpi(INR(deadInt),'Interest on that, monthly','#ff8b3d','at '+rate+'% p.a.')
+        +'</div>';
+      var old=(reg.units||[]).slice(0,25);
+      h+='<h3 style="margin-top:16px">Oldest 25 units &mdash; clear these first</h3><div style="overflow-x:auto"><table class="table"><thead><tr><th>Age</th><th>Model</th><th>Colour</th><th>Location</th><th style="text-align:right">Value</th><th>VIN</th></tr></thead><tbody>';
+      old.forEach(function(u){
+        var col=u.age>90?'#ff5c5c':(u.age>60?'#ff8b3d':'var(--text)');
+        h+='<tr><td style="font-weight:800;color:'+col+'">'+u.age+'d</td><td>'+esc(u.mo)+'</td><td>'+esc(u.c)+'</td><td>'+esc(u.loc)+'</td><td style="text-align:right">'+INR(u.dlp)+'</td><td style="font-family:monospace;font-size:11px;color:var(--muted)">'+esc(u.vin)+'</td></tr>';
+      });
+      h+='</tbody></table></div>';
+      h+='<p class="help-text">Every unit above 60 days is financed capital earning nothing. Discount, transfer to a faster-moving counter, or push it to a sub-dealer &mdash; the interest saved usually beats the margin given up.</p>';
     }
     h+='</div>';
 
@@ -1688,7 +1751,7 @@ document.addEventListener('DOMContentLoaded', initApp);
   function renderFloorplan(){
     var root=document.getElementById('ops-floorplan-root'); if(!root) return;
     var f=ops.finance;
-    var h=snapshotNote()+importPanel('finance');
+    var h=exportBar('floorplan')+snapshotNote()+importPanel('finance');
     h+='<div class="grid grid-4">';
     h+=kpi(INR(f.debitBalance),'Floor-plan debit balance','#ff5c5c','capital tied in stock');
     h+=kpi(f.dmsHmcl,'DMS HMCL stock','', 'financed by HHML');
@@ -1741,16 +1804,17 @@ document.addEventListener('DOMContentLoaded', initApp);
   /* ====================== RECONCILE VIEW ====================== */
   function renderReconcile(){
     var root=document.getElementById('ops-reconcile-root'); if(!root) return;
-    var s=ops.sales; var ev=s.segments['VIDA']||0; var ice=s.total-ev;
+    var sel=salesFor(typeof currentPeriod!=='undefined'?currentPeriod:'');
+    var s=sel.b; var ev=(s.segments['VIDA']||0)+(s.segments['EV']||0); var ice=s.total-ev;
     // live won enquiries
     var won=0; try{ won=(enquiries||[]).filter(function(e){return e.stage==='Won' && (typeof inPeriod!=='function'||inPeriod(e));}).length; }catch(e){}
     var unlogged=Math.max(0,s.total-won);
-    var h=importPanel('sales');
+    var h=exportBar('reconcile')+scopeNote(sel)+importPanel('sales');
     h+='<div class="grid grid-4">';
-    h+=kpi(s.total,'Invoices (retail)','#5b9eff','from sales register');
+    h+=kpi(s.total,'Invoices (retail)','#5b9eff',sel.scope);
     h+=kpi(ev,'VIDA / EV','#2bd47d',(s.total?Math.round(ev/s.total*100):0)+'% of retail');
     h+=kpi(ice,'ICE','', (s.total?Math.round(ice/s.total*100):0)+'% of retail');
-    h+=kpi(won,'Enquiries won (CRM)','#ffb02e','month: '+periodLabel());
+    h+=kpi(won,'Enquiries won (CRM)','#ffb02e',periodLabel());
     h+='</div>';
 
     h+='<div class="grid grid-2" style="margin-top:14px">';
@@ -1765,7 +1829,7 @@ document.addEventListener('DOMContentLoaded', initApp);
       +kpi(won,'Enquiries marked Won','')
       +kpi(unlogged,'Retails not in CRM','#ff5c5c')
       +'</div>'
-      +'<p class="help-text">Won-enquiries shown for <b>'+periodLabel()+'</b>; retail total reflects the current sales-register feed. '+unlogged+' retail(s) have no matching won-enquiry &mdash; walk-ins never logged. Every one is lost rep credit and understated conversion. Match on customer name / phone once both feeds carry it to pinpoint the exact rows.</p></div>';
+      +'<p class="help-text">Both sides shown for <b>'+esc(sel.scope)+'</b>. '+unlogged+' retail(s) have no matching won-enquiry &mdash; walk-ins never logged. Every one is lost rep credit and understated conversion. Match on customer name / phone once both feeds carry it to pinpoint the exact rows.</p></div>';
 
     // channel + subdealer
     h+='<div class="grid grid-2" style="margin-top:14px">';
@@ -1776,8 +1840,22 @@ document.addEventListener('DOMContentLoaded', initApp);
     h+='</tbody></table></div>';
     h+='<div class="card"><h3>Sub-dealer retail</h3><table class="table"><thead><tr><th>Sub-dealer</th><th style="text-align:right">Units</th></tr></thead><tbody>';
     Object.keys(s.subDealers).sort(function(a,b){return s.subDealers[b]-s.subDealers[a];}).forEach(function(k){ h+='<tr><td>'+esc(k)+'</td><td style="text-align:right;font-weight:700">'+s.subDealers[k]+'</td></tr>'; });
-    h+='<tr style="border-top:2px solid var(--line)"><td style="font-weight:800">Total sub-dealer</td><td style="text-align:right;font-weight:800">'+s.channels['Sub-dealer']+'</td></tr></tbody></table></div>';
+    h+='<tr style="border-top:2px solid var(--line)"><td style="font-weight:800">Total sub-dealer</td><td style="text-align:right;font-weight:800">'+(s.channels['Sub-dealer']||0)+'</td></tr></tbody></table></div>';
     h+='</div>';
+
+    // model + DSE detail (only when row-level register is present)
+    if(sel.live && s.total){
+      h+='<div class="grid grid-2" style="margin-top:14px">';
+      h+='<div class="card"><h3>Retail by model &mdash; '+esc(sel.scope)+'</h3><div style="max-height:340px;overflow-y:auto"><table class="table"><thead><tr><th>Model</th><th style="text-align:right">Units</th></tr></thead><tbody>';
+      Object.keys(s.models||{}).sort(function(a,b){return s.models[b]-s.models[a];}).forEach(function(k){
+        h+='<tr><td>'+esc(k)+'</td><td style="text-align:right;font-weight:700">'+s.models[k]+'</td></tr>'; });
+      h+='</tbody></table></div></div>';
+      h+='<div class="card"><h3>Retail by DSE &mdash; '+esc(sel.scope)+'</h3><div style="max-height:340px;overflow-y:auto"><table class="table"><thead><tr><th>DSE</th><th style="text-align:right">Units</th></tr></thead><tbody>';
+      Object.keys(s.dse||{}).sort(function(a,b){return s.dse[b]-s.dse[a];}).forEach(function(k){
+        h+='<tr><td>'+esc(k)+'</td><td style="text-align:right;font-weight:700">'+s.dse[k]+'</td></tr>'; });
+      h+='</tbody></table></div></div>';
+      h+='</div>';
+    }
 
     root.innerHTML=h; opsStamp();
     if(typeof drawChart==='function'){
@@ -1829,6 +1907,95 @@ document.addEventListener('DOMContentLoaded', initApp);
       showToast(kind+' updated'); ta.value=''; rerenderActiveOps();
     }catch(e){ showToast('Import error: '+e.message); }
   };
+  /* ====================== CSV EXPORT PER TAB ====================== */
+  window.opsExport=function(kind){
+    var rows=[], reg=ops.stockRegister;
+    if(kind==='stock'){
+      if(reg && reg.units && reg.units.length){
+        rows.push(['VIN','Model','Colour','Location','Age (days)','Ageing bucket','Value (DLP)','Inward / purchase date','Status']);
+        reg.units.forEach(function(u){
+          var a=u.age, bk=a<=30?'0-30':a<=45?'31-45':a<=60?'46-60':a<=90?'61-90':'90+';
+          rows.push([u.vin,u.mo,u.c,u.loc,a,bk,u.dlp,u.inw,u.st]);
+        });
+      } else {
+        rows.push(['Model','Location','Quantity']);
+        ops.stock.forEach(function(r){ rows.push([r.model,r.loc,r.qty]); });
+        ops.transit.forEach(function(r){ rows.push([r.model,'IN TRANSIT',r.qty]); });
+        ops.premium.forEach(function(r){ rows.push([r.model,'PREMIUM / BIG BIKE',r.qty]); });
+      }
+      csvDownload('sudarshan_stock',rows); return;
+    }
+    if(kind==='floorplan'){
+      var f=ops.finance, phys=stockTotal(), rate=f.rate||11;
+      rows.push(['Measure','Value','Notes']);
+      rows.push(['Floor-plan debit balance',f.debitBalance,'capital tied in stock']);
+      rows.push(['Physical stock in hand',phys,'counted']);
+      rows.push(['DMS HMCL stock',f.dmsHmcl,'system']);
+      rows.push(['Physical vs DMS variance',phys-f.dmsHmcl,'zero is healthy']);
+      rows.push(['DMS total stock',f.dmsTotal,'all accounts']);
+      rows.push(['Gross stock',f.grossStock,'in hand + transit']);
+      rows.push(['In transit',f.transit,'from HMCL']);
+      rows.push(['DC / festival stock',f.dcStock,'']);
+      rows.push(['Net stock in hand',f.netStock,'excl. DC']);
+      rows.push(['Interest rate (% p.a.)',rate,'']);
+      rows.push(['Interest per day',Math.round(f.debitBalance*rate/100/365),'']);
+      rows.push(['Interest per month',Math.round(f.debitBalance*rate/100/12),'']);
+      rows.push(['Interest per year',Math.round(f.debitBalance*rate/100),'']);
+      rows.push([]);
+      rows.push(['Paid-up account','Units','']);
+      Object.keys(f.paid||{}).forEach(function(k){ rows.push([k,f.paid[k],'']); });
+      if(reg && reg.count){
+        rows.push([]);
+        rows.push(['Ageing bucket','Units','Value blocked']);
+        Object.keys(reg.buckets).forEach(function(k){ rows.push([k+' days',reg.buckets[k],Math.round((reg.bucketValue||{})[k]||0)]); });
+        rows.push(['Total stock value','',reg.totalValue]);
+        rows.push(['Blocked > 60 days',reg.deadCount,reg.deadValue]);
+      }
+      csvDownload('sudarshan_floorplan',rows); return;
+    }
+    if(kind==='reconcile'){
+      var p=(typeof currentPeriod!=='undefined')?currentPeriod:'';
+      var selx=salesFor(p), b=selx.b;
+      var wonN=0; try{ wonN=(enquiries||[]).filter(function(e){return e.stage==='Won' && (typeof inPeriod!=='function'||inPeriod(e));}).length; }catch(e){}
+      // detail rows when the register is available
+      if(ops.salesRows && ops.salesRows.length){
+        rows.push(['Invoice date','Month','Invoice number','Channel','Account / sub-dealer','Model','Segment','DSE']);
+        ops.salesRows.forEach(function(r){
+          if(p && r.m!==p) return;
+          rows.push([r.d,r.m,r.inv,r.t,r.a,r.mo,r.s,r.dse]);
+        });
+        if(rows.length>1){ csvDownload('sudarshan_retail_'+(p||'alltime'),rows); return; }
+        rows=[];
+      }
+      rows.push(['Reconciliation — '+selx.scope,'','']);
+      rows.push(['Metric','Value','Notes']);
+      rows.push(['Retail invoices',b.total,'from sales register']);
+      rows.push(['Enquiries marked Won',wonN,'from CRM']);
+      rows.push(['Retails not in CRM',Math.max(0,b.total-wonN),'walk-ins never logged']);
+      rows.push([]);
+      rows.push(['Segment','Units','% of retail']);
+      Object.keys(b.segments||{}).forEach(function(k){ rows.push([k,b.segments[k],b.total?Math.round(b.segments[k]/b.total*100)+'%':'']); });
+      rows.push([]);
+      rows.push(['Channel','Units','']);
+      Object.keys(b.channels||{}).forEach(function(k){ rows.push([k,b.channels[k],'']); });
+      rows.push([]);
+      rows.push(['Own counter','Units','']);
+      Object.keys(b.counterLocs||{}).forEach(function(k){ rows.push([k,b.counterLocs[k],'']); });
+      rows.push([]);
+      rows.push(['Sub-dealer','Units','']);
+      Object.keys(b.subDealers||{}).sort(function(x,y){return b.subDealers[y]-b.subDealers[x];}).forEach(function(k){ rows.push([k,b.subDealers[k],'']); });
+      if(b.models && Object.keys(b.models).length){
+        rows.push([]); rows.push(['Model','Units','']);
+        Object.keys(b.models).sort(function(x,y){return b.models[y]-b.models[x];}).forEach(function(k){ rows.push([k,b.models[k],'']); });
+      }
+      if(b.dse && Object.keys(b.dse).length){
+        rows.push([]); rows.push(['DSE','Units','']);
+        Object.keys(b.dse).sort(function(x,y){return b.dse[y]-b.dse[x];}).forEach(function(k){ rows.push([k,b.dse[k],'']); });
+      }
+      csvDownload('sudarshan_reconcile_'+(p||'alltime'),rows); return;
+    }
+  };
+
   window.opsResetSnapshot=function(){ if(!confirm('Reset ops data to the original sheet snapshot?'))return; ops=seed(); save(); rerenderActiveOps(); showToast('Reset to snapshot'); };
   window.opsSyncFromSheet=function(silent){
     try{ if(!(typeof config!=='undefined'&&config.script&&config.script.url)){ if(!silent) showToast('No Apps Script URL saved (Settings)'); return; } }catch(e){ if(!silent) showToast('No feed configured'); return; }
@@ -1839,6 +2006,18 @@ document.addEventListener('DOMContentLoaded', initApp);
       if(j.finance){ ops.finance=Object.assign(ops.finance,j.finance); got=true; }
       if(j.transit&&Array.isArray(j.transit)){ ops.transit=j.transit; got=true; }
       if(j.sales){ ops.sales=Object.assign(ops.sales,j.sales); got=true; }
+      if(j.salesByMonth && Object.keys(j.salesByMonth).length){ ops.salesByMonth=j.salesByMonth; got=true; }
+      if(j.salesMonths && j.salesMonths.length){ ops.salesMonths=j.salesMonths; got=true; }
+      if(j.salesAll){ ops.salesAll=j.salesAll; got=true; }
+      if(j.salesRows && j.salesRows.length){ ops.salesRows=j.salesRows; got=true; }
+      if(j.stockRegister && j.stockRegister.count){
+        ops.stockRegister=j.stockRegister; got=true;
+        // rebuild the model x location stock table from VIN-level truth
+        var rb=[]; var mx=j.stockRegister.matrix||{};
+        Object.keys(mx).forEach(function(m){ Object.keys(mx[m]).forEach(function(l){ rb.push({model:m,loc:l,qty:mx[m][l],inwardDate:''}); }); });
+        if(rb.length) ops.stock=rb;
+      }
+      if(got){ try{ if(typeof refreshMonthOptions==='function') refreshMonthOptions(); }catch(e){} }
       if(got){ ops.source='Apps Script'; ops.updatedAt=new Date().toLocaleString('en-IN'); save(); rerenderActiveOps(); opsStamp(); if(!silent) showToast('Ops synced from Sheet'); }
       else if(!silent) showToast('Feed has no ops data yet (stock/finance/sales keys)');
     }).catch(function(e){ if(!silent) showToast('Sync failed: '+e.message); });
@@ -1885,8 +2064,22 @@ document.addEventListener('DOMContentLoaded', initApp);
   var origOpen=window.openModal;
   if(typeof origOpen==='function'){ window.openModal=function(){ var r=origOpen.apply(this,arguments); setTimeout(function(){ injectBadge(); updateBadge(); },30); return r; }; }
 
+  /* ---- make ops months selectable in the global month filter ---- */
+  function extendMonths(){
+    if(typeof window.getAvailableMonths!=='function' || window.getAvailableMonths.__opsWrapped) return;
+    var g=window.getAvailableMonths;
+    window.getAvailableMonths=function(){
+      var base=[]; try{ base=g.apply(this,arguments)||[]; }catch(e){}
+      var extra=(ops&&ops.salesMonths)||[];
+      var all={}; base.concat(extra).forEach(function(m){ if(m) all[m]=1; });
+      return Object.keys(all).sort().reverse();
+    };
+    window.getAvailableMonths.__opsWrapped=true;
+  }
+
   /* ====================== INIT ====================== */
   function init(){
+    extendMonths();
     addNav('stock','Stock'); addNav('floorplan','Floor Plan'); addNav('reconcile','Reconcile');
     addView('stock','<div class="filters" style="margin-bottom:6px"><span style="color:var(--muted);font-size:13px">&#128230; Live inventory &mdash; sourced from DMS export</span></div><div id="ops-stock-root"></div>');
     addView('floorplan','<div class="filters" style="margin-bottom:6px"><span style="color:var(--muted);font-size:13px">&#128181; Floor-plan &amp; paid-up stock</span></div><div id="ops-floorplan-root"></div>');
@@ -1901,179 +2094,6 @@ document.addEventListener('DOMContentLoaded', initApp);
     setTimeout(function(){ try{ if(typeof config!=='undefined'&&config.script&&config.script.url) opsSyncFromSheet(true); }catch(e){} }, 1500);
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init); else init();
-})();
-</script>
-
-<!-- ===== STOCK AGEING & DEADSTOCK CALCULATOR (Floor Plan) — additive, self-contained =====
-     Source: raw DMS STOCK export → "Vehicle Age (In Days)" (col U) + "DLP" (col T).
-     Buckets 0–60 / 61–120 / 121–180 / 180+ (deadstock). Interest = DLP × rate% × days/365. -->
-<script>
-(function(){
-  "use strict";
-  var KEY='hero-ageing-v1';
-  var BUCKETS=[
-    {key:'0-60',   hi:60,       label:'0–60 days',    color:'#2bd47d', tag:'Fresh'},
-    {key:'61-120', hi:120,      label:'61–120 days',  color:'#ffb02e', tag:'Watch'},
-    {key:'121-180',hi:180,      label:'121–180 days', color:'#ff8b3d', tag:'Ageing risk'},
-    {key:'180+',   hi:Infinity, label:'180+ days',    color:'#ff5c5c', tag:'Deadstock'}
-  ];
-  var DEAD='180+';
-  var st;
-  function load(){ try{ st=JSON.parse(localStorage.getItem(KEY)); }catch(e){ st=null; } if(!st||typeof st!=='object') st={rows:[],rate:10,updatedAt:'',source:''}; if(!Array.isArray(st.rows)) st.rows=[]; }
-  function save(){ try{ localStorage.setItem(KEY,JSON.stringify(st)); }catch(e){} }
-  load();
-  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
-  function INR(n){ n=Math.round(Number(n)||0); var neg=n<0; n=Math.abs(n); var s=String(n),l3=s.slice(-3),rest=s.slice(0,-3); if(rest)l3=','+l3; rest=rest.replace(/\B(?=(\d{2})+(?!\d))/g,','); return (neg?'-':'')+'₹'+rest+l3; }
-  function INRc(n){ n=Number(n)||0; var a=Math.abs(n); if(a>=1e7) return '₹'+(n/1e7).toFixed(2)+' Cr'; if(a>=1e5) return '₹'+(n/1e5).toFixed(2)+' L'; return INR(n); }
-  function num(x){ var n=parseFloat(String(x==null?'':x).replace(/[^0-9.\-]/g,'')); return isNaN(n)?null:n; }
-  function rate(){ var el=document.getElementById('ageing-rate'); if(el&&!isNaN(parseFloat(el.value))) return parseFloat(el.value); var o=document.getElementById('ops-rate'); if(o&&!isNaN(parseFloat(o.value))) return parseFloat(o.value); return st.rate||10; }
-  function bucketOf(age){ for(var i=0;i<BUCKETS.length;i++){ if(age<=BUCKETS[i].hi) return BUCKETS[i]; } return BUCKETS[BUCKETS.length-1]; }
-  function parsePaste(text){
-    var lines=text.split(/\r?\n/).filter(function(l){return l.trim()!=='';});
-    if(!lines.length) return [];
-    function cells(l){ return (l.indexOf('\t')>-1 ? l.split('\t') : l.split(',')).map(function(c){return c.trim();}); }
-    var hdr=cells(lines[0]).map(function(c){return c.toLowerCase();});
-    var ageI=-1,dlpI=-1,modI=-1;
-    hdr.forEach(function(c,i){
-      if(ageI<0 && /vehicle\s*age|age\s*\(?\s*in\s*days|age.*day/.test(c)) ageI=i;
-      if(dlpI<0 && (c==='dlp'||/\bdlp\b/.test(c))) dlpI=i;
-      if(modI<0 && c==='model') modI=i;
-    });
-    var start=1;
-    if(ageI<0){
-      var w=cells(lines[0]).length; start=0;
-      if(w>=21){ modI=6; dlpI=19; ageI=20; }
-      else if(w===2){ dlpI=0; ageI=1; }
-      else if(w===1){ ageI=0; }
-      else return [];
-    }
-    var out=[];
-    for(var r=start;r<lines.length;r++){
-      var c=cells(lines[r]); if(!c.length) continue;
-      var age = ageI>-1 ? num(c[ageI]) : null;
-      if(age==null || age<0 || age>4000) continue;
-      out.push({ model: modI>-1?String(c[modI]||'').trim():'', dlp: dlpI>-1?(num(c[dlpI])||0):0, age:Math.round(age) });
-    }
-    return out;
-  }
-  function compute(){
-    var R=rate(), rows=st.rows, per={};
-    BUCKETS.forEach(function(b){ per[b.key]={units:0,value:0,interest:0}; });
-    var tU=0,tV=0,tI=0,ageSum=0,oldest=0,hasDLP=false;
-    rows.forEach(function(u){
-      var b=bucketOf(u.age), intr=(u.dlp||0)*R/100*u.age/365;
-      per[b.key].units++; per[b.key].value+=(u.dlp||0); per[b.key].interest+=intr;
-      tU++; tV+=(u.dlp||0); tI+=intr; ageSum+=u.age; if(u.age>oldest)oldest=u.age; if(u.dlp)hasDLP=true;
-    });
-    return {per:per,units:tU,value:tV,interest:tI,avg:tU?Math.round(ageSum/tU):0,oldest:oldest,hasDLP:hasDLP,rate:R};
-  }
-  function deadModels(){
-    var m={}; st.rows.forEach(function(u){ if(u.age>180){ var k=u.model||'(unlabelled)'; if(!m[k])m[k]={units:0,value:0,oldest:0}; m[k].units++; m[k].value+=(u.dlp||0); if(u.age>m[k].oldest)m[k].oldest=u.age; } });
-    return Object.keys(m).map(function(k){return {model:k,units:m[k].units,value:m[k].value,oldest:m[k].oldest};}).sort(function(a,b){return b.units-a.units||b.oldest-a.oldest;});
-  }
-  function render(card){
-    var d=compute(), R=d.rate;
-    var h='<h3>&#9203; Stock ageing &amp; floor-plan interest</h3>'
-      +'<p class="help-text">Ageing from the DMS stock export &mdash; <b>Vehicle Age (In Days)</b> (col U). Interest accrues per unit as <b>DLP &times; rate% &times; days &divide; 365</b>. Deadstock = held <b>180+ days</b>.</p>';
-    h+='<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-top:10px">'
-      +'<label style="flex:1;min-width:240px;color:var(--muted);font-size:12px">Paste STOCK export rows (with a "Vehicle Age (In Days)" column; include "DLP" for value &amp; interest)'
-      +'<textarea id="ageing-paste" style="width:100%;min-height:70px;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:8px;font-family:monospace;font-size:12px;margin-top:6px" placeholder="Paste rows here — Tab or comma separated. Header row auto-detected."></textarea></label>'
-      +'<label style="color:var(--muted);font-size:12px">Annual rate %<br><input type="number" id="ageing-rate" value="'+R+'" min="0" max="36" step="0.1" style="width:90px;margin-top:6px;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:6px 8px;border-radius:8px" onchange="ageingSetRate(this.value)"/></label>'
-      +'</div>'
-      +'<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'
-      +'<button class="btn btn-primary btn-sm" onclick="ageingImport()">Load ageing</button>'
-      +'<button class="btn btn-sm" onclick="ageingSyncFromSheet()">&#128260; Sync ageing from Sheet</button>'
-      +'<button class="btn btn-sm btn-ghost" onclick="ageingReset()">Clear</button>'
-      +'<span class="help-text" style="margin-left:auto">'+(st.rows.length?('Loaded '+st.rows.length+' units &middot; '+esc(st.source||'paste')+' &middot; '+esc(st.updatedAt||'')):'No ageing data yet')+'</span>'
-      +'</div>';
-    if(!st.rows.length){
-      h+='<div style="margin-top:14px;padding:16px;border:1px dashed var(--line);border-radius:10px;color:var(--muted);font-size:13px;line-height:1.6">'
-        +'To activate: open the shared Sales sheet &rarr; the raw <b>STOCK</b> export tab, copy the columns <b>Model</b>, <b>DLP</b> and <b>Vehicle Age (In Days)</b> (or the whole export), paste above and click <b>Load ageing</b>. '
-        +'Once your Apps Script feed carries an <code>ageingRows</code> field, <b>Sync ageing from Sheet</b> pulls it automatically.</div>';
-      card.innerHTML=h; return;
-    }
-    var dead=d.per[DEAD];
-    h+='<div class="grid grid-4" style="margin-top:14px">'
-      +'<div class="card kpi"><h3>Units aged</h3><div class="kpi-value" style="color:#5b9eff">'+d.units+'</div><div class="kpi-trend">avg '+d.avg+' d &middot; oldest '+d.oldest+' d</div></div>'
-      +'<div class="card kpi"><h3>Stock value (DLP)</h3><div class="kpi-value">'+(d.hasDLP?INRc(d.value):'&mdash;')+'</div><div class="kpi-trend">'+(d.hasDLP?'sum of DLP':'add DLP column')+'</div></div>'
-      +'<div class="card kpi"><h3>Accrued interest</h3><div class="kpi-value" style="color:#ff8b3d">'+(d.hasDLP?INRc(d.interest):'&mdash;')+'</div><div class="kpi-trend">@ '+R+'% to date</div></div>'
-      +'<div class="card kpi"><h3>Deadstock 180+</h3><div class="kpi-value" style="color:#ff5c5c">'+dead.units+'</div><div class="kpi-trend">'+(d.hasDLP?INRc(dead.value)+' blocked':((d.units?Math.round(dead.units/d.units*100):0)+'% of stock'))+'</div></div>'
-      +'</div>';
-    h+='<div class="card" style="margin-top:14px"><h3>Ageing buckets</h3><div style="overflow-x:auto"><table class="table"><thead><tr>'
-      +'<th>Bucket</th><th>Status</th><th style="text-align:right">Units</th><th style="text-align:right">% of stock</th><th style="text-align:right">Value (DLP)</th><th style="text-align:right">Interest @'+R+'%</th><th style="min-width:140px">Share</th></tr></thead><tbody>';
-    BUCKETS.forEach(function(b){
-      var p=d.per[b.key], pct=d.units?Math.round(p.units/d.units*100):0;
-      h+='<tr>'
-        +'<td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+b.color+';margin-right:6px"></span><b>'+b.label+'</b></td>'
-        +'<td style="color:'+b.color+';font-weight:600">'+b.tag+'</td>'
-        +'<td style="text-align:right;font-weight:700">'+p.units+'</td>'
-        +'<td style="text-align:right;color:var(--muted)">'+pct+'%</td>'
-        +'<td style="text-align:right">'+(d.hasDLP?INR(p.value):'&mdash;')+'</td>'
-        +'<td style="text-align:right;color:#ff8b3d">'+(d.hasDLP?INR(p.interest):'&mdash;')+'</td>'
-        +'<td><div class="pb" style="margin-top:0"><div class="pb-fill" style="width:'+pct+'%;background:'+b.color+'"></div></div></td>'
-        +'</tr>';
-    });
-    h+='<tr style="border-top:2px solid var(--line)"><td style="font-weight:800">Total</td><td></td>'
-      +'<td style="text-align:right;font-weight:800">'+d.units+'</td><td style="text-align:right">100%</td>'
-      +'<td style="text-align:right;font-weight:800">'+(d.hasDLP?INR(d.value):'&mdash;')+'</td>'
-      +'<td style="text-align:right;font-weight:800;color:#ff8b3d">'+(d.hasDLP?INR(d.interest):'&mdash;')+'</td><td></td></tr>';
-    h+='</tbody></table></div>'
-      +'<p class="help-text">Interest is cumulative carrying cost accrued to date on each unit (DLP &times; '+R+'% &times; age&divide;365). Change the rate above to reprice &mdash; it also drives the Interest cost estimator on this tab.</p></div>';
-    var dm=deadModels();
-    if(dm.length){
-      h+='<div class="card" style="margin-top:14px;border-left:4px solid #ff5c5c"><h3 style="color:#ff5c5c">&#128721; Deadstock (180+ days) &mdash; act first</h3>'
-        +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Model</th><th style="text-align:right">Units</th><th style="text-align:right">Value (DLP)</th><th style="text-align:right">Oldest (days)</th></tr></thead><tbody>';
-      dm.slice(0,20).forEach(function(r){ h+='<tr><td>'+esc(r.model)+'</td><td style="text-align:right;font-weight:700">'+r.units+'</td><td style="text-align:right">'+(r.value?INR(r.value):'&mdash;')+'</td><td style="text-align:right;color:#ff5c5c;font-weight:700">'+r.oldest+'</td></tr>'; });
-      h+='</tbody></table></div><p class="help-text">These units are past 180 days &mdash; prioritise for discount, inter-counter transfer, or festival-DC push to release blocked capital and stop interest bleed.</p></div>';
-    }
-    card.innerHTML=h;
-  }
-  function mount(){
-    var root=document.getElementById('ops-floorplan-root'); if(!root) return;
-    var card=document.getElementById('ageing-card');
-    if(!card){ card=document.createElement('div'); card.id='ageing-card'; card.className='card'; card.style.marginTop='14px'; root.appendChild(card); }
-    else if(card.parentNode!==root){ root.appendChild(card); }
-    render(card);
-  }
-  function isFloorplanActive(){ var a=document.querySelector('.nav-item.active'); return a && a.dataset.view==='floorplan'; }
-  function remount(){ if(isFloorplanActive()) setTimeout(mount,20); }
-  window.ageingImport=function(){
-    var ta=document.getElementById('ageing-paste'); if(!ta) return;
-    var rows=parsePaste(ta.value||'');
-    if(!rows.length){ if(typeof showToast==='function') showToast('No "Vehicle Age" rows found — include the age column (U)'); return; }
-    st.rows=rows; st.source='paste'; st.updatedAt=new Date().toLocaleString('en-IN'); save();
-    if(typeof showToast==='function') showToast('Loaded '+rows.length+' units into ageing'); mount();
-  };
-  window.ageingSetRate=function(v){ v=parseFloat(v); if(isNaN(v))return; st.rate=v; save();
-    var o=document.getElementById('ops-rate'); if(o){ o.value=v; if(typeof window.opsRate==='function'){ try{ window.opsRate(v); }catch(e){} } }
-    mount();
-  };
-  window.ageingReset=function(){ if(!confirm('Clear loaded ageing data?'))return; st.rows=[]; st.source=''; st.updatedAt=''; save(); mount(); };
-  window.ageingSyncFromSheet=function(silent){
-    try{ if(!(typeof config!=='undefined'&&config.script&&config.script.url)){ if(!silent&&typeof showToast==='function') showToast('No Apps Script URL saved (Settings)'); return; } }
-    catch(e){ return; }
-    if(!silent&&typeof showToast==='function') showToast('Syncing ageing from Sheet…');
-    fetch(config.script.url+'?t='+Date.now(),{cache:'no-cache',redirect:'follow'}).then(function(r){return r.json();}).then(function(j){
-      var rows=null;
-      if(Array.isArray(j.ageingRows)) rows=j.ageingRows.map(function(u){return {model:u.model||u.Model||'',dlp:Number(u.dlp||u.DLP||0)||0,age:Math.round(Number(u.age||u.vehicleAge||u['Vehicle Age (In Days)']||0))||0};});
-      else if(j.ageing && Array.isArray(j.ageing.rows)) rows=j.ageing.rows;
-      if(rows && rows.length){ st.rows=rows.filter(function(u){return u.age>=0;}); st.source='Apps Script'; st.updatedAt=new Date().toLocaleString('en-IN'); save(); mount(); if(!silent&&typeof showToast==='function') showToast('Ageing synced: '+st.rows.length+' units'); }
-      else if(!silent&&typeof showToast==='function') showToast('Feed has no ageingRows yet — add it in OpsData.gs (see notes)');
-    }).catch(function(e){ if(!silent&&typeof showToast==='function') showToast('Sync failed: '+e.message); });
-  };
-  function wrap(name){ var o=window[name]; if(typeof o==='function' && !o.__ageWrapped){ var w=function(){ var r=o.apply(this,arguments); remount(); return r; }; w.__ageWrapped=true; window[name]=w; } }
-  function init(){
-    var sv=window.setView;
-    if(typeof sv==='function' && !sv.__ageWrapped){ var w=function(name){ var r=sv.apply(this,arguments); if(name==='floorplan') setTimeout(mount,20); return r; }; w.__ageWrapped=true; window.setView=w; }
-    ['opsRate','opsImport','opsResetSnapshot'].forEach(wrap);
-    // auto-refresh ageing on the same cadence as counter sales / ops feed
-    var oss=window.opsSyncFromSheet;
-    if(typeof oss==='function' && !oss.__ageSync){ var w2=function(){ var r=oss.apply(this,arguments); try{ window.ageingSyncFromSheet(true); }catch(e){} remount(); return r; }; w2.__ageSync=true; w2.__ageWrapped=true; window.opsSyncFromSheet=w2; }
-    try{ if(typeof config!=='undefined' && config.script && config.script.url) setTimeout(function(){ window.ageingSyncFromSheet(true); },1600); }catch(e){}
-    if(!window.__ageTimer){ window.__ageTimer=setInterval(function(){ try{ if(typeof config!=='undefined'&&config.script&&config.script.url) window.ageingSyncFromSheet(true); }catch(e){} }, 30*60*1000); }
-    if(isFloorplanActive()) setTimeout(mount,60);
-  }
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',function(){ setTimeout(init,300); }); else setTimeout(init,300);
 })();
 </script>
 
