@@ -1427,6 +1427,24 @@ document.addEventListener('DOMContentLoaded', initApp);
   var ACTIVE = ['New','Contacted','Qualified','Test Drive','Negotiation','Booked'];
   var STALE = 7;
   var repFilter = '';
+  var lastCalls = [];
+
+  function scCsvCell(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }
+  window.scExportCalls = function(){
+    if(!lastCalls.length){ if(typeof showToast==='function') showToast('No leads to export in this view'); return; }
+    var period=(typeof currentPeriod!=='undefined'&&currentPeriod)?currentPeriod:'all';
+    var head=['Days untouched','Customer','Phone','Counter','Model','DSE','Stage','Last contacted','Next follow-up','Notes'];
+    var lines=[head.map(scCsvCell).join(',')];
+    lastCalls.forEach(function(e){
+      lines.push([e.d,e.c,e.p,e.co,e.m,e.r,e.st,e.lc,e.nf,e.n].map(scCsvCell).join(','));
+    });
+    var blob=new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8;'});
+    var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download='untouched_leads'+(repFilter?('_'+repFilter.replace(/[^a-z0-9]+/gi,'-')):'')+'_'+period+'_'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); },2000);
+    if(typeof showToast==='function') showToast('Exported '+lastCalls.length+' lead(s)');
+  };
 
   function rows(){
     try{ if(typeof getActiveEnquiries==='function') return getActiveEnquiries(); }catch(e){}
@@ -1527,10 +1545,11 @@ document.addEventListener('DOMContentLoaded', initApp);
     h+='</div>';
 
     var calls=data.filter(function(e){return ACTIVE.indexOf(e.stage)>-1 && dsince(e.lastContactAt||e.createdAt)>STALE;})
-      .map(function(e){return {c:e.customer,p:e.phone,co:e.counter,m:e.model,r:rname(e.rep),st:e.stage,n:e.notes,d:dsince(e.lastContactAt||e.createdAt)};});
+      .map(function(e){return {c:e.customer,p:e.phone,co:e.counter,m:e.model,r:rname(e.rep),st:e.stage,n:e.notes,d:dsince(e.lastContactAt||e.createdAt),lc:e.lastContactAt||e.createdAt||'',nf:e.nextFollowUp||''};});
     if(repFilter) calls=calls.filter(function(e){return e.r===repFilter;});
     calls.sort(function(a,b){return b.d-a.d;});
-    h+='<div class="card"><h3>&#128308; Call list — untouched open leads (&gt;7 days)</h3><p style="color:var(--muted);font-size:12px;margin:2px 0 12px">'+(repFilter?('Filtered to <b>'+esc(repFilter)+'</b> — click their row again to clear. '):'')+calls.length+' lead(s) need action.</p>';
+    lastCalls=calls;
+    h+='<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h3 style="margin:0">&#128308; Call list — untouched open leads (&gt;7 days)</h3><button class="btn" onclick="scExportCalls()" title="Download these leads as CSV to send to the team">&#11015;&#65039; Export leads (CSV)</button></div><p style="color:var(--muted);font-size:12px;margin:6px 0 12px">'+(repFilter?('Filtered to <b>'+esc(repFilter)+'</b> — click their row again to clear. '):'')+calls.length+' lead(s) need action.'+(calls.length>300?' Showing first 300; export includes all.':'')+'</p>';
     h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="color:var(--muted);text-align:left">'
       +'<th style="padding:8px;text-align:right">Days</th><th style="padding:8px">Customer</th><th style="padding:8px">Phone</th><th style="padding:8px">Counter</th><th style="padding:8px">Model</th><th style="padding:8px">DSE</th><th style="padding:8px">Stage</th><th style="padding:8px">Last note</th></tr></thead><tbody>';
     if(!calls.length) h+='<tr><td colspan="8" style="padding:18px;text-align:center;color:var(--muted)">&#127881; Nothing untouched in this view.</td></tr>';
