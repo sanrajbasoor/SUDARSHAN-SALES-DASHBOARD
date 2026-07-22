@@ -679,10 +679,19 @@ function populateSelect(id,options,includeBlank,blankLabel) {
   options.forEach(opt=>{const o=document.createElement('option');o.value=opt;o.textContent=opt;sel.appendChild(o);});
   sel.value=current;
 }
+// Build a dropdown list from the values ACTUALLY present in the enquiry data,
+// unioned with the configured defaults, so filters always match imported labels
+// (e.g. "DN [ICE]", "DN [VIDA]") rather than only the hardcoded names.
+function unionData(field, base) {
+  const map = new Map();
+  (base||[]).forEach(v => { const t=String(v==null?'':v).trim(); if(t) map.set(t.toLowerCase(), v); });
+  (enquiries||[]).forEach(e => { const v=e && e[field]; const t=String(v==null?'':v).trim(); if(t && !map.has(t.toLowerCase())) map.set(t.toLowerCase(), v); });
+  return Array.from(map.values()).sort((a,b)=>String(a).localeCompare(String(b)));
+}
 function refreshAllSelects() {
-  populateSelect('f-stage',STAGES,true,'All stages'); populateSelect('f-source',SOURCES,true,'All sources');
-  populateSelect('f-rep',config.reps,true,'All reps'); populateSelect('f-counter',config.counters,true,'All counters');
-  populateSelect('f-financier',config.financiers,true,'All financiers');
+  populateSelect('f-stage',STAGES,true,'All stages'); populateSelect('f-source',unionData('source',SOURCES),true,'All sources');
+  populateSelect('f-rep',unionData('rep',config.reps),true,'All reps'); populateSelect('f-counter',unionData('counter',config.counters),true,'All counters');
+  populateSelect('f-financier',unionData('financier',config.financiers),true,'All financiers');
   populateSelect('f-counter-in',config.counters,false); populateSelect('f-source-in',SOURCES,false);
   populateSelect('f-model',config.models,false); populateSelect('f-rep-in',config.reps,false);
   populateSelect('f-stage-in',STAGES,false); populateSelect('f-financier-in',[''].concat(config.financiers),false);
@@ -939,14 +948,15 @@ function renderTable() {
   const fnc=document.getElementById('f-financier')?.value||'';
   const exc=document.getElementById('f-exchange-filter')?.value||'';
   const mon=document.getElementById('f-month')?.value||'';
+  const eqv=(a,b)=>String(a==null?'':a).trim().toLowerCase()===String(b==null?'':b).trim().toLowerCase();
   let list = enquiries.filter(e => {
     if (s && !['customer','phone','email','model','notes'].some(k=>(e[k]||'').toLowerCase().includes(s))) return false;
     if (stg && e.stage!==stg) return false;
-    if (src && e.source!==src) return false;
-    if (rep && e.rep!==rep) return false;
-    if (ctr && e.counter!==ctr) return false;
+    if (src && !eqv(e.source,src)) return false;
+    if (rep && !eqv(e.rep,rep)) return false;
+    if (ctr && !eqv(e.counter,ctr)) return false;
     if (fin && e.financeRequired!==fin) return false;
-    if (fnc && e.financier!==fnc) return false;
+    if (fnc && !eqv(e.financier,fnc)) return false;
     if (exc && (exc==='Yes' ? !e.exchange : !!e.exchange)) return false;
     if (mon && getMonthKey(e)!==mon) return false;
     return true;
@@ -1296,13 +1306,10 @@ function initApp() {
   refreshAllSelects();
   refreshMonthOptions();
   populateSelect('f-stage',STAGES,true,'All stages');
-  populateSelect('f-source',SOURCES,true,'All sources');
-  ['f-rep','f-counter'].forEach(id=>{
-    const el=document.getElementById(id); if(!el) return;
-    const arr=id==='f-rep'?config.reps:config.counters;
-    el.innerHTML='<option value="">'+('f-rep'===id?'All reps':'All counters')+'</option>'+arr.map(v=>'<option>'+escapeHtml(v)+'</option>').join('');
-  });
-  populateSelect('f-financier',config.financiers,true,'All financiers');
+  populateSelect('f-source',unionData('source',SOURCES),true,'All sources');
+  populateSelect('f-rep',unionData('rep',config.reps),true,'All reps');
+  populateSelect('f-counter',unionData('counter',config.counters),true,'All counters');
+  populateSelect('f-financier',unionData('financier',config.financiers),true,'All financiers');
   document.querySelectorAll('.nav-item').forEach(btn=>{
     btn.addEventListener('click',()=>setView(btn.dataset.view));
   });
