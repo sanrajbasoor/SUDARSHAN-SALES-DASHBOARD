@@ -1037,30 +1037,37 @@ function renderLeakage() {
   const ctrSel=document.getElementById('vm-leakage-counter')?.value||'';
   const ctrEq=(a,b)=>String(a==null?'':a).trim().toLowerCase()===String(b==null?'':b).trim().toLowerCase();
   const statusSel=document.getElementById('vm-leakage-status')?.value||'open';
-  const OPEN_STAGES=['New','Contacted','Qualified','Test Drive','Negotiation'];
-  const stageSet=statusSel==='active'?ACTIVE_STAGES:OPEN_STAGES;
-  const tdStages=['Qualified','Negotiation','Booked'].filter(s=>stageSet.includes(s));
-  const isStale=e=>stageSet.includes(e.stage)&&dateDiff(e.lastContactAt)>STALE_DAYS;
-  const isNoTD=e=>tdStages.includes(e.stage)&&isTDModel(e.model)&&!e.testRideStatus;
-  const isOverdue=e=>stageSet.includes(e.stage)&&e.nextFollowUp&&e.nextFollowUp<todayISO();
+  // Recognise stage/status by MEANING, not exact name — the DMS register uses
+  // words like "Open"/"Closed"/"Won"/"Lost"/"Booking" that aren't the CRM stage names.
+  const CLOSED_RE=/\b(won|lost|closed|sold|retailed|retail|delivered|cancelled|canceled|cancel|duplicate|invalid|dead|dropped|rejected|reject)\b/i;
+  const BOOKED_RE=/\b(booked|booking)\b/i;
+  const stageClass=e=>{var s=String(e.stage==null?'':e.stage).trim();if(!s)return 'open';if(CLOSED_RE.test(s))return 'closed';if(BOOKED_RE.test(s))return 'booked';return 'open';};
+  const inScope=e=>{var k=stageClass(e);return statusSel==='active'?(k==='open'||k==='booked'):(k==='open');};
+  const tdStages=['Qualified','Negotiation','Booked'];
+  const isStale=e=>inScope(e)&&dateDiff(e.lastContactAt)>STALE_DAYS;
+  const isNoTD=e=>inScope(e)&&tdStages.includes(e.stage)&&isTDModel(e.model)&&!e.testRideStatus;
+  const isOverdue=e=>inScope(e)&&e.nextFollowUp&&e.nextFollowUp<todayISO();
 
   // ----- Leakage by counter summary (built from ALL counters, before filtering) -----
   const bc=document.getElementById('leak-by-counter');
   if(bc){
     const cmap={};
     Eall.forEach(e=>{const c=(e.counter==null||String(e.counter).trim()==='')?'(no counter)':String(e.counter).trim();
-      const s=cmap[c]||(cmap[c]={c:c,total:0,stale:0,noTD:0,overdue:0});
-      s.total++; if(isStale(e))s.stale++; if(isNoTD(e))s.noTD++; if(isOverdue(e))s.overdue++;});
+      const s=cmap[c]||(cmap[c]={c:c,all:0,scope:0,booked:0,closed:0,stale:0,noTD:0,overdue:0});
+      s.all++; const k=stageClass(e); if(k==='booked')s.booked++; else if(k==='closed')s.closed++;
+      if(inScope(e))s.scope++; if(isStale(e))s.stale++; if(isNoTD(e))s.noTD++; if(isOverdue(e))s.overdue++;});
     const rows=Object.keys(cmap).map(k=>cmap[k]).filter(s=>s.stale+s.noTD+s.overdue>0)
       .sort((a,b)=>(b.stale+b.noTD+b.overdue)-(a.stale+a.noTD+a.overdue));
+    const scopeLabel=statusSel==='active'?'Active enq':'Open enq';
     let bh='';
     if(rows.length){
       bh='<div class="card" style="margin-bottom:14px;border-left:4px solid var(--warn,#ffb02e)"><h3>&#9888;&#65039; Leakage by counter</h3>'
-        +'<p class="help-text">Total leaks (stale + no test-ride + overdue) per counter. Highest first &mdash; that is where recovery effort pays most. Click a row to drill in.</p>'
-        +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Counter</th><th style="text-align:right">Active enq</th><th style="text-align:right">Stale &gt;7d</th><th style="text-align:right">No test-ride</th><th style="text-align:right">Overdue FU</th><th style="text-align:right">Total leaks</th><th style="text-align:right">Leak rate</th></tr></thead><tbody>';
-      rows.forEach(s=>{const tot=s.stale+s.noTD+s.overdue;const rate=s.total?Math.round(tot/s.total*100):0;const sel=ctrEq(ctrSel,s.c);
-        bh+='<tr onclick="document.getElementById(\'vm-leakage-counter\').value='+JSON.stringify(sel?'':s.c)+';renderLeakage();" style="cursor:pointer;'+(sel?'background:var(--panel-2)':'')+'">'
-          +'<td style="font-weight:700">'+escapeHtml(s.c)+'</td><td style="text-align:right;color:var(--muted)">'+s.total+'</td>'
+        +'<p class="help-text">Showing <b>'+(statusSel==='active'?'active (incl. Booked)':'open only')+'</b> enquiries. The <b>'+scopeLabel+'</b> column excludes Won/Lost/Closed'+(statusSel==='active'?'':' and Booked')+' — that is why it is lower than the raw total. Total leaks = stale + no test-ride + overdue. Highest first; click a row to drill in.</p>'
+        +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Counter</th><th style="text-align:right">'+scopeLabel+'</th><th style="text-align:right">Booked</th><th style="text-align:right">Closed/Won/Lost</th><th style="text-align:right">Stale &gt;7d</th><th style="text-align:right">No test-ride</th><th style="text-align:right">Overdue FU</th><th style="text-align:right">Total leaks</th><th style="text-align:right">Leak rate</th></tr></thead><tbody>';
+      rows.forEach(s=>{const tot=s.stale+s.noTD+s.overdue;const rate=s.scope?Math.round(tot/s.scope*100):0;const sel=ctrEq(ctrSel,s.c);
+        bh+='<tr onclick="document.getElementById(\'vm-leakage-counter\').value='+JSON.stringify(sel?'':s.c)+';renderLeakage();" style="cursor:pointer;'+(sel?'background:var(--panel-2)':'')+'" title="'+s.all+' total enquiries at this counter">'
+          +'<td style="font-weight:700">'+escapeHtml(s.c)+'</td><td style="text-align:right;font-weight:700">'+s.scope+'</td>'
+          +'<td style="text-align:right;color:var(--muted)">'+s.booked+'</td><td style="text-align:right;color:var(--muted)">'+s.closed+'</td>'
           +'<td style="text-align:right;color:#ffb02e">'+s.stale+'</td><td style="text-align:right;color:#ff8b3d">'+s.noTD+'</td>'
           +'<td style="text-align:right;color:#ff5c5c">'+s.overdue+'</td><td style="text-align:right;font-weight:800">'+tot+'</td>'
           +'<td style="text-align:right;font-weight:700;color:'+(rate>=40?'#ff5c5c':rate>=20?'#ffb02e':'#2bd47d')+'">'+rate+'%</td></tr>';});
