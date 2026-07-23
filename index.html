@@ -219,7 +219,11 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
         <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;">&#128197; Month:
           <select class="filter-select view-month" id="vm-leakage" onchange="setPeriod(this.value)"><option value="">All time</option></select>
         </label>
+        <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;">&#127970; Counter:
+          <select class="filter-select" id="vm-leakage-counter" onchange="renderLeakage()"><option value="">All counters</option></select>
+        </label>
       </div>
+      <div id="leak-by-counter"></div>
       <div class="card">
         <h3>Stale Enquiries (no contact in &gt; 7 days while still active)</h3>
         <p class="help-text">These are enquiries at risk of being lost. Reach out today.</p>
@@ -693,6 +697,7 @@ function refreshAllSelects() {
   populateSelect('f-stage',STAGES,true,'All stages'); populateSelect('f-source',unionData('source',SOURCES),true,'All sources');
   populateSelect('f-rep',unionData('rep',config.reps),true,'All reps'); populateSelect('f-counter',unionData('counter',config.counters),true,'All counters');
   populateSelect('f-financier',unionData('financier',config.financiers),true,'All financiers');
+  populateSelect('vm-leakage-counter',unionData('counter',config.counters),true,'All counters');
   populateSelect('f-counter-in',config.counters,false); populateSelect('f-source-in',SOURCES,false);
   populateSelect('f-model',config.models,false); populateSelect('f-rep-in',config.reps,false);
   populateSelect('f-stage-in',STAGES,false); populateSelect('f-financier-in',[''].concat(config.financiers),false);
@@ -1017,10 +1022,43 @@ function deleteAllEnquiries() {
 
 /* ====================== LEAKAGE VIEW ====================== */
 function renderLeakage() {
-  const E = getActiveEnquiries();
-  const stale = E.filter(e=>ACTIVE_STAGES.includes(e.stage)&&dateDiff(e.lastContactAt)>STALE_DAYS);
-  const noTD = E.filter(e=>['Qualified','Negotiation','Booked'].includes(e.stage)&&isTDModel(e.model)&&!e.testRideStatus);
-  const overdue = E.filter(e=>ACTIVE_STAGES.includes(e.stage)&&e.nextFollowUp&&e.nextFollowUp<todayISO());
+  const Eall = getActiveEnquiries();
+  const ctrSel=document.getElementById('vm-leakage-counter')?.value||'';
+  const ctrEq=(a,b)=>String(a==null?'':a).trim().toLowerCase()===String(b==null?'':b).trim().toLowerCase();
+  const isStale=e=>ACTIVE_STAGES.includes(e.stage)&&dateDiff(e.lastContactAt)>STALE_DAYS;
+  const isNoTD=e=>['Qualified','Negotiation','Booked'].includes(e.stage)&&isTDModel(e.model)&&!e.testRideStatus;
+  const isOverdue=e=>ACTIVE_STAGES.includes(e.stage)&&e.nextFollowUp&&e.nextFollowUp<todayISO();
+
+  // ----- Leakage by counter summary (built from ALL counters, before filtering) -----
+  const bc=document.getElementById('leak-by-counter');
+  if(bc){
+    const cmap={};
+    Eall.forEach(e=>{const c=(e.counter==null||String(e.counter).trim()==='')?'(no counter)':String(e.counter).trim();
+      const s=cmap[c]||(cmap[c]={c:c,total:0,stale:0,noTD:0,overdue:0});
+      s.total++; if(isStale(e))s.stale++; if(isNoTD(e))s.noTD++; if(isOverdue(e))s.overdue++;});
+    const rows=Object.keys(cmap).map(k=>cmap[k]).filter(s=>s.stale+s.noTD+s.overdue>0)
+      .sort((a,b)=>(b.stale+b.noTD+b.overdue)-(a.stale+a.noTD+a.overdue));
+    let bh='';
+    if(rows.length){
+      bh='<div class="card" style="margin-bottom:14px;border-left:4px solid var(--warn,#ffb02e)"><h3>&#9888;&#65039; Leakage by counter</h3>'
+        +'<p class="help-text">Total leaks (stale + no test-ride + overdue) per counter. Highest first &mdash; that is where recovery effort pays most. Click a row to drill in.</p>'
+        +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Counter</th><th style="text-align:right">Active enq</th><th style="text-align:right">Stale &gt;7d</th><th style="text-align:right">No test-ride</th><th style="text-align:right">Overdue FU</th><th style="text-align:right">Total leaks</th><th style="text-align:right">Leak rate</th></tr></thead><tbody>';
+      rows.forEach(s=>{const tot=s.stale+s.noTD+s.overdue;const rate=s.total?Math.round(tot/s.total*100):0;const sel=ctrEq(ctrSel,s.c);
+        bh+='<tr onclick="document.getElementById(\'vm-leakage-counter\').value='+JSON.stringify(sel?'':s.c)+';renderLeakage();" style="cursor:pointer;'+(sel?'background:var(--panel-2)':'')+'">'
+          +'<td style="font-weight:700">'+escapeHtml(s.c)+'</td><td style="text-align:right;color:var(--muted)">'+s.total+'</td>'
+          +'<td style="text-align:right;color:#ffb02e">'+s.stale+'</td><td style="text-align:right;color:#ff8b3d">'+s.noTD+'</td>'
+          +'<td style="text-align:right;color:#ff5c5c">'+s.overdue+'</td><td style="text-align:right;font-weight:800">'+tot+'</td>'
+          +'<td style="text-align:right;font-weight:700;color:'+(rate>=40?'#ff5c5c':rate>=20?'#ffb02e':'#2bd47d')+'">'+rate+'%</td></tr>';});
+      bh+='</tbody></table></div></div>';
+    }
+    bc.innerHTML=bh;
+  }
+
+  const cf=e=>!ctrSel||ctrEq(e.counter,ctrSel);
+  const E=Eall.filter(cf);
+  const stale = E.filter(isStale);
+  const noTD = E.filter(isNoTD);
+  const overdue = E.filter(isOverdue);
   const lt=document.getElementById('leak-tbody');
   if(lt) lt.innerHTML = stale.length ? stale.map(e=>'<tr onclick="openModal(\''+e.id+'\')" style="cursor:pointer"><td>'+escapeHtml(e.id)+'</td><td>'+escapeHtml(e.customer)+'</td><td>'+escapeHtml(e.counter||'')+'</td><td>'+escapeHtml(e.stage)+'</td><td>'+escapeHtml(e.rep)+'</td><td style="color:var(--warn)">'+dateDiff(e.lastContactAt)+' days</td><td>'+escapeHtml(e.nextFollowUp||'-')+'</td></tr>').join('') : '<tr><td colspan="7" style="text-align:center;color:var(--ok);padding:18px;">&#10003; No stale enquiries</td></tr>';
   const nt=document.getElementById('no-td-tbody');
