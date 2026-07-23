@@ -634,6 +634,17 @@ function loadData() {
   if (!enquiries.length) seedData();
   migrateDates();
 }
+// The DMS export stores yes/no flags as "Y"/"N" (also seen: "Yes"/"No", "1"/"0",
+// "true"/"false"). Normalise them so every view's ===\'Yes\' check works.
+const YES_RE=/^(y|yes|true|1|required|req)$/i;
+function normalizeFlags() {
+  let n=0;
+  enquiries.forEach(e => {
+    if(e.financeRequired!==undefined){ const v=YES_RE.test(String(e.financeRequired).trim())?'Yes':'No'; if(v!==e.financeRequired){e.financeRequired=v;n++;} }
+    if(e.exchange!==undefined && e.exchange!==''){ const v=YES_RE.test(String(e.exchange).trim())?'Yes':'No'; if(v!==e.exchange){e.exchange=v;n++;} }
+  });
+  return n;
+}
 function migrateDates() {
   let fixed=0; const isoOk=/^\d{4}-\d{2}-\d{2}$/;
   enquiries.forEach(e => {
@@ -642,6 +653,7 @@ function migrateDates() {
     });
     if(e.lastContactAt&&isoOk.test(e.lastContactAt)&&e.createdAt&&isoOk.test(e.createdAt)&&e.lastContactAt<e.createdAt){e.createdAt=e.lastContactAt;fixed++;}
   });
+  fixed+=normalizeFlags();
   if(fixed){saveDataLocal();}
 }
 function saveDataLocal() { localStorage.setItem(STORAGE_KEY, JSON.stringify(enquiries)); localStorage.setItem(CONFIG_KEY, JSON.stringify(config)); }
@@ -974,7 +986,7 @@ function renderTable() {
     if (ctr && !eqv(e.counter,ctr)) return false;
     if (fin && e.financeRequired!==fin) return false;
     if (fnc && !eqv(e.financier,fnc)) return false;
-    if (exc && (exc==='Yes' ? !e.exchange : !!e.exchange)) return false;
+    if (exc){ const isEx=(e.exchange==='Yes'); if(exc==='Yes'?!isEx:isEx) return false; }
     if (mon && getMonthKey(e)!==mon) return false;
     return true;
   });
