@@ -226,6 +226,12 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
         <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;">&#127970; Counter:
           <select class="filter-select" id="vm-leakage-counter" onchange="renderLeakage()"><option value="">All counters</option></select>
         </label>
+        <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;">&#128203; Status:
+          <select class="filter-select" id="vm-leakage-status" onchange="renderLeakage()">
+            <option value="open">Open only (exclude Booked)</option>
+            <option value="active">All active (incl. Booked)</option>
+          </select>
+        </label>
       </div>
       <div id="leak-by-counter"></div>
       <div class="card">
@@ -1030,9 +1036,13 @@ function renderLeakage() {
   const Eall = getActiveEnquiries();
   const ctrSel=document.getElementById('vm-leakage-counter')?.value||'';
   const ctrEq=(a,b)=>String(a==null?'':a).trim().toLowerCase()===String(b==null?'':b).trim().toLowerCase();
-  const isStale=e=>ACTIVE_STAGES.includes(e.stage)&&dateDiff(e.lastContactAt)>STALE_DAYS;
-  const isNoTD=e=>['Qualified','Negotiation','Booked'].includes(e.stage)&&isTDModel(e.model)&&!e.testRideStatus;
-  const isOverdue=e=>ACTIVE_STAGES.includes(e.stage)&&e.nextFollowUp&&e.nextFollowUp<todayISO();
+  const statusSel=document.getElementById('vm-leakage-status')?.value||'open';
+  const OPEN_STAGES=['New','Contacted','Qualified','Test Drive','Negotiation'];
+  const stageSet=statusSel==='active'?ACTIVE_STAGES:OPEN_STAGES;
+  const tdStages=['Qualified','Negotiation','Booked'].filter(s=>stageSet.includes(s));
+  const isStale=e=>stageSet.includes(e.stage)&&dateDiff(e.lastContactAt)>STALE_DAYS;
+  const isNoTD=e=>tdStages.includes(e.stage)&&isTDModel(e.model)&&!e.testRideStatus;
+  const isOverdue=e=>stageSet.includes(e.stage)&&e.nextFollowUp&&e.nextFollowUp<todayISO();
 
   // ----- Leakage by counter summary (built from ALL counters, before filtering) -----
   const bc=document.getElementById('leak-by-counter');
