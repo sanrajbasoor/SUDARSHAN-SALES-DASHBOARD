@@ -2263,15 +2263,23 @@ document.addEventListener('DOMContentLoaded', initApp);
   }
 
   /* ---- classification helpers ---- */
-  function interestOf(v){ var t=low(v); if(!t) return ''; if(/hot|h\b|priority|ready/.test(t))return 'hot'; if(/warm|w\b|medium|maybe/.test(t))return 'warm'; if(/cold|c\b|low|not intere/.test(t))return 'cold'; return ''; }
-  function isConverted(v){ var t=low(v); return /^(y|yes|1|true|sold|booked|won|convert(ed)?|retail(ed)?|delivered|done)$/.test(t) || /sold|booked|won|convert|retail|delivered/.test(t); }
-  function isFollowed(v){ var t=low(v); if(!t) return false; if(/^(n|no|pending|not done|not|open|todo|awaited|na)$/.test(t)) return false; return true; }
+  // temperature from a disposition/interest value (handles "Interested","Not Interested","Lost","Sold", etc.)
+  function interestOf(v){ var t=low(v); if(!t) return '';
+    if(/not\s*inter|no\s*inter|lost|already\s*purchas|dead|invalid|wrong\s*(no|number)|switch(ed)?\s*off|cold|low\s*intent/.test(t)) return 'cold';
+    if(/\bhot\b|very\s*inter|ready\s*to\s*buy|high\s*intent|priority/.test(t)) return 'hot';
+    if(/\bwarm\b|maybe|call\s*back|callback|ringing|no\s*response|later|medium/.test(t)) return 'warm';
+    if(/\binter(e|es)ted\b|interested|prospect|follow/.test(t)) return 'hot';   // a live "Interested" lead = hot prospect
+    return ''; }
+  function isConverted(v){ var t=low(v); if(!t) return false;
+    return /^(y|yes|1|true|done)$/.test(t) || /\bsold\b|booked|\bwon\b|convert|retail|delivered|purchas(ed)?\s*from\s*us|billed/.test(t); }
+  function isFollowed(v){ var t=low(v); if(!t) return false; if(/^(n|no|pending|not\s*done|not|open|todo|awaited|na|-)$/.test(t)) return false; return true; }
   function callDone(v){ var t=low(v); return t!==''; }
-  function connected(v){ var t=low(v); if(!t) return null; if(/answer|connect|received|spoke|reach|contact|done|talk/.test(t)) return true; if(/miss|not answer|no answer|busy|switch|unreach|no response|ni\b|invalid|wrong/.test(t)) return false; return null; }
+  function connected(v){ var t=low(v); if(!t) return null; if(/answer|connect|received|spoke|reach|contact|done|talk|interested|sold|booked|call\s*done/.test(t)) return true; if(/miss|not\s*answer|no\s*answer|busy|switch|unreach|no\s*response|\bni\b|invalid|wrong/.test(t)) return false; return null; }
 
   /* ---- normalise a raw record (feed object or mapped paste row) ---- */
   function normRec(r){
     var counter = r.counter||r.Counter||r.location||r.Location||'';
+    var dispo = String(r.interest||r.category||r.rating||r.prospect||r.temperature||r.hot||r.disposition||'').trim();
     return {
       counter: String(counter||'').trim()||'(no counter)',
       ym: monthKeyOf(r.date||r.Date||r.callDate||r.enqDate||r.createdAt||''),
@@ -2279,10 +2287,11 @@ document.addEventListener('DOMContentLoaded', initApp);
       name: String(r.name||r.Name||r.customer||r.Customer||'').trim(),
       phone: String(r.phone||r.Phone||r.mobile||r.Mobile||r.contact||'').trim(),
       source: String(r.source||r.Source||'').trim(),
-      callStatus: String(r.callStatus||r.status||r.disposition||r.outcome||r.Result||'').trim(),
+      callStatus: String(r.callStatus||r.status||r.outcome||r.Result||'').trim(),
       followUp: String(r.followUp||r.followup||r.nextFU||r.followUpDone||r.fu||'').trim(),
-      interest: interestOf(r.interest||r.category||r.rating||r.prospect||r.temperature||r.hot||''),
-      convertedRaw: String(r.converted||r.sold||r.booked||r.won||r.status||'').trim()
+      dispoRaw: dispo,
+      interest: interestOf(dispo),
+      convertedRaw: String(r.converted||r.sold||r.booked||r.won||'').trim()
     };
   }
 
@@ -2307,7 +2316,7 @@ document.addEventListener('DOMContentLoaded', initApp);
       if(callDone(r.callStatus)) m.tracked++;
       var cc=connected(r.callStatus); if(cc!==null){m.connKnown++; if(cc)m.connected++;}
       if(isFollowed(r.followUp)) m.followed++;
-      if(isConverted(r.convertedRaw)||isConverted(r.callStatus)) m.converted++;
+      if(isConverted(r.convertedRaw)||isConverted(r.callStatus)||isConverted(r.dispoRaw)) m.converted++;
       if(r.interest==='hot')m.hot++; else if(r.interest==='warm')m.warm++; else if(r.interest==='cold')m.cold++;
     });
     m.trackedPct=m.total?Math.round(m.tracked/m.total*100):0;
@@ -2397,7 +2406,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     if(!recs.length) h+='<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px">No rows for this filter.</td></tr>';
     recs.slice(0,300).forEach(function(r){
       var ic=r.interest==='hot'?'#ff5c5c':r.interest==='warm'?'#ffb02e':r.interest==='cold'?'#5b9eff':'var(--muted)';
-      var conv=(isConverted(r.convertedRaw)||isConverted(r.callStatus));
+      var conv=(isConverted(r.convertedRaw)||isConverted(r.callStatus)||isConverted(r.dispoRaw));
       h+='<tr style="border-top:1px solid var(--line)">'
         +'<td style="white-space:nowrap">'+esc(r.dateRaw)+'</td><td>'+esc(r.name)+'</td>'
         +'<td>'+(r.phone?('<a href="tel:'+esc(r.phone)+'" style="color:#5b9eff;text-decoration:none">'+esc(r.phone)+'</a>'):'&mdash;')+'</td>'
@@ -2426,7 +2435,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     function cell(v){v=String(v==null?'':v); return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v;}
     var head=['Date','Customer','Phone','Counter','Source','Call status','Follow-up','Interest','Converted'];
     var lines=[head.join(',')];
-    recs.forEach(function(r){ var conv=(isConverted(r.convertedRaw)||isConverted(r.callStatus))?'Yes':'No';
+    recs.forEach(function(r){ var conv=(isConverted(r.convertedRaw)||isConverted(r.callStatus)||isConverted(r.dispoRaw))?'Yes':'No';
       lines.push([r.dateRaw,r.name,r.phone,r.counter,r.source,r.callStatus,isFollowed(r.followUp)?r.followUp||'Yes':'Pending',r.interest,conv].map(cell).join(',')); });
     var p=(typeof currentPeriod!=='undefined'&&currentPeriod)?currentPeriod:'all';
     var blob=new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8;'});
