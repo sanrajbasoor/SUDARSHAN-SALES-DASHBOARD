@@ -2329,13 +2329,50 @@ document.addEventListener('DOMContentLoaded', initApp);
 
   function kpi(v,l,color,sub){ return '<div class="card kpi"><h3>'+l+'</h3><div class="kpi-value"'+(color?(' style="color:'+color+'"'):'')+'>'+v+'</div><div class="kpi-trend">'+(sub||'&nbsp;')+'</div></div>'; }
 
+  /* ---- duplicate-call detection: same customer (phone) calling more than once ---- */
+  // key = last 10 digits of the phone; falls back to name when no phone
+  function dupKey(r){
+    var p=String(r.phone||'').replace(/\D/g,''); if(p.length>10) p=p.slice(-10);
+    if(p.length>=6) return 'p:'+p;
+    var n=low(r.name); return n?('n:'+n):('u:'+(r.dateRaw||'')+'|'+(r.callStatus||'')+Math.random());
+  }
+  // how far a record progressed — used to keep the "best" call when collapsing repeats
+  function dispoScore(r){
+    var s=0;
+    if(isConverted(r.convertedRaw)||isConverted(r.callStatus)||isConverted(r.dispoRaw)) s+=100;
+    if(r.interest==='hot') s+=50; else if(r.interest==='warm') s+=25; else if(r.interest==='cold') s+=5;
+    if(connected(r.callStatus)===true) s+=10;
+    if(isFollowed(r.followUp)) s+=3;
+    return s;
+  }
+  // collapse repeat calls to one record per customer; keeps the most-progressed call,
+  // tags it with dupCount (total times that customer called)
+  function dedupeRecs(recs){
+    var groups={}, order=[];
+    recs.forEach(function(r){ var k=dupKey(r); if(!groups[k]){groups[k]=[]; order.push(k);} groups[k].push(r); });
+    return order.map(function(k){
+      var g=groups[k];
+      g.sort(function(a,b){ var d=dispoScore(b)-dispoScore(a); if(d) return d; return String(b.ym||b.dateRaw||'').localeCompare(String(a.ym||a.dateRaw||'')); });
+      var rep={}; for(var key in g[0]) rep[key]=g[0][key];
+      rep.dupCount=g.length;
+      return rep;
+    });
+  }
+  function dedupeOn(){ var el=document.getElementById('ct-dedupe'); return el?el.value==='unique':false; }
+  function viewRecs(){
+    var base=state.records.filter(inView);
+    var uniq=dedupeRecs(base);
+    return { base:base, uniq:uniq, recs:dedupeOn()?uniq:base, repeat:base.length-uniq.length };
+  }
+
   function render(){
     var root=document.getElementById('ct-root'); if(!root) return;
     // keep counter dropdown fresh
     var csel=document.getElementById('ct-counter');
     if(csel){ var cur=csel.value; var opts='<option value="">All counters</option>'+counters().map(function(c){return '<option value="'+esc(c)+'">'+esc(c)+'</option>';}).join(''); csel.innerHTML=opts; csel.value=cur; }
 
-    var recs=state.records.filter(inView);
+    var vr=viewRecs();
+    var recs=vr.recs;
     var m=metrics(recs);
     var h='';
 
@@ -2354,11 +2391,15 @@ document.addEventListener('DOMContentLoaded', initApp);
     }
 
     var scope=periodLabel()+(selCounter()?(' · '+selCounter()):'');
+    var dupPct=vr.base.length?Math.round(vr.repeat/vr.base.length*100):0;
     h+='<div class="card" style="margin-bottom:14px;border-left:4px solid var(--info,#5b9eff)"><b>&#128222; Digital call tracking &mdash; '+esc(scope)+'.</b> '
-      +'<span class="help-text">'+m.total+' digital enquiry(ies) in view. Use the Month and Counter filters above.</span></div>';
+      +'<span class="help-text">'
+      +'<b>'+vr.base.length+'</b> total calls &rarr; <b>'+vr.uniq.length+'</b> unique customers &middot; <b style="color:'+(dupPct>=30?'#ff8b3d':'#ffb02e')+'">'+vr.repeat+'</b> repeat call(s) ('+dupPct+'%) from customers who dialled the virtual number more than once. '
+      +(dedupeOn()?'Metrics below count each customer <b>once</b> (duplicates removed).':'Metrics below count <b>every call</b>. Switch the <b>Calls</b> filter to &ldquo;Unique customers&rdquo; to remove repeats.')
+      +'</span></div>';
 
     h+='<div class="grid grid-4">';
-    h+=kpi(m.total,'Digital enquiries','#5b9eff','logged in view');
+    h+=kpi(m.total,dedupeOn()?'Unique customers':'Digital enquiries','#5b9eff',dedupeOn()?(vr.base.length+' calls, deduped'):(vr.repeat+' are repeat calls'));
     h+=kpi(m.trackedPct+'%','Being tracked',m.trackedPct>=80?'#2bd47d':m.trackedPct>=50?'#ffb02e':'#ff5c5c',m.tracked+' have a call outcome');
     h+=kpi(m.followedPct+'%','Followed up',m.followedPct>=70?'#2bd47d':m.followedPct>=40?'#ffb02e':'#ff5c5c',m.followed+' of '+m.total);
     h+=kpi(m.convPct+'%','Conversion',m.convPct>=15?'#2bd47d':m.convPct>=7?'#ffb02e':'#ff5c5c',m.converted+' converted');
@@ -2387,10 +2428,10 @@ document.addEventListener('DOMContentLoaded', initApp);
     var ck=Object.keys(byctr).sort(function(a,b){return byctr[b].length-byctr[a].length;});
     if(ck.length){
       h+='<div class="card" style="margin-top:14px"><h3>By counter &mdash; is digital being worked?</h3>'
-        +'<p class="help-text">Click a row to filter the whole tab to that counter. Low tracked/followed = digital enquiries being ignored.</p>'
-        +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Counter</th><th style="text-align:right">Digital enq</th><th style="text-align:right">Tracked</th><th style="text-align:right">Followed up</th><th style="text-align:right">Hot</th><th style="text-align:right">Conversion</th></tr></thead><tbody>';
+        +'<p class="help-text">Click a row to filter the whole tab to that counter. Low tracked/followed = digital enquiries being ignored.'+(dedupeOn()?' Counts are <b>unique customers</b> (repeat calls removed).':'')+'</p>'
+        +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Counter</th><th style="text-align:right">'+(dedupeOn()?'Unique cust.':'Digital enq')+'</th><th style="text-align:right">Tracked</th><th style="text-align:right">Followed up</th><th style="text-align:right">Hot</th><th style="text-align:right">Conversion</th></tr></thead><tbody>';
       ck.forEach(function(c){
-        var cm=metrics(byctr[c]); var sel=low(selCounter())===low(c);
+        var cm=metrics(dedupeOn()?dedupeRecs(byctr[c]):byctr[c]); var sel=low(selCounter())===low(c);
         h+='<tr onclick="ctPickCounter('+JSON.stringify(sel?'':c)+')" style="cursor:pointer;'+(sel?'background:var(--panel-2)':'')+'">'
           +'<td style="font-weight:700">'+esc(c)+'</td><td style="text-align:right;font-weight:700">'+cm.total+'</td>'
           +'<td style="text-align:right;color:'+(cm.trackedPct>=80?'#2bd47d':cm.trackedPct>=50?'#ffb02e':'#ff5c5c')+'">'+cm.trackedPct+'%</td>'
@@ -2407,8 +2448,9 @@ document.addEventListener('DOMContentLoaded', initApp);
     recs.slice(0,300).forEach(function(r){
       var ic=r.interest==='hot'?'#ff5c5c':r.interest==='warm'?'#ffb02e':r.interest==='cold'?'#5b9eff':'var(--muted)';
       var conv=(isConverted(r.convertedRaw)||isConverted(r.callStatus)||isConverted(r.dispoRaw));
+      var dupBadge=(r.dupCount&&r.dupCount>1)?(' <span title="This customer called '+r.dupCount+' times" style="background:rgba(255,139,61,0.18);color:#ff8b3d;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700">&#215;'+r.dupCount+'</span>'):'';
       h+='<tr style="border-top:1px solid var(--line)">'
-        +'<td style="white-space:nowrap">'+esc(r.dateRaw)+'</td><td>'+esc(r.name)+'</td>'
+        +'<td style="white-space:nowrap">'+esc(r.dateRaw)+'</td><td>'+esc(r.name)+dupBadge+'</td>'
         +'<td>'+(r.phone?('<a href="tel:'+esc(r.phone)+'" style="color:#5b9eff;text-decoration:none">'+esc(r.phone)+'</a>'):'&mdash;')+'</td>'
         +'<td style="color:var(--muted)">'+esc(r.counter)+'</td><td style="color:var(--muted)">'+esc(r.source)+'</td>'
         +'<td>'+esc(r.callStatus||'&mdash;')+'</td><td>'+(isFollowed(r.followUp)?('<span style="color:#2bd47d">&#10003; '+esc(r.followUp)+'</span>'):'<span style="color:#ff5c5c">pending</span>')+'</td>'
@@ -2430,13 +2472,13 @@ document.addEventListener('DOMContentLoaded', initApp);
 
   /* ---- CSV export ---- */
   window.ctExport=function(){
-    var recs=state.records.filter(inView);
+    var vr=viewRecs(); var recs=vr.recs;
     if(!recs.length){ if(typeof showToast==='function') showToast('Nothing to export'); return; }
     function cell(v){v=String(v==null?'':v); return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v;}
-    var head=['Date','Customer','Phone','Counter','Source','Call status','Follow-up','Interest','Converted'];
+    var head=['Date','Customer','Phone','Counter','Source','Call status','Follow-up','Interest','Converted','Times called'];
     var lines=[head.join(',')];
     recs.forEach(function(r){ var conv=(isConverted(r.convertedRaw)||isConverted(r.callStatus)||isConverted(r.dispoRaw))?'Yes':'No';
-      lines.push([r.dateRaw,r.name,r.phone,r.counter,r.source,r.callStatus,isFollowed(r.followUp)?r.followUp||'Yes':'Pending',r.interest,conv].map(cell).join(',')); });
+      lines.push([r.dateRaw,r.name,r.phone,r.counter,r.source,r.callStatus,isFollowed(r.followUp)?r.followUp||'Yes':'Pending',r.interest,conv,(r.dupCount||1)].map(cell).join(',')); });
     var p=(typeof currentPeriod!=='undefined'&&currentPeriod)?currentPeriod:'all';
     var blob=new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8;'});
     var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='call_tracker_'+p+'_'+new Date().toISOString().slice(0,10)+'.csv';
@@ -2537,6 +2579,8 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'<select class="filter-select view-month" onchange="setPeriod(this.value)"><option value="">All time</option></select></label>'
       +'<label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px">&#127970; Counter:'
       +'<select class="filter-select" id="ct-counter" onchange="(window.__ctRender||function(){})()"><option value="">All counters</option></select></label>'
+      +'<label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px">&#128222; Calls:'
+      +'<select class="filter-select" id="ct-dedupe" onchange="(window.__ctRender||function(){})()"><option value="all">All calls (incl. repeats)</option><option value="unique">Unique customers (dedupe)</option></select></label>'
       +'<span id="ct-last" style="margin-left:auto;color:var(--muted);font-size:12px"></span>'
       +'</div><div id="ct-root"></div>');
     window.__ctRender=render;
