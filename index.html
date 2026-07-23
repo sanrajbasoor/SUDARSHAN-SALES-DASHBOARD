@@ -2398,11 +2398,12 @@ document.addEventListener('DOMContentLoaded', initApp);
       +(dedupeOn()?'Metrics below count each customer <b>once</b> (duplicates removed).':'Metrics below count <b>every call</b>. Switch the <b>Calls</b> filter to &ldquo;Unique customers&rdquo; to remove repeats.')
       +'</span></div>';
 
-    h+='<div class="grid grid-4">';
+    h+='<div class="grid grid-5">';
     h+=kpi(m.total,dedupeOn()?'Unique customers':'Digital enquiries','#5b9eff',dedupeOn()?(vr.base.length+' calls, deduped'):(vr.repeat+' are repeat calls'));
     h+=kpi(m.trackedPct+'%','Being tracked',m.trackedPct>=80?'#2bd47d':m.trackedPct>=50?'#ffb02e':'#ff5c5c',m.tracked+' have a call outcome');
     h+=kpi(m.followedPct+'%','Followed up',m.followedPct>=70?'#2bd47d':m.followedPct>=40?'#ffb02e':'#ff5c5c',m.followed+' of '+m.total);
-    h+=kpi(m.convPct+'%','Conversion',m.convPct>=15?'#2bd47d':m.convPct>=7?'#ffb02e':'#ff5c5c',m.converted+' converted');
+    h+=kpi(m.converted,'Units sold','#2bd47d','via digital leads'+(dedupeOn()?'':', all calls'));
+    h+=kpi(m.convPct+'%','Conversion',m.convPct>=15?'#2bd47d':m.convPct>=7?'#ffb02e':'#ff5c5c',m.converted+' of '+m.total);
     h+='</div>';
 
     h+='<div class="grid grid-4" style="margin-top:12px">';
@@ -2429,7 +2430,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     if(ck.length){
       h+='<div class="card" style="margin-top:14px"><h3>By counter &mdash; is digital being worked?</h3>'
         +'<p class="help-text">Click a row to filter the whole tab to that counter. Low tracked/followed = digital enquiries being ignored.'+(dedupeOn()?' Counts are <b>unique customers</b> (repeat calls removed).':'')+'</p>'
-        +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Counter</th><th style="text-align:right">'+(dedupeOn()?'Unique cust.':'Digital enq')+'</th><th style="text-align:right">Tracked</th><th style="text-align:right">Followed up</th><th style="text-align:right">Hot</th><th style="text-align:right">Conversion</th></tr></thead><tbody>';
+        +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Counter</th><th style="text-align:right">'+(dedupeOn()?'Unique cust.':'Digital enq')+'</th><th style="text-align:right">Tracked</th><th style="text-align:right">Followed up</th><th style="text-align:right">Hot</th><th style="text-align:right">Sold</th><th style="text-align:right">Conversion</th></tr></thead><tbody>';
       ck.forEach(function(c){
         var cm=metrics(dedupeOn()?dedupeRecs(byctr[c]):byctr[c]); var sel=low(selCounter())===low(c);
         h+='<tr onclick="ctPickCounter('+JSON.stringify(sel?'':c)+')" style="cursor:pointer;'+(sel?'background:var(--panel-2)':'')+'">'
@@ -2437,13 +2438,14 @@ document.addEventListener('DOMContentLoaded', initApp);
           +'<td style="text-align:right;color:'+(cm.trackedPct>=80?'#2bd47d':cm.trackedPct>=50?'#ffb02e':'#ff5c5c')+'">'+cm.trackedPct+'%</td>'
           +'<td style="text-align:right;color:'+(cm.followedPct>=70?'#2bd47d':cm.followedPct>=40?'#ffb02e':'#ff5c5c')+'">'+cm.followedPct+'%</td>'
           +'<td style="text-align:right;color:#ff5c5c;font-weight:700">'+cm.hot+'</td>'
+          +'<td style="text-align:right;color:#2bd47d;font-weight:800">'+cm.converted+'</td>'
           +'<td style="text-align:right;font-weight:700;color:'+(cm.convPct>=15?'#2bd47d':cm.convPct>=7?'#ffb02e':'#ff5c5c')+'">'+cm.convPct+'%</td></tr>';
       });
       h+='</tbody></table></div></div>';
     }
 
     // recent records
-    h+='<div class="card" style="margin-top:14px"><h3>Records ('+recs.length+')</h3><div style="overflow-x:auto"><table class="table"><thead><tr><th>Date</th><th>Customer</th><th>Phone</th><th>Counter</th><th>Source</th><th>Call status</th><th>Follow-up</th><th>Interest</th><th>Converted</th></tr></thead><tbody>';
+    h+='<div class="card" style="margin-top:14px"><h3>Records ('+recs.length+')</h3><div style="overflow-x:auto"><table class="table"><thead><tr><th>Date</th><th>Customer</th><th>Phone</th><th>Counter</th><th>Source</th><th>Call status</th><th>Follow-up</th><th>Interest</th><th>Sold</th></tr></thead><tbody>';
     if(!recs.length) h+='<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px">No rows for this filter.</td></tr>';
     recs.slice(0,300).forEach(function(r){
       var ic=r.interest==='hot'?'#ff5c5c':r.interest==='warm'?'#ffb02e':r.interest==='cold'?'#5b9eff':'var(--muted)';
@@ -2475,7 +2477,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     var vr=viewRecs(); var recs=vr.recs;
     if(!recs.length){ if(typeof showToast==='function') showToast('Nothing to export'); return; }
     function cell(v){v=String(v==null?'':v); return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v;}
-    var head=['Date','Customer','Phone','Counter','Source','Call status','Follow-up','Interest','Converted','Times called'];
+    var head=['Date','Customer','Phone','Counter','Source','Call status','Follow-up','Interest','Sold','Times called'];
     var lines=[head.join(',')];
     recs.forEach(function(r){ var conv=(isConverted(r.convertedRaw)||isConverted(r.callStatus)||isConverted(r.dispoRaw))?'Yes':'No';
       lines.push([r.dateRaw,r.name,r.phone,r.counter,r.source,r.callStatus,isFollowed(r.followUp)?r.followUp||'Yes':'Pending',r.interest,conv,(r.dupCount||1)].map(cell).join(',')); });
