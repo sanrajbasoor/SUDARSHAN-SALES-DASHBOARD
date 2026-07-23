@@ -2243,4 +2243,305 @@ document.addEventListener('DOMContentLoaded', initApp);
 })();
 </script>
 
+<!-- ===== CALL TRACKER tab (digital-enquiry call tracking) — additive, self-contained ===== -->
+<script>
+(function(){
+  "use strict";
+  var CT_KEY='hero-calltracker-v1';
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function low(s){return String(s==null?'':s).trim().toLowerCase();}
+  function periodLabel(){ try{ return (typeof currentPeriod!=='undefined'&&currentPeriod)?formatMonthLabel(currentPeriod):'All time'; }catch(e){ return 'All time'; } }
+  function monthKeyOf(raw){
+    if(!raw) return '';
+    var s=String(raw).trim();
+    var m=s.match(/^(\d{4})[-\/](\d{1,2})/); if(m) return m[1]+'-'+('0'+m[2]).slice(-2);
+    m=s.match(/^(\d{1,2})[\-\/](\d{1,2})[\-\/](\d{4})/); if(m) return m[3]+'-'+('0'+m[2]).slice(-2);
+    var MON={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+    m=s.match(/^(\d{1,2})[\s\-]+([a-z]{3,})[\s\-]+(\d{4})/i); if(m){var mm=MON[m[2].toLowerCase().substr(0,3)]; if(mm) return m[3]+'-'+('0'+mm).slice(-2);}
+    var d=new Date(s); if(!isNaN(d.getTime())) return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2);
+    return '';
+  }
+
+  /* ---- classification helpers ---- */
+  function interestOf(v){ var t=low(v); if(!t) return ''; if(/hot|h\b|priority|ready/.test(t))return 'hot'; if(/warm|w\b|medium|maybe/.test(t))return 'warm'; if(/cold|c\b|low|not intere/.test(t))return 'cold'; return ''; }
+  function isConverted(v){ var t=low(v); return /^(y|yes|1|true|sold|booked|won|convert(ed)?|retail(ed)?|delivered|done)$/.test(t) || /sold|booked|won|convert|retail|delivered/.test(t); }
+  function isFollowed(v){ var t=low(v); if(!t) return false; if(/^(n|no|pending|not done|not|open|todo|awaited|na)$/.test(t)) return false; return true; }
+  function callDone(v){ var t=low(v); return t!==''; }
+  function connected(v){ var t=low(v); if(!t) return null; if(/answer|connect|received|spoke|reach|contact|done|talk/.test(t)) return true; if(/miss|not answer|no answer|busy|switch|unreach|no response|ni\b|invalid|wrong/.test(t)) return false; return null; }
+
+  /* ---- normalise a raw record (feed object or mapped paste row) ---- */
+  function normRec(r){
+    var counter = r.counter||r.Counter||r.location||r.Location||'';
+    return {
+      counter: String(counter||'').trim()||'(no counter)',
+      ym: monthKeyOf(r.date||r.Date||r.callDate||r.enqDate||r.createdAt||''),
+      dateRaw: String(r.date||r.Date||r.callDate||r.enqDate||r.createdAt||'').trim(),
+      name: String(r.name||r.Name||r.customer||r.Customer||'').trim(),
+      phone: String(r.phone||r.Phone||r.mobile||r.Mobile||r.contact||'').trim(),
+      source: String(r.source||r.Source||'').trim(),
+      callStatus: String(r.callStatus||r.status||r.disposition||r.outcome||r.Result||'').trim(),
+      followUp: String(r.followUp||r.followup||r.nextFU||r.followUpDone||r.fu||'').trim(),
+      interest: interestOf(r.interest||r.category||r.rating||r.prospect||r.temperature||r.hot||''),
+      convertedRaw: String(r.converted||r.sold||r.booked||r.won||r.status||'').trim()
+    };
+  }
+
+  var state;
+  function seed(){ return {records:[], updatedAt:'', source:'empty'}; }
+  function load(){ try{var r=localStorage.getItem(CT_KEY); state=r?JSON.parse(r):seed();}catch(e){state=seed();} if(!state||!Array.isArray(state.records)) state=seed(); }
+  function save(){ try{localStorage.setItem(CT_KEY,JSON.stringify(state));}catch(e){} }
+  load();
+
+  function counters(){ var s={}; state.records.forEach(function(r){ if(r.counter) s[r.counter]=1; }); return Object.keys(s).sort(); }
+  function selCounter(){ var el=document.getElementById('ct-counter'); return el?el.value:''; }
+  function inView(r){
+    var p=(typeof currentPeriod!=='undefined')?currentPeriod:'';
+    if(p && r.ym!==p) return false;
+    var c=selCounter(); if(c && low(r.counter)!==low(c)) return false;
+    return true;
+  }
+
+  function metrics(recs){
+    var m={total:recs.length,tracked:0,connected:0,connKnown:0,followed:0,converted:0,hot:0,warm:0,cold:0};
+    recs.forEach(function(r){
+      if(callDone(r.callStatus)) m.tracked++;
+      var cc=connected(r.callStatus); if(cc!==null){m.connKnown++; if(cc)m.connected++;}
+      if(isFollowed(r.followUp)) m.followed++;
+      if(isConverted(r.convertedRaw)||isConverted(r.callStatus)) m.converted++;
+      if(r.interest==='hot')m.hot++; else if(r.interest==='warm')m.warm++; else if(r.interest==='cold')m.cold++;
+    });
+    m.trackedPct=m.total?Math.round(m.tracked/m.total*100):0;
+    m.connPct=m.connKnown?Math.round(m.connected/m.connKnown*100):0;
+    m.followedPct=m.total?Math.round(m.followed/m.total*100):0;
+    m.convPct=m.total?Math.round(m.converted/m.total*100):0;
+    m.hotPct=m.total?Math.round(m.hot/m.total*100):0;
+    return m;
+  }
+
+  function kpi(v,l,color,sub){ return '<div class="card kpi"><h3>'+l+'</h3><div class="kpi-value"'+(color?(' style="color:'+color+'"'):'')+'>'+v+'</div><div class="kpi-trend">'+(sub||'&nbsp;')+'</div></div>'; }
+
+  function render(){
+    var root=document.getElementById('ct-root'); if(!root) return;
+    // keep counter dropdown fresh
+    var csel=document.getElementById('ct-counter');
+    if(csel){ var cur=csel.value; var opts='<option value="">All counters</option>'+counters().map(function(c){return '<option value="'+esc(c)+'">'+esc(c)+'</option>';}).join(''); csel.innerHTML=opts; csel.value=cur; }
+
+    var recs=state.records.filter(inView);
+    var m=metrics(recs);
+    var h='';
+
+    h+='<div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:12px;flex-wrap:wrap">'
+      +'<button class="btn" onclick="ctExport()" title="Download the filtered call-tracker rows">&#11015;&#65039; Export CSV</button>'
+      +'<button class="btn" onclick="ctSync()" title="Pull the latest call-tracker data">&#128260; Sync</button>'
+      +'<button class="btn" onclick="ctPasteOpen()" title="Paste rows from a counter Call Tracker sheet">&#128203; Paste data</button>'
+      +'</div>';
+
+    if(!state.records.length){
+      h+='<div class="card" style="border-left:4px solid var(--info,#5b9eff)"><h3>&#128222; Call Tracker</h3>'
+        +'<p class="help-text">This tab tracks your <b>digital enquiries</b> &mdash; whether each is being logged, called, followed up, and converted, and how many turn into <b>hot prospects</b>. '
+        +'It <b>syncs automatically every 30 minutes</b> from each counter&rsquo;s Call Tracker sheet once <b>CallTracker.gs</b> is installed &mdash; no manual work needed.</p>'
+        +'<p class="help-text" style="margin-top:8px">Waiting for the first sync. Press <b>&#128260; Sync</b> to pull now. (Manual <b>&#128203; Paste data</b> is available as a fallback but not required.)</p></div>';
+      root.innerHTML=h; ctStamp(); return;
+    }
+
+    var scope=periodLabel()+(selCounter()?(' · '+selCounter()):'');
+    h+='<div class="card" style="margin-bottom:14px;border-left:4px solid var(--info,#5b9eff)"><b>&#128222; Digital call tracking &mdash; '+esc(scope)+'.</b> '
+      +'<span class="help-text">'+m.total+' digital enquiry(ies) in view. Use the Month and Counter filters above.</span></div>';
+
+    h+='<div class="grid grid-4">';
+    h+=kpi(m.total,'Digital enquiries','#5b9eff','logged in view');
+    h+=kpi(m.trackedPct+'%','Being tracked',m.trackedPct>=80?'#2bd47d':m.trackedPct>=50?'#ffb02e':'#ff5c5c',m.tracked+' have a call outcome');
+    h+=kpi(m.followedPct+'%','Followed up',m.followedPct>=70?'#2bd47d':m.followedPct>=40?'#ffb02e':'#ff5c5c',m.followed+' of '+m.total);
+    h+=kpi(m.convPct+'%','Conversion',m.convPct>=15?'#2bd47d':m.convPct>=7?'#ffb02e':'#ff5c5c',m.converted+' converted');
+    h+='</div>';
+
+    h+='<div class="grid grid-4" style="margin-top:12px">';
+    h+=kpi(m.hot,'Hot prospects','#ff5c5c',m.hotPct+'% of enquiries');
+    h+=kpi(m.warm,'Warm','#ffb02e','follow to nurture');
+    h+=kpi(m.cold,'Cold','#5b9eff','low intent');
+    h+=kpi(m.connPct+'%','Calls connected',m.connPct>=70?'#2bd47d':'#ffb02e',m.connected+' of '+m.connKnown+' dialled');
+    h+='</div>';
+
+    // funnel + interest charts
+    h+='<div class="grid grid-2" style="margin-top:14px">';
+    h+='<div class="card"><h3>Digital enquiry funnel</h3><div class="chart-wrap"><canvas id="ct-funnel"></canvas></div>'
+      +'<p class="help-text">Enquiries &rarr; connected &rarr; followed up &rarr; hot &rarr; converted. Big drops show where digital leads leak.</p></div>';
+    h+='<div class="card"><h3>Prospect temperature</h3><div class="chart-wrap"><canvas id="ct-temp"></canvas></div>'
+      +'<p class="help-text">'+(m.hot+m.warm+m.cold===0?'No interest/rating captured yet &mdash; ask the team to fill the Interest column.':'Hot vs warm vs cold across the enquiries in view.')+'</p></div>';
+    h+='</div>';
+
+    // by-counter table
+    var byctr={};
+    state.records.filter(function(r){var p=(typeof currentPeriod!=='undefined')?currentPeriod:''; return !p||r.ym===p;}).forEach(function(r){
+      var c=r.counter||'(no counter)'; (byctr[c]||(byctr[c]=[])).push(r);
+    });
+    var ck=Object.keys(byctr).sort(function(a,b){return byctr[b].length-byctr[a].length;});
+    if(ck.length){
+      h+='<div class="card" style="margin-top:14px"><h3>By counter &mdash; is digital being worked?</h3>'
+        +'<p class="help-text">Click a row to filter the whole tab to that counter. Low tracked/followed = digital enquiries being ignored.</p>'
+        +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Counter</th><th style="text-align:right">Digital enq</th><th style="text-align:right">Tracked</th><th style="text-align:right">Followed up</th><th style="text-align:right">Hot</th><th style="text-align:right">Conversion</th></tr></thead><tbody>';
+      ck.forEach(function(c){
+        var cm=metrics(byctr[c]); var sel=low(selCounter())===low(c);
+        h+='<tr onclick="ctPickCounter('+JSON.stringify(sel?'':c)+')" style="cursor:pointer;'+(sel?'background:var(--panel-2)':'')+'">'
+          +'<td style="font-weight:700">'+esc(c)+'</td><td style="text-align:right;font-weight:700">'+cm.total+'</td>'
+          +'<td style="text-align:right;color:'+(cm.trackedPct>=80?'#2bd47d':cm.trackedPct>=50?'#ffb02e':'#ff5c5c')+'">'+cm.trackedPct+'%</td>'
+          +'<td style="text-align:right;color:'+(cm.followedPct>=70?'#2bd47d':cm.followedPct>=40?'#ffb02e':'#ff5c5c')+'">'+cm.followedPct+'%</td>'
+          +'<td style="text-align:right;color:#ff5c5c;font-weight:700">'+cm.hot+'</td>'
+          +'<td style="text-align:right;font-weight:700;color:'+(cm.convPct>=15?'#2bd47d':cm.convPct>=7?'#ffb02e':'#ff5c5c')+'">'+cm.convPct+'%</td></tr>';
+      });
+      h+='</tbody></table></div></div>';
+    }
+
+    // recent records
+    h+='<div class="card" style="margin-top:14px"><h3>Records ('+recs.length+')</h3><div style="overflow-x:auto"><table class="table"><thead><tr><th>Date</th><th>Customer</th><th>Phone</th><th>Counter</th><th>Source</th><th>Call status</th><th>Follow-up</th><th>Interest</th><th>Converted</th></tr></thead><tbody>';
+    if(!recs.length) h+='<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px">No rows for this filter.</td></tr>';
+    recs.slice(0,300).forEach(function(r){
+      var ic=r.interest==='hot'?'#ff5c5c':r.interest==='warm'?'#ffb02e':r.interest==='cold'?'#5b9eff':'var(--muted)';
+      var conv=(isConverted(r.convertedRaw)||isConverted(r.callStatus));
+      h+='<tr style="border-top:1px solid var(--line)">'
+        +'<td style="white-space:nowrap">'+esc(r.dateRaw)+'</td><td>'+esc(r.name)+'</td>'
+        +'<td>'+(r.phone?('<a href="tel:'+esc(r.phone)+'" style="color:#5b9eff;text-decoration:none">'+esc(r.phone)+'</a>'):'&mdash;')+'</td>'
+        +'<td style="color:var(--muted)">'+esc(r.counter)+'</td><td style="color:var(--muted)">'+esc(r.source)+'</td>'
+        +'<td>'+esc(r.callStatus||'&mdash;')+'</td><td>'+(isFollowed(r.followUp)?('<span style="color:#2bd47d">&#10003; '+esc(r.followUp)+'</span>'):'<span style="color:#ff5c5c">pending</span>')+'</td>'
+        +'<td style="color:'+ic+';font-weight:700;text-transform:capitalize">'+(r.interest||'&mdash;')+'</td>'
+        +'<td>'+(conv?'<span style="color:#2bd47d;font-weight:700">&#10003;</span>':'<span style="color:var(--muted)">&mdash;</span>')+'</td></tr>';
+    });
+    h+='</tbody></table></div></div>';
+
+    root.innerHTML=h; ctStamp();
+    if(typeof drawChart==='function'){
+      drawChart('ct-funnel','bar',{labels:['Enquiries','Connected','Followed up','Hot','Converted'],datasets:[{data:[m.total,m.connected,m.followed,m.hot,m.converted],backgroundColor:['#5b9eff','#5be0ff','#ffb02e','#ff5c5c','#2bd47d']}]},{plugins:{legend:{display:false}}});
+      drawChart('ct-temp','doughnut',{labels:['Hot','Warm','Cold'],datasets:[{data:[m.hot,m.warm,m.cold],backgroundColor:['#ff5c5c','#ffb02e','#5b9eff']}]},{});
+    }
+  }
+
+  function ctStamp(){ var el=document.getElementById('ct-last'); if(el) el.textContent='Call Tracker · '+(state.updatedAt?('updated '+state.updatedAt):'not yet synced'); }
+
+  window.ctPickCounter=function(c){ var el=document.getElementById('ct-counter'); if(el){el.value=c||'';} render(); };
+
+  /* ---- CSV export ---- */
+  window.ctExport=function(){
+    var recs=state.records.filter(inView);
+    if(!recs.length){ if(typeof showToast==='function') showToast('Nothing to export'); return; }
+    function cell(v){v=String(v==null?'':v); return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v;}
+    var head=['Date','Customer','Phone','Counter','Source','Call status','Follow-up','Interest','Converted'];
+    var lines=[head.join(',')];
+    recs.forEach(function(r){ var conv=(isConverted(r.convertedRaw)||isConverted(r.callStatus))?'Yes':'No';
+      lines.push([r.dateRaw,r.name,r.phone,r.counter,r.source,r.callStatus,isFollowed(r.followUp)?r.followUp||'Yes':'Pending',r.interest,conv].map(cell).join(',')); });
+    var p=(typeof currentPeriod!=='undefined'&&currentPeriod)?currentPeriod:'all';
+    var blob=new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8;'});
+    var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='call_tracker_'+p+'_'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){URL.revokeObjectURL(a.href);},2000);
+    if(typeof showToast==='function') showToast('Exported '+recs.length+' row(s)');
+  };
+
+  /* ---- paste importer ---- */
+  window.ctPasteOpen=function(){
+    var bg=document.getElementById('ct-paste-bg'); if(bg){ bg.style.display='flex'; return; }
+    bg=document.createElement('div'); bg.id='ct-paste-bg';
+    bg.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px';
+    bg.innerHTML='<div class="card" style="max-width:680px;width:100%;max-height:86vh;overflow:auto">'
+      +'<h3>&#128203; Paste Call Tracker rows</h3>'
+      +'<p class="help-text">Copy the rows (including the header row) from a counter&rsquo;s <b>Call Tracker</b> sheet and paste below. Add a <b>Counter</b> column, or pick one here if all rows are from the same counter.</p>'
+      +'<label style="display:block;margin:8px 0 4px;color:var(--muted);font-size:13px">Counter for these rows (optional)</label>'
+      +'<input id="ct-paste-counter" placeholder="e.g. VIDA Hub" style="width:100%;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:8px;margin-bottom:8px"/>'
+      +'<textarea id="ct-paste-ta" rows="10" placeholder="Paste rows here (tab or comma separated, header row first)" style="width:100%;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:8px;font-family:monospace;font-size:12px"></textarea>'
+      +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">'
+      +'<button class="btn" onclick="ctPasteClose()">Cancel</button>'
+      +'<button class="btn" onclick="ctPasteReplace(false)" title="Add to existing data">Append</button>'
+      +'<button class="btn btn-primary" onclick="ctPasteReplace(true)" title="Replace all call-tracker data">Load (replace)</button>'
+      +'</div></div>';
+    bg.addEventListener('click',function(ev){ if(ev.target===bg) ctPasteClose(); });
+    document.body.appendChild(bg); bg.style.display='flex';
+  };
+  window.ctPasteClose=function(){ var bg=document.getElementById('ct-paste-bg'); if(bg) bg.style.display='none'; };
+
+  function splitRows(text){ return text.split(/\r?\n/).map(function(l){ return l.split(/\t|,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(function(c){return c.replace(/^"|"$/g,'').trim();}); }).filter(function(r){return r.join('').trim()!=='';}); }
+  function headerMap(hdr){
+    var map={};
+    hdr.forEach(function(h,i){ var t=low(h);
+      if(/date/.test(t)&&map.date==null) map.date=i;
+      else if(/(customer|name|full name)/.test(t)&&map.name==null) map.name=i;
+      else if(/(phone|mobile|contact\s*no|number)/.test(t)&&map.phone==null) map.phone=i;
+      else if(/counter|location|branch/.test(t)&&map.counter==null) map.counter=i;
+      else if(/source|campaign|channel/.test(t)&&map.source==null) map.source=i;
+      else if(/(call\s*status|dispos|outcome|call\s*result|remark|response)/.test(t)&&map.callStatus==null) map.callStatus=i;
+      else if(/follow/.test(t)&&map.followUp==null) map.followUp=i;
+      else if(/(interest|category|rating|prospect|temperature|hot|priority)/.test(t)&&map.interest==null) map.interest=i;
+      else if(/(convert|sold|booked|won|retail|purchase|status)/.test(t)&&map.converted==null) map.converted=i;
+    });
+    return map;
+  }
+  window.ctPasteReplace=function(replace){
+    var ta=document.getElementById('ct-paste-ta'); var cc=document.getElementById('ct-paste-counter');
+    if(!ta){return;} var text=ta.value.trim(); if(!text){ if(typeof showToast==='function') showToast('Paste some rows first'); return; }
+    var rows=splitRows(text); if(rows.length<2){ if(typeof showToast==='function') showToast('Need a header row plus data'); return; }
+    var map=headerMap(rows[0]); var defCounter=(cc&&cc.value.trim())||'';
+    var out=[];
+    for(var i=1;i<rows.length;i++){ var r=rows[i]; if(!r.join('').trim()) continue;
+      var obj={ date:map.date!=null?r[map.date]:'', name:map.name!=null?r[map.name]:'', phone:map.phone!=null?r[map.phone]:'',
+        counter:(map.counter!=null&&r[map.counter])?r[map.counter]:defCounter, source:map.source!=null?r[map.source]:'',
+        callStatus:map.callStatus!=null?r[map.callStatus]:'', followUp:map.followUp!=null?r[map.followUp]:'',
+        interest:map.interest!=null?r[map.interest]:'', converted:map.converted!=null?r[map.converted]:'' };
+      out.push(normRec(obj));
+    }
+    if(!out.length){ if(typeof showToast==='function') showToast('No data rows parsed'); return; }
+    state.records = replace ? out : state.records.concat(out);
+    state.updatedAt=new Date().toLocaleString('en-IN'); state.source='paste'; save();
+    ctPasteClose(); render();
+    if(typeof showToast==='function') showToast((replace?'Loaded ':'Added ')+out.length+' call-tracker row(s)');
+    try{ if(typeof refreshMonthOptions==='function') refreshMonthOptions(); }catch(e){}
+  };
+
+  /* ---- feed sync (Apps Script emits j.callTracker as an array) ---- */
+  window.ctSync=function(silent){
+    var url; try{ url=(config&&config.script&&config.script.url)||''; }catch(e){ url=''; }
+    if(!url){ if(!silent&&typeof showToast==='function') showToast('No Apps Script URL saved (Settings)'); return; }
+    if(!silent&&typeof showToast==='function') showToast('Syncing call tracker...');
+    fetch(url+'?t='+Date.now(),{cache:'no-cache',redirect:'follow'}).then(function(r){return r.json();}).then(function(j){
+      if(j.callTracker&&Array.isArray(j.callTracker)&&j.callTracker.length){
+        state.records=j.callTracker.map(normRec); state.updatedAt=new Date().toLocaleString('en-IN'); state.source='feed'; save();
+        try{ if(typeof refreshMonthOptions==='function') refreshMonthOptions(); }catch(e){}
+        render(); if(!silent&&typeof showToast==='function') showToast('Synced '+state.records.length+' call-tracker row(s)');
+      } else if(!silent&&typeof showToast==='function') showToast('Feed has no callTracker data yet');
+    }).catch(function(e){ if(!silent&&typeof showToast==='function') showToast('Sync failed: '+e.message); });
+  };
+
+  /* ---- nav + view + init ---- */
+  function addNav(view,label){
+    var items=document.querySelectorAll('.nav-item'); if(!items.length) return;
+    if(document.querySelector('.nav-item[data-view="'+view+'"]')) return;
+    var last=items[items.length-1]; var c=last.cloneNode(true); c.classList.remove('active'); c.setAttribute('data-view',view); c.textContent=label;
+    c.onclick=function(){ window.setView(view); };
+    last.parentNode.appendChild(c);
+  }
+  function addView(id,inner){
+    if(document.getElementById('view-'+id)) return;
+    var views=document.querySelectorAll('.view'); var sec=document.createElement('section'); sec.className='view'; sec.id='view-'+id; sec.innerHTML=inner;
+    if(views.length) views[views.length-1].parentNode.appendChild(sec); else document.querySelector('.main').appendChild(sec);
+  }
+  function init(){
+    addNav('calltracker','Call Tracker');
+    addView('calltracker',
+      '<div class="filters" style="margin-bottom:14px;align-items:center">'
+      +'<label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px">&#128197; Month:'
+      +'<select class="filter-select view-month" onchange="setPeriod(this.value)"><option value="">All time</option></select></label>'
+      +'<label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px">&#127970; Counter:'
+      +'<select class="filter-select" id="ct-counter" onchange="(window.__ctRender||function(){})()"><option value="">All counters</option></select></label>'
+      +'<span id="ct-last" style="margin-left:auto;color:var(--muted);font-size:12px"></span>'
+      +'</div><div id="ct-root"></div>');
+    window.__ctRender=render;
+    var orig=window.setView;
+    if(typeof orig==='function' && !orig.__ctWrapped){
+      window.setView=function(name){ orig(name); try{ if(name==='calltracker') render(); }catch(e){console.warn('[ct]',e);} };
+      window.setView.__ctWrapped=true;
+    }
+    try{ if(typeof refreshMonthOptions==='function') refreshMonthOptions(); }catch(e){}
+    if(!window.__ctTimer){ window.__ctTimer=setInterval(function(){ try{ ctSync(true); }catch(e){} }, 30*60*1000); }
+    setTimeout(function(){ try{ if(config&&config.script&&config.script.url) ctSync(true); }catch(e){} }, 1800);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init); else init();
+})();
+</script>
+
 </html>
