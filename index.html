@@ -236,8 +236,11 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
       </div>
       <div id="leak-by-counter"></div>
       <div class="card">
-        <h3>Stale Enquiries (no contact in &gt; 7 days while still active)</h3>
-        <p class="help-text">These are enquiries at risk of being lost. Reach out today.</p>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+          <h3 style="margin:0">Stale Enquiries (no contact in &gt; 7 days while still active)</h3>
+          <button class="btn btn-sm" onclick="exportLeakage('stale')" title="Download these stale enquiries as CSV to send to the counters">&#11015;&#65039; Export for follow-up</button>
+        </div>
+        <p class="help-text">These are enquiries at risk of being lost. Reach out today. Use the Counter filter above, then Export to send each counter its own list.</p>
         <div style="overflow-x:auto"><table class="table"><thead><tr><th>ID</th><th>Customer</th><th>Counter</th><th>Stage</th><th>Rep</th><th>Days Since Contact</th><th>Next FU</th></tr></thead><tbody id="leak-tbody"></tbody></table></div>
       </div>
       <div class="card" style="margin-top:14px;border-left:4px solid var(--accent-2);">
@@ -1144,12 +1147,33 @@ function renderLeakage() {
   const stale = E.filter(isStale);
   const noTD = E.filter(isNoTD);
   const overdue = E.filter(isOverdue);
+  window.__leak = { stale:stale, noTD:noTD, overdue:overdue, counter:ctrSel };
   const lt=document.getElementById('leak-tbody');
   if(lt) lt.innerHTML = stale.length ? stale.map(e=>'<tr onclick="openModal(\''+e.id+'\')" style="cursor:pointer"><td>'+escapeHtml(e.id)+'</td><td>'+escapeHtml(e.customer)+'</td><td>'+escapeHtml(e.counter||'')+'</td><td>'+escapeHtml(e.stage)+'</td><td>'+escapeHtml(e.rep)+'</td><td style="color:var(--warn)">'+dateDiff(e.lastContactAt)+' days</td><td>'+escapeHtml(e.nextFollowUp||'-')+'</td></tr>').join('') : '<tr><td colspan="7" style="text-align:center;color:var(--ok);padding:18px;">&#10003; No stale enquiries</td></tr>';
   const nt=document.getElementById('no-td-tbody');
   if(nt) nt.innerHTML = noTD.length ? noTD.map(e=>'<tr onclick="openModal(\''+e.id+'\')" style="cursor:pointer"><td>'+escapeHtml(e.id)+'</td><td>'+escapeHtml(e.customer)+'</td><td>'+escapeHtml(e.counter||'')+'</td><td>'+escapeHtml(e.stage)+'</td><td>'+escapeHtml(e.rep)+'</td><td>'+dateDiff(e.lastContactAt)+' days</td></tr>').join('') : '<tr><td colspan="6" style="text-align:center;color:var(--ok);padding:18px;">&#10003; All qualified leads have been offered a test ride</td></tr>';
   const ot=document.getElementById('overdue-tbody');
   if(ot) ot.innerHTML = overdue.length ? overdue.map(e=>'<tr onclick="openModal(\''+e.id+'\')" style="cursor:pointer"><td>'+escapeHtml(e.id)+'</td><td>'+escapeHtml(e.customer)+'</td><td>'+escapeHtml(e.counter||'')+'</td><td>'+escapeHtml(e.stage)+'</td><td>'+escapeHtml(e.rep)+'</td><td>'+escapeHtml(e.nextFollowUp)+'</td><td style="color:var(--danger)">'+Math.abs(dateDiff(e.nextFollowUp||todayISO()))+' days</td></tr>').join('') : '<tr><td colspan="7" style="text-align:center;color:var(--ok);padding:18px;">&#10003; No overdue follow-ups</td></tr>';
+}
+
+// Export the stale (or other leakage) list as CSV, ready to send to the counters for follow-up.
+function exportLeakage(kind){
+  const L=window.__leak||{}; const list=(L[kind]||[]).slice();
+  if(!list.length){ showToast('Nothing to export in this view'); return; }
+  const cell=v=>{v=String(v==null?'':v); return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v;};
+  const head=['ID','Customer','Phone','Counter','Model','Segment','Stage','Sales Rep','Last Contact','Days Since Contact','Next Follow-up','Notes'];
+  const rows=[head.join(',')];
+  list.sort((a,b)=>String(a.counter||'').localeCompare(String(b.counter||'')) || (dateDiff(b.lastContactAt)-dateDiff(a.lastContactAt)));
+  list.forEach(e=>{
+    rows.push([e.id,e.customer,e.phone,e.counter,e.model,segmentOf(e.model),e.stage,e.rep,e.lastContactAt||'',dateDiff(e.lastContactAt),e.nextFollowUp||'',e.notes||''].map(cell).join(','));
+  });
+  const ctr=(L.counter||'').replace(/[^a-z0-9]+/gi,'-');
+  const p=(typeof currentPeriod!=='undefined'&&currentPeriod)?currentPeriod:'all';
+  const blob=new Blob(['﻿'+rows.join('\n')],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='stale_followup'+(ctr?('_'+ctr):'')+'_'+p+'_'+todayISO()+'.csv';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  showToast('Exported '+list.length+' stale enquiry(ies)'+(L.counter?(' for '+L.counter):''));
 }
 
 /* ====================== COUNTER VIEW ====================== */
