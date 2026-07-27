@@ -149,6 +149,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
         <select class="filter-select" id="f-source" onchange="renderTable()"><option value="">All sources</option></select>
         <select class="filter-select" id="f-rep" onchange="renderTable()"><option value="">All reps</option></select>
         <select class="filter-select" id="f-counter" onchange="renderTable()"><option value="">All counters</option></select>
+        <select class="filter-select" id="f-segment" onchange="renderTable()"><option value="">All segments</option></select>
         <select class="filter-select" id="f-finance" onchange="renderTable()"><option value="">Finance: any</option><option value="Yes">Yes</option><option value="No">No</option></select>
         <select class="filter-select" id="f-financier" onchange="renderTable()"><option value="">All financiers</option></select>
         <select class="filter-select" id="f-exchange-filter" onchange="renderTable()"><option value="">Exchange: any</option><option value="Yes">Exchange only</option><option value="No">No exchange</option></select>
@@ -637,11 +638,29 @@ function loadData() {
 // The DMS export stores yes/no flags as "Y"/"N" (also seen: "Yes"/"No", "1"/"0",
 // "true"/"false"). Normalise them so every view's ===\'Yes\' check works.
 const YES_RE=/^(y|yes|true|1|required|req)$/i;
+// Canonicalise the DMS/counter-register STATUS vocabulary to the dashboard's stages.
+// Registers write "Sold" / "MML SOLD" / "Closed" / "Open" etc.; every view counts
+// stage==='Won', so without this a real sale logged as "Sold" would show as 0 Won.
+function normStage(v){
+  var t=String(v==null?'':v).trim(); if(!t) return t;
+  var lc=t.toLowerCase();
+  if(/\b(won|sold|retail(ed)?|deliver(ed)?|invoiced|billed)\b/.test(lc) || /\b(mml|nt|dn|at|hub|premia)\s*sold\b/.test(lc)) return 'Won';
+  if(/\b(lost|closed?|dead|duplicate|invalid|cancel(led)?|rejected|not\s*interested|drop(ped)?)\b/.test(lc)) return 'Lost';
+  if(/\bbook(ed|ing)?\b/.test(lc)) return 'Booked';
+  if(/negotiat/.test(lc)) return 'Negotiation';
+  if(/test\s*ride|test\s*drive|\btd\b/.test(lc)) return 'Test Drive';
+  if(/qualif/.test(lc)) return 'Qualified';
+  if(/contact|follow\s*-?\s*up|call\s*back/.test(lc)) return 'Contacted';
+  if(/\b(new|open|enquiry|enquiries|fresh|hot|warm|cold|pending)\b/.test(lc)) return 'New';
+  for(var i=0;i<STAGES.length;i++){ if(STAGES[i].toLowerCase()===lc) return STAGES[i]; }
+  return t;
+}
 function normalizeFlags() {
   let n=0;
   enquiries.forEach(e => {
     if(e.financeRequired!==undefined){ const v=YES_RE.test(String(e.financeRequired).trim())?'Yes':'No'; if(v!==e.financeRequired){e.financeRequired=v;n++;} }
     if(e.exchange!==undefined && e.exchange!==''){ const v=YES_RE.test(String(e.exchange).trim())?'Yes':'No'; if(v!==e.exchange){e.exchange=v;n++;} }
+    if(e.stage!==undefined){ const s=normStage(e.stage); if(s!==e.stage){e.stage=s;n++;} }
   });
   return n;
 }
@@ -705,6 +724,34 @@ function populateSelect(id,options,includeBlank,blankLabel) {
   options.forEach(opt=>{const o=document.createElement('option');o.value=opt;o.textContent=opt;sel.appendChild(o);});
   sel.value=current;
 }
+// Derive the Hero product segment from a model name, per the workbook's Segment Master:
+//  Scooter : Destini 110/125/Prime, Pleasure+ / Pleasure+ XTEC, Xoom 125, Maestro Edge
+//  125cc   : Glamour / Glamour X, Super Splendor XTEC / XTEC 2.0, Xtreme 125R
+//  Entry   : HF 100, HF Deluxe
+//  Deluxe  : Passion +, Splendor + / Splendor+ XTEC / Splendor+ XTEC 2.0
+//  Premium : Karizma XMR, Xtreme 160R/200/250, Xpulse, X440
+//  VIDA    : V1 Plus/Pro, V2 Plus/Pro/Lite, Vida VX2 Go / VX2 Go 3.4 / VX2 Plus
+const SEGMENT_ORDER = ['Entry','Deluxe','125cc','Premium','Scooter','VIDA','Other'];
+function segmentOf(model){
+  var m = String(model||'').toLowerCase().replace(/\s+/g,' ').trim();
+  if(!m) return 'Other';
+  // VIDA (EV) — incl. the V1/V2 and VX2 naming the register uses
+  if(/vida|vx2|\bv[12]\s*(plus|pro|lite|go|max)|\bv[12]\b/.test(m)) return 'VIDA';
+  if(/pleasure|destini|maestro|xoom/.test(m)) return 'Scooter';
+  // Premium bikes before 125cc so Xtreme 160R/200 don't fall into 125cc
+  if(/xpulse|karizma|x440|harley|xtreme\s*(1[6-9]\d|2\d\d|250)/.test(m)) return 'Premium';
+  // 125cc: Glamour / Glamour X, Super Splendor XTEC + XTEC 2.0 (incl. "super spl xtc"), Xtreme 125R
+  if(/glamour|super\s*spl|\bss\s*xte?c|xtreme\s*125|xtreme\s*r\b/.test(m)) return '125cc';
+  if(/hf\s*deluxe|hf\s*100|\bhf\b/.test(m)) return 'Entry';
+  if(/splendor|passion/.test(m)) return 'Deluxe';
+  if(/xtreme/.test(m)) return 'Premium';
+  return 'Other';
+}
+function segmentsInData(){
+  var s={}; (enquiries||[]).forEach(function(e){ s[segmentOf(e.model)]=1; });
+  return SEGMENT_ORDER.filter(function(x){ return s[x]; });
+}
+
 // Build a dropdown list from the values ACTUALLY present in the enquiry data,
 // unioned with the configured defaults, so filters always match imported labels
 // (e.g. "DN [ICE]", "DN [VIDA]") rather than only the hardcoded names.
@@ -719,6 +766,7 @@ function refreshAllSelects() {
   populateSelect('f-stage',STAGES,true,'All stages'); populateSelect('f-source',unionData('source',SOURCES),true,'All sources');
   populateSelect('f-rep',unionData('rep',config.reps),true,'All reps'); populateSelect('f-counter',unionData('counter',config.counters),true,'All counters');
   populateSelect('f-financier',unionData('financier',config.financiers),true,'All financiers');
+  populateSelect('f-segment',segmentsInData(),true,'All segments');
   populateSelect('vm-leakage-counter',unionData('counter',config.counters),true,'All counters');
   populateSelect('vm-finance-counter',unionData('counter',config.counters),true,'All counters');
   populateSelect('f-counter-in',config.counters,false); populateSelect('f-source-in',SOURCES,false);
@@ -952,7 +1000,8 @@ function renderCounterSummary() {
 }
 function renderLeaderboard() {
   const lb=document.getElementById('leaderboard'),E=getActiveEnquiries();
-  const data=config.reps.map(r=>{const list=E.filter(e=>e.rep===r),won=list.filter(e=>e.stage==='Won').length,conv=list.length?Math.round(won/list.length*100):0;return{rep:r,total:list.length,won,conv};}).sort((a,b)=>b.won-a.won||b.conv-a.conv);
+  const _re=(a,b)=>String(a==null?'':a).trim().toLowerCase()===String(b==null?'':b).trim().toLowerCase();
+  const data=unionData('rep',config.reps).map(r=>{const list=E.filter(e=>_re(e.rep,r)),won=list.filter(e=>e.stage==='Won').length,conv=list.length?Math.round(won/list.length*100):0;return{rep:r,total:list.length,won,conv};}).filter(d=>d.total>0).sort((a,b)=>b.won-a.won||b.conv-a.conv);
   let html=''; data.forEach((d,i)=>{html+='<div class="lb-row"><div class="lb-rank">'+(i+1)+'</div><div class="lb-name">'+escapeHtml(d.rep)+'</div><div class="lb-stats">'+d.won+'/'+d.total+'</div><div class="lb-conv">'+d.conv+'%</div></div>';}); lb.innerHTML=html;
 }
 
@@ -973,6 +1022,7 @@ function renderTable() {
   const src=document.getElementById('f-source')?.value||'';
   const rep=document.getElementById('f-rep')?.value||'';
   const ctr=document.getElementById('f-counter')?.value||'';
+  const seg=document.getElementById('f-segment')?.value||'';
   const fin=document.getElementById('f-finance')?.value||'';
   const fnc=document.getElementById('f-financier')?.value||'';
   const exc=document.getElementById('f-exchange-filter')?.value||'';
@@ -984,6 +1034,7 @@ function renderTable() {
     if (src && !eqv(e.source,src)) return false;
     if (rep && !eqv(e.rep,rep)) return false;
     if (ctr && !eqv(e.counter,ctr)) return false;
+    if (seg && segmentOf(e.model)!==seg) return false;
     if (fin && e.financeRequired!==fin) return false;
     if (fnc && !eqv(e.financier,fnc)) return false;
     if (exc){ const isEx=(e.exchange==='Yes'); if(exc==='Yes'?!isEx:isEx) return false; }
@@ -1019,7 +1070,7 @@ function renderTable() {
   updateBulkBar();
 }
 function clearFilters() {
-  ['f-search','f-stage','f-source','f-rep','f-counter','f-finance','f-financier','f-exchange-filter','f-month'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['f-search','f-stage','f-source','f-rep','f-counter','f-segment','f-finance','f-financier','f-exchange-filter','f-month'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   renderTable();
 }
 function toggleSelect(id,checked) { if(checked) selectedIds.add(id); else selectedIds.delete(id); updateBulkBar(); }
@@ -1176,8 +1227,9 @@ function renderPerformance() {
   const E=getActiveEnquiries();
   const rd=document.getElementById('rep-detail'); if(rd){
     let html='<div style="overflow-x:auto"><table class="table"><thead><tr><th>Rep</th><th>Enquiries</th><th>Active</th><th>Won</th><th>Booked</th><th>Conv%</th><th>Test Rides</th><th>TD-to-Won</th></tr></thead><tbody>';
-    config.reps.forEach(r=>{
-      const list=E.filter(e=>e.rep===r);
+    const _re=(a,b)=>String(a==null?'':a).trim().toLowerCase()===String(b==null?'':b).trim().toLowerCase();
+    unionData('rep',config.reps).forEach(r=>{
+      const list=E.filter(e=>_re(e.rep,r)); if(!list.length) return;
       const won=list.filter(e=>e.stage==='Won').length,booked=list.filter(e=>e.stage==='Booked').length;
       const active=list.filter(e=>ACTIVE_STAGES.includes(e.stage)).length;
       const conv=list.length?Math.round(won/list.length*100):0;
