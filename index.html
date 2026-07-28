@@ -584,6 +584,7 @@ async function loadFromScript() {
     if (!Array.isArray(json.enquiries)) return false;
     enquiries = json.enquiries;
     if (json.config) { if (json.config.counters) config.counters = json.config.counters; if (json.config.reps) config.reps = json.config.reps; if (json.config.models) config.models = json.config.models; if (json.config.financiers) config.financiers = json.config.financiers; }
+    if (json.followUpCounts && typeof json.followUpCounts==='object') { window.__followUps = json.followUpCounts; try{localStorage.setItem('hero-followups-v1', JSON.stringify(json.followUpCounts));}catch(e){} }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(enquiries)); migrateDates(); return true;
   } catch(err) { console.warn('[Script] Pull failed:',err); return false; }
 }
@@ -727,6 +728,17 @@ function populateSelect(id,options,includeBlank,blankLabel) {
   options.forEach(opt=>{const o=document.createElement('option');o.value=opt;o.textContent=opt;sel.appendChild(o);});
   sel.value=current;
 }
+// Follow-up count (Hero's "Follow Ups Count", keyed by phone) — used to tell whether
+// an enquiry has actually been followed up, since the registers log no follow-up date.
+try{ if(!window.__followUps){ const _f=localStorage.getItem('hero-followups-v1'); if(_f) window.__followUps=JSON.parse(_f); } }catch(e){}
+function normPhone(p){ p=String(p==null?'':p).replace(/\D/g,''); return p.length>10?p.slice(-10):p; }
+function fuCount(e){
+  const m=(typeof window!=='undefined'&&window.__followUps)||{};
+  const k=normPhone(e&&e.phone);
+  let v=(k&&m[k]!=null)?m[k]:(e&&e.followUpCount!=null?e.followUpCount:(e&&e.followUps!=null?e.followUps:0));
+  return Number(v)||0;
+}
+
 // Derive the Hero product segment from a model name, per the workbook's Segment Master:
 //  Scooter : Destini 110/125/Prime, Pleasure+ / Pleasure+ XTEC, Xoom 125, Maestro Edge
 //  125cc   : Glamour / Glamour X, Super Splendor XTEC / XTEC 2.0, Xtreme 125R
@@ -1110,7 +1122,9 @@ function renderLeakage() {
   const stageClass=e=>{var s=String(e.stage==null?'':e.stage).trim();if(!s)return 'open';if(CLOSED_RE.test(s))return 'closed';if(BOOKED_RE.test(s))return 'booked';return 'open';};
   const inScope=e=>{var k=stageClass(e);return statusSel==='active'?(k==='open'||k==='booked'):(k==='open');};
   const tdStages=['Qualified','Negotiation','Booked'];
-  const isStale=e=>inScope(e)&&dateDiff(e.lastContactAt)>STALE_DAYS;
+  // Stale = open, no contact in >7 days, AND not yet followed up (Hero Follow Ups Count = 0).
+  // Once the counter logs a follow-up (count >= 1), the enquiry drops off this list.
+  const isStale=e=>inScope(e)&&dateDiff(e.lastContactAt)>STALE_DAYS&&fuCount(e)<1;
   const isNoTD=e=>inScope(e)&&tdStages.includes(e.stage)&&isTDModel(e.model)&&!e.testRideStatus;
   const isOverdue=e=>inScope(e)&&e.nextFollowUp&&e.nextFollowUp<todayISO();
 
