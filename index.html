@@ -3530,4 +3530,475 @@ document.addEventListener('DOMContentLoaded', initApp);
 })();
 </script>
 
+<!-- ===== COUNTER NAME NORMALISER + FINANCE DATA-QUALITY AUDIT (additive, self-contained) =====
+     Fixes two defects that make Premia (and others) read 0:
+       1. The DMS Location column arrives as Premia / premia / PREMA / Nt / Dn / Mml / At / HUB.
+          Nothing normalised it, so one counter was split across several keys and the
+          config-driven views (Counters, Pacing, Counter summary) matched none of them.
+       2. Finance figures depend entirely on the enquiry register's "Finance Required" Y/N
+          flag, which is barely filled. A counter that never ticks it reports 0 finance
+          for ever, silently. The audit card below makes that visible instead.
+     ============================================================================================ -->
+<script>
+(function(){
+  "use strict";
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function low(s){ return String(s==null?'':s).trim().toLowerCase(); }
+  function ENQ(){ try{ return enquiries||[]; }catch(e){ return []; } }
+
+  /* ---------- 1. counter canonicalisation ---------- */
+  var ALIAS=[
+    ['Premia',      /^(premia|prema|premiea|premier|premium|prm|prem)$/],
+    ['Napier Town', /^(nt|napier|napier ?town|napiertown|napier-town|dsent\d*)$/],
+    ['DN',          /^(dn|d ?n|d\.n\.?|damoh ?naka|damohnaka|damoh|damoh-naka)$/],
+    ['MML (ICE)',   /^(mml|mm|mml ?\(?ice\)?|madan ?mahal|madanmahal|madan)$/],
+    ['VIDA Hub',    /^(hub|vida|vida ?hub|vidahub|ev ?hub|electric ?hub|vida ?store)$/],
+    ['Adhartal',    /^(at|adhartal|adartal|adhar ?tal|adhartaal|adrtl|adhar)$/],
+    ['Web',         /^(web|website|digital|online|portal)$/]
+  ];
+  function canon(v){
+    var t=low(v).replace(/\s+/g,' ');
+    if(!t) return null;
+    for(var i=0;i<ALIAS.length;i++){ if(ALIAS[i][1].test(t)) return ALIAS[i][0]; }
+    return null;                       // unrecognised: leave the value exactly as it is
+  }
+  window.__counterFixLast={changed:0, merged:{}, added:[]};
+
+  function normaliseCounters(silent){
+    var list=ENQ(), changed=0, merged={};
+    list.forEach(function(e){
+      var c=canon(e.counter);
+      if(c && c!==e.counter){ merged[e.counter+' → '+c]=(merged[e.counter+' → '+c]||0)+1; e.counter=c; changed++; }
+    });
+    // every counter that exists in the data must exist in config, or the
+    // config-driven views (Counters, Pacing, Counter summary) skip it entirely
+    var added=[];
+    try{
+      var have={}; (config.counters||[]).forEach(function(c){ have[low(c)]=1; });
+      var seen={}; list.forEach(function(e){ var c=String(e.counter||'').trim(); if(c) seen[c]=1; });
+      Object.keys(seen).forEach(function(c){ if(!have[low(c)]){ config.counters.push(c); added.push(c); } });
+    }catch(err){}
+    window.__counterFixLast={changed:changed, merged:merged, added:added};
+    if(changed||added.length){
+      try{ if(typeof saveDataLocal==='function') saveDataLocal(); }catch(err){}
+      try{ if(typeof refreshAllSelects==='function') refreshAllSelects(); }catch(err){}
+      if(!silent && typeof showToast==='function'){
+        showToast('Counters normalised: '+changed+' row(s) remapped'+(added.length?', '+added.length+' counter(s) added':''));
+      }
+    }
+    return window.__counterFixLast;
+  }
+  window.fixCounters=function(){ var r=normaliseCounters(false); render(); return r; };
+
+  // run after every pull from Sheets, so a re-sync cannot reintroduce the split
+  function hookSync(){
+    var o=window.loadFromScript;
+    if(typeof o==='function' && !o.__cfWrapped){
+      window.loadFromScript=function(){
+        var p=o.apply(this,arguments);
+        if(p && typeof p.then==='function'){ return p.then(function(ok){ if(ok) normaliseCounters(true); return ok; }); }
+        normaliseCounters(true); return p;
+      };
+      window.loadFromScript.__cfWrapped=true;
+    }
+  }
+
+  /* ---------- 2. finance data-quality audit ---------- */
+  function registerPenetration(){
+    // sale register is the only hard source; needs the Financer Name column in salesRows
+    var o; try{ o=JSON.parse(localStorage.getItem('hero-ops-v1'))||{}; }catch(e){ o={}; }
+    var rows=o.salesRows||[]; if(!rows.length) return null;
+    var KEYS=['fn','fin','financer','financier','financerName'];
+    var seen=false, fin=0, tot=0;
+    var p=''; try{ p=(typeof currentPeriod!=='undefined'&&currentPeriod)||''; }catch(e){}
+    rows.forEach(function(r){
+      if(p && r.m!==p) return;
+      var has=KEYS.some(function(k){ return Object.prototype.hasOwnProperty.call(r,k); });
+      if(has) seen=true;
+      tot++;
+      for(var i=0;i<KEYS.length;i++){ if(r[KEYS[i]]!=null && String(r[KEYS[i]]).trim()!==''){ fin++; break; } }
+    });
+    if(!seen || !tot) return null;
+    return {pct:Math.round(fin/tot*100), fin:fin, tot:tot};
+  }
+
+  function stats(){
+    var list=ENQ().filter(function(e){ try{ return typeof inPeriod!=='function' || inPeriod(e); }catch(err){ return true; } });
+    var by={};
+    list.forEach(function(e){
+      var c=String(e.counter||'').trim()||'(no counter)';
+      var s=by[c]||(by[c]={c:c,n:0,fin:0,won:0,finWon:0,exch:0});
+      s.n++;
+      if(low(e.financeRequired)==='yes'){ s.fin++; if(e.stage==='Won') s.finWon++; }
+      if(e.stage==='Won') s.won++;
+      if(low(e.exchange)==='yes') s.exch++;
+    });
+    var rows=Object.keys(by).map(function(k){
+      var s=by[k]; s.pct=s.n?Math.round(s.fin/s.n*100):0; return s;
+    }).sort(function(a,b){ return b.n-a.n; });
+    var tot=rows.reduce(function(a,r){return a+r.n;},0), fin=rows.reduce(function(a,r){return a+r.fin;},0);
+    return {rows:rows, tot:tot, fin:fin, pct:tot?Math.round(fin/tot*100):0};
+  }
+
+  function render(){
+    var root=document.getElementById('finaudit-root'); if(!root) return;
+    var S=stats(), reg=registerPenetration();
+    if(!S.tot){ root.innerHTML=''; return; }
+    var bench = reg ? reg.pct : S.pct;          // the number a counter should look like
+    var benchLbl = reg ? 'sale register: '+reg.pct+'% of invoices are financed'
+                       : 'dealership average across counters: '+S.pct+'%';
+
+    // a counter is "not filling the flag" if it has real volume but a flag rate far below benchmark
+    function verdict(r){
+      if(r.n<10) return {t:'Too few enquiries to judge', c:'var(--muted)', bad:false};
+      if(r.pct===0) return {t:'Flag never ticked &mdash; finance invisible', c:'#ff5c5c', bad:true};
+      if(bench>0 && r.pct < bench*0.35) return {t:'Flag rarely ticked &mdash; under-reported', c:'#ff5c5c', bad:true};
+      if(bench>0 && r.pct < bench*0.7)  return {t:'Below benchmark &mdash; check entry', c:'#ffb02e', bad:true};
+      return {t:'&#10003; Looks reliable', c:'#2bd47d', bad:false};
+    }
+    var bad=S.rows.filter(function(r){ return verdict(r).bad; });
+
+    var cf=window.__counterFixLast||{changed:0,merged:{},added:[]};
+    var mk=Object.keys(cf.merged||{});
+
+    var h='';
+    h+='<div class="card" style="margin-top:14px;border-left:4px solid '+(bad.length?'#ff5c5c':'#2bd47d')+'">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<h3 style="margin:0">&#129514; Finance data quality &mdash; can these numbers be trusted?</h3>'
+      +'<button class="btn btn-sm" onclick="fixCounters()" title="Re-run counter name normalisation">&#128260; Re-normalise counters</button></div>'
+      +'<p class="help-text">Every finance figure in this tab is driven by the enquiry register&rsquo;s <b>Finance Required</b> Y/N flag. '
+      +'If a counter never ticks it, that counter reports <b>zero finance for ever</b> &mdash; which is a data-entry gap, not a business result. '
+      +'Benchmark used: '+benchLbl+'.</p>';
+
+    if(bad.length){
+      h+='<div style="margin:10px 0;padding:10px 14px;border-left:4px solid #ff5c5c;background:rgba(255,92,92,0.07);border-radius:8px">'
+        +'<div style="font-weight:700;margin-bottom:4px">&#9888;&#65039; '+bad.length+' counter(s) are under-reporting finance</div>'
+        +'<div class="help-text">'+bad.map(function(r){ return '<b>'+esc(r.c)+'</b> ('+r.pct+'% of '+r.n+' enquiries)'; }).join(' &middot; ')
+        +'. Their real finance business is not zero &mdash; it is simply never being recorded at enquiry stage.</div></div>';
+    }
+
+    h+='<div style="overflow-x:auto"><table class="table"><thead><tr><th>Counter</th>'
+      +'<th style="text-align:right">Enquiries</th><th style="text-align:right">Flagged finance</th>'
+      +'<th style="text-align:right">Flag rate</th><th style="text-align:right">Won</th>'
+      +'<th style="text-align:right">Finance won</th><th>Verdict</th></tr></thead><tbody>';
+    S.rows.forEach(function(r){
+      var v=verdict(r);
+      h+='<tr style="border-top:1px solid var(--line)'+(v.bad?';background:rgba(255,92,92,0.05)':'')+'">'
+        +'<td style="font-weight:700">'+esc(r.c)+'</td>'
+        +'<td style="text-align:right">'+r.n+'</td>'
+        +'<td style="text-align:right;font-weight:700">'+r.fin+'</td>'
+        +'<td style="text-align:right;font-weight:800;color:'+v.c+'">'+r.pct+'%</td>'
+        +'<td style="text-align:right;color:var(--muted)">'+r.won+'</td>'
+        +'<td style="text-align:right;color:'+(r.finWon?'#2bd47d':'#ff5c5c')+';font-weight:700">'+r.finWon+'</td>'
+        +'<td style="color:'+v.c+';font-size:12px">'+v.t+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+
+    h+='<div style="margin-top:12px;padding:10px 14px;background:var(--panel-2);border-radius:8px">'
+      +'<div style="font-weight:700;font-size:13px;margin-bottom:6px">Counter name normalisation</div>'
+      +'<div class="help-text">'
+      +(mk.length
+        ? 'Merged on last run: '+mk.map(function(k){ return '<b>'+esc(k)+'</b> ('+cf.merged[k]+')'; }).join(' &middot; ')+'. '
+        : 'Nothing to merge &mdash; all counter names are already canonical. ')
+      +(cf.added && cf.added.length ? 'Added to the counter list so they stop being skipped: <b>'+cf.added.map(esc).join('</b>, <b>')+'</b>. ' : '')
+      +'The DMS Location column arrives as <code>Premia</code>, <code>premia</code>, <code>PREMA</code>, <code>Nt</code>, <code>Dn</code>, <code>Mml</code>, <code>At</code>, <code>HUB</code>. '
+      +'Without this, one counter is counted as several, and the Counters / Pacing / Counter-summary views &mdash; which loop over the configured list only &mdash; match none of them and show 0.'
+      +'</div></div>';
+
+    h+='</div>';
+    root.innerHTML=h;
+  }
+
+  /* ---------- mount ---------- */
+  function mount(){
+    var v=document.getElementById('view-finance'); if(!v) return false;
+    if(document.getElementById('finaudit-root')) return true;
+    var d=document.createElement('div'); d.id='finaudit-root'; v.appendChild(d); return true;
+  }
+  function init(){
+    hookSync();
+    normaliseCounters(true);
+    mount();
+    var oView=window.setView;
+    if(typeof oView==='function' && !oView.__cfWrapped){
+      window.setView=function(n){ oView(n); if(n==='finance'){ try{ mount(); render(); }catch(e){ console.warn('[cf]',e); } } };
+      window.setView.__cfWrapped=true;
+    }
+    var oFin=window.renderFinance;
+    if(typeof oFin==='function' && !oFin.__cfWrapped){
+      window.renderFinance=function(){ var r=oFin.apply(this,arguments); try{ mount(); render(); }catch(e){} return r; };
+      window.renderFinance.__cfWrapped=true;
+    }
+    try{ var a=document.querySelector('.nav-item.active'); if(a && a.dataset.view==='finance') render(); }catch(e){}
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init); else init();
+})();
+</script>
+
+<!-- ===== AGEING & DEADSTOCK — COUNTER-WISE CLEARANCE EXPORT (additive, self-contained) =====
+     Inserts a filter + export panel directly beneath the existing "Stock ageing & deadstock"
+     card in the Stock tab. Filter by counter / location, age band, model and status, then
+     export exactly that list — or one grouped file covering every counter at once.
+     Reads ops.stockRegister.units from localStorage['hero-ops-v1']; nothing else is touched.
+     ========================================================================================= -->
+<script>
+(function(){
+  "use strict";
+  var PREF='hero-ageing-export-prefs-v1';
+  var DEF={loc:'', model:'', st:'', minAge:60, sort:'age'};
+  var prefs; try{ prefs=Object.assign({},DEF,JSON.parse(localStorage.getItem(PREF))||{}); }catch(e){ prefs=Object.assign({},DEF); }
+  function save(){ try{ localStorage.setItem(PREF,JSON.stringify(prefs)); }catch(e){} }
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function INR(n){ n=Math.round(Number(n)||0); var s=String(Math.abs(n)), l3=s.slice(-3), r=s.slice(0,-3);
+    if(r) l3=','+l3; r=r.replace(/\B(?=(\d{2})+(?!\d))/g,','); return (n<0?'-':'')+'₹'+r+l3; }
+  function INRs(n){ n=Math.round(Number(n)||0); if(!n) return '₹0';
+    if(n>=10000000) return '₹'+(n/10000000).toFixed(2)+' Cr';
+    if(n>=100000)   return '₹'+(n/100000).toFixed(1)+' L'; return INR(n); }
+  function shortLoc(l){ return String(l||'').replace('Festival Counter-DC','Fest-DC'); }
+
+  function reg(){
+    var o; try{ o=JSON.parse(localStorage.getItem('hero-ops-v1'))||{}; }catch(e){ o={}; }
+    var r=o.stockRegister;
+    return (r && r.units && r.units.length) ? r : null;
+  }
+  function rate(){ var o; try{ o=JSON.parse(localStorage.getItem('hero-ops-v1'))||{}; }catch(e){ o={}; }
+    return (o.finance && o.finance.rate) || 11; }
+
+  function band(a){ return a<=30?'0-30':a<=45?'31-45':a<=60?'46-60':a<=90?'61-90':'90+'; }
+  function bandCol(a){ return a<=30?'#2bd47d':a<=45?'#8fd47d':a<=60?'#ffb02e':a<=90?'#ff8b3d':'#ff5c5c'; }
+
+  function units(){
+    var r=reg(); if(!r) return [];
+    return (r.units||[]).map(function(u){
+      return {vin:u.vin, mo:u.mo, c:u.c, loc:u.loc, age:Number(u.age)||0, dlp:Number(u.dlp)||0, inw:u.inw, st:u.st};
+    });
+  }
+  function filtered(){
+    return units().filter(function(u){
+      if(prefs.loc && u.loc!==prefs.loc) return false;
+      if(prefs.model && u.mo!==prefs.model) return false;
+      if(prefs.st && String(u.st||'')!==prefs.st) return false;
+      if(u.age < prefs.minAge) return false;
+      return true;
+    }).sort(function(a,b){
+      if(prefs.sort==='value') return b.dlp-a.dlp;
+      if(prefs.sort==='model') return String(a.mo).localeCompare(String(b.mo)) || b.age-a.age;
+      if(prefs.sort==='counter') return String(a.loc).localeCompare(String(b.loc)) || b.age-a.age;
+      return b.age-a.age;
+    });
+  }
+  function uniq(f){ var s={}; units().forEach(function(u){ var v=u[f]; if(v!=null && String(v).trim()!=='') s[v]=1; }); return Object.keys(s).sort(); }
+
+  /* ---------------- CSV ---------------- */
+  function cell(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }
+  function download(name,rows){
+    var blob=new Blob(['﻿'+rows.map(function(r){return r.map(cell).join(',');}).join('\n')],{type:'text/csv;charset=utf-8;'});
+    var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download=name+'_'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); },2000);
+    if(typeof showToast==='function') showToast('Exported '+(rows.length-1)+' unit(s)');
+  }
+  var HEAD=['Counter / location','Age (days)','Ageing band','Model','Colour','VIN','Value (DLP)',
+            'Monthly interest','Inward date','Status','Action'];
+  function line(u){
+    var mi=Math.round(u.dlp*rate()/100/12);
+    var act=u.age>90?'Clear now — discount or transfer':u.age>60?'Push this month':'Watch';
+    return [u.loc,u.age,band(u.age),u.mo,u.c,u.vin,u.dlp,mi,u.inw,u.st,act];
+  }
+  window.ageExport=function(kind){
+    var list=filtered();
+    if(!list.length){ if(typeof showToast==='function') showToast('Nothing matches this filter'); return; }
+    if(kind==='counter'){
+      // one file, grouped by counter, with a subtotal row after each block
+      var all=units().filter(function(u){
+                 if(u.age<prefs.minAge) return false;
+                 if(prefs.model && u.mo!==prefs.model) return false;
+                 if(prefs.st && String(u.st||'')!==prefs.st) return false;
+                 return true; })
+                     .sort(function(a,b){ return String(a.loc).localeCompare(String(b.loc)) || b.age-a.age; });
+      if(!all.length){ if(typeof showToast==='function') showToast('Nothing above '+prefs.minAge+' days'); return; }
+      var rows=[HEAD], cur=null, n=0, val=0;
+      function flush(){ if(cur!==null) rows.push([cur+' — SUBTOTAL',' ',' ',' ',' ',n+' units',val,Math.round(val*rate()/100/12),' ',' ',' ']); }
+      all.forEach(function(u){
+        if(u.loc!==cur){ flush(); if(cur!==null) rows.push([]); cur=u.loc; n=0; val=0; }
+        rows.push(line(u)); n++; val+=u.dlp;
+      });
+      flush();
+      download('ageing_clearance_ALL_COUNTERS_'+prefs.minAge+'d+',rows);
+      return;
+    }
+    var out=[HEAD]; list.forEach(function(u){ out.push(line(u)); });
+    var tag=(prefs.loc?shortLoc(prefs.loc).replace(/[^a-z0-9]+/gi,'-'):'all-counters');
+    download('ageing_clearance_'+tag+'_'+prefs.minAge+'d+',out);
+  };
+  window.ageSet=function(k,v){
+    if(k==='minAge') v=Math.max(0,Math.min(999,parseInt(v,10)||0));
+    prefs[k]=v; save(); paint();
+  };
+  window.agePick=function(l){ prefs.loc = (prefs.loc===l)?'':l; save(); paint(); };
+
+  /* ---------------- panel ---------------- */
+  function panelHtml(){
+    var r=reg();
+    if(!r){
+      return '<div class="card" style="margin-top:14px;border-left:4px solid var(--warn,#ffb02e)">'
+        +'<h3>&#128230; Counter-wise clearance export</h3>'
+        +'<p class="help-text">Needs the VIN-level stock register. Install <b>OpsData2.gs</b> and press '
+        +'<b>&#128260; Sync from Sheet</b> &mdash; it already carries <b>Vehicle Age (In Days)</b>, <b>DLP</b> and location, '
+        +'which is everything this panel needs.</p></div>';
+    }
+    var list=filtered(), all=units();
+    var n=list.length, val=list.reduce(function(a,u){return a+u.dlp;},0);
+    var oldest=list.length?list[0]:null;
+    var mi=Math.round(val*rate()/100/12);
+
+    // per-counter roll-up at the current age threshold (ignores the counter filter itself)
+    var by={};
+    all.forEach(function(u){
+      if(u.age<prefs.minAge) return;
+      if(prefs.model && u.mo!==prefs.model) return;
+      if(prefs.st && String(u.st||'')!==prefs.st) return;
+      var s=by[u.loc]||(by[u.loc]={loc:u.loc,n:0,val:0,old:0});
+      s.n++; s.val+=u.dlp; if(u.age>s.old) s.old=u.age;
+    });
+    var bk=Object.keys(by).sort(function(a,b){ return by[b].n-by[a].n; });
+    var grand=bk.reduce(function(a,k){return a+by[k].n;},0);
+
+    var h='<div class="card" style="margin-top:14px;border-left:4px solid var(--accent)">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<h3 style="margin:0">&#128230; Counter-wise clearance export</h3>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+      +'<button class="btn btn-sm btn-primary" onclick="ageExport(\'filtered\')">&#11015;&#65039; Export this list</button>'
+      +'<button class="btn btn-sm" onclick="ageExport(\'counter\')" title="One file, every counter, with subtotals">&#11015;&#65039; Export all counters (grouped)</button>'
+      +'</div></div>'
+      +'<p class="help-text">Pick a counter and an age threshold, then export the exact list that counter has to clear. '
+      +'Every unit here is financed capital earning nothing &mdash; the monthly interest column is what it costs to keep waiting.</p>';
+
+    /* filters */
+    h+='<div class="filters" style="margin:10px 0 0">'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">&#127970; Counter'
+      +'<select class="filter-select" onchange="ageSet(\'loc\',this.value)"><option value="">All counters</option>'
+      + uniq('loc').map(function(l){ return '<option value="'+esc(l)+'"'+(prefs.loc===l?' selected':'')+'>'+esc(shortLoc(l))+'</option>'; }).join('')
+      +'</select></label>'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Older than'
+      +'<input type="number" min="0" max="999" step="5" value="'+prefs.minAge+'" onchange="ageSet(\'minAge\',this.value)" style="width:70px;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:6px 8px;border-radius:8px"/> days</label>'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Model'
+      +'<select class="filter-select" onchange="ageSet(\'model\',this.value)"><option value="">All models</option>'
+      + uniq('mo').map(function(m){ return '<option value="'+esc(m)+'"'+(prefs.model===m?' selected':'')+'>'+esc(m)+'</option>'; }).join('')
+      +'</select></label>';
+    var sts=uniq('st');
+    if(sts.length>1){
+      h+='<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Status'
+        +'<select class="filter-select" onchange="ageSet(\'st\',this.value)"><option value="">Any status</option>'
+        + sts.map(function(s){ return '<option value="'+esc(s)+'"'+(prefs.st===s?' selected':'')+'>'+esc(s)+'</option>'; }).join('')
+        +'</select></label>';
+    }
+    h+='<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Sort'
+      +'<select class="filter-select" onchange="ageSet(\'sort\',this.value)">'
+      +['age','Oldest first','value','Highest value','model','Model','counter','Counter'].reduce(function(acc,v,i,arr){
+          if(i%2) return acc; return acc+'<option value="'+arr[i]+'"'+(prefs.sort===arr[i]?' selected':'')+'>'+arr[i+1]+'</option>'; },'')
+      +'</select></label>'
+      +'<span class="help-text" style="margin-left:auto">'+n+' of '+all.length+' unit(s) match</span>'
+      +'</div>';
+
+    /* quick stats */
+    h+='<div class="grid grid-4" style="margin-top:12px;gap:10px">'
+      +'<div style="background:var(--panel-2);border-radius:8px;padding:10px;text-align:center"><div style="font-size:24px;font-weight:800;color:'+(n?'#ff5c5c':'#2bd47d')+'">'+n+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Units to clear</div></div>'
+      +'<div style="background:var(--panel-2);border-radius:8px;padding:10px;text-align:center"><div style="font-size:24px;font-weight:800;color:#ff8b3d">'+INRs(val)+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Capital blocked</div></div>'
+      +'<div style="background:var(--panel-2);border-radius:8px;padding:10px;text-align:center"><div style="font-size:24px;font-weight:800;color:#ffb02e">'+INRs(mi)+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Interest / month @ '+rate()+'%</div></div>'
+      +'<div style="background:var(--panel-2);border-radius:8px;padding:10px;text-align:center"><div style="font-size:24px;font-weight:800">'+(oldest?oldest.age+'d':'&mdash;')+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Oldest unit</div></div>'
+      +'</div>';
+
+    /* per-counter roll-up */
+    if(bk.length){
+      h+='<h3 style="margin:16px 0 6px;font-size:14px">Ageing above '+prefs.minAge+' days, by counter</h3>'
+        +'<p class="help-text" style="margin-bottom:8px">Click a counter to filter the list and the export to it.</p>'
+        +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Counter</th>'
+        +'<th style="text-align:right">Units</th><th style="text-align:right">Share</th>'
+        +'<th style="text-align:right">Capital blocked</th><th style="text-align:right">Interest / month</th>'
+        +'<th style="text-align:right">Oldest</th></tr></thead><tbody>';
+      bk.forEach(function(k){
+        var s=by[k], sel=prefs.loc===k, pct=grand?Math.round(s.n/grand*100):0;
+        h+='<tr onclick="agePick('+JSON.stringify(k)+')" style="cursor:pointer;border-top:1px solid var(--line);'+(sel?'background:var(--panel-2)':'')+'">'
+          +'<td style="font-weight:700">'+esc(shortLoc(k))+(sel?' &#9664;':'')+'</td>'
+          +'<td style="text-align:right;font-weight:800;color:'+bandCol(s.old)+'">'+s.n+'</td>'
+          +'<td style="text-align:right;color:var(--muted)">'+pct+'%</td>'
+          +'<td style="text-align:right">'+INRs(s.val)+'</td>'
+          +'<td style="text-align:right;color:#ffb02e">'+INRs(Math.round(s.val*rate()/100/12))+'</td>'
+          +'<td style="text-align:right;font-weight:700;color:'+bandCol(s.old)+'">'+s.old+'d</td></tr>';
+      });
+      h+='</tbody></table></div>';
+    }
+
+    /* the list itself */
+    h+='<h3 style="margin:16px 0 6px;font-size:14px">'+(prefs.loc?esc(shortLoc(prefs.loc)):'All counters')+' &mdash; units older than '+prefs.minAge+' days</h3>';
+    if(!n){
+      h+='<p class="help-text" style="padding:14px;text-align:center;color:#2bd47d">&#10003; Nothing above '+prefs.minAge+' days for this selection.</p>';
+    } else {
+      h+='<div style="overflow-x:auto;max-height:420px"><table class="table"><thead><tr>'
+        +'<th style="text-align:right">Age</th><th>Band</th><th>Model</th><th>Colour</th><th>Counter</th>'
+        +'<th style="text-align:right">Value</th><th style="text-align:right">Interest/mo</th><th>VIN</th></tr></thead><tbody>';
+      list.slice(0,150).forEach(function(u){
+        h+='<tr style="border-top:1px solid var(--line)">'
+          +'<td style="text-align:right;font-weight:800;color:'+bandCol(u.age)+'">'+u.age+'d</td>'
+          +'<td><span style="background:'+bandCol(u.age)+'22;color:'+bandCol(u.age)+';padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">'+band(u.age)+'</span></td>'
+          +'<td>'+esc(u.mo)+'</td><td style="color:var(--muted)">'+esc(u.c)+'</td>'
+          +'<td style="color:var(--muted)">'+esc(shortLoc(u.loc))+'</td>'
+          +'<td style="text-align:right">'+INR(u.dlp)+'</td>'
+          +'<td style="text-align:right;color:#ffb02e">'+INR(Math.round(u.dlp*rate()/100/12))+'</td>'
+          +'<td style="font-family:monospace;font-size:11px;color:var(--muted)">'+esc(u.vin)+'</td></tr>';
+      });
+      h+='</tbody></table></div>';
+      if(n>150) h+='<p class="help-text">Showing the oldest 150. The export contains all '+n+'.</p>';
+    }
+    h+='</div>';
+    return h;
+  }
+
+  /* ---------------- mount: sit directly under the ageing card ---------------- */
+  function node(){
+    var d=document.getElementById('age-export-root');
+    if(!d){ d=document.createElement('div'); d.id='age-export-root'; }
+    return d;
+  }
+  function place(){
+    var view=document.getElementById('view-stock'); if(!view) return false;
+    var d=node();
+    // renderStock() rebuilds #ops-stock-root, so re-seat the panel after every repaint
+    var host=null, root=document.getElementById('ops-stock-root');
+    if(root){
+      var cards=root.querySelectorAll('.card');
+      for(var i=0;i<cards.length;i++){
+        var t=(cards[i].querySelector('h3')||{}).textContent||'';
+        if(/stock ageing/i.test(t)){ host=cards[i]; break; }
+      }
+    }
+    if(host && host.parentNode){ if(d.previousElementSibling!==host) host.parentNode.insertBefore(d, host.nextSibling); }
+    else if(!d.parentNode){ view.appendChild(d); }
+    return true;
+  }
+  function paint(){ if(!place()) return; node().innerHTML=panelHtml(); }
+  window.__agePaint=paint;
+
+  function init(){
+    place();
+    var o=window.setView;
+    if(typeof o==='function' && !o.__aeWrapped){
+      window.setView=function(n){ o(n); if(n==='stock'){ try{ setTimeout(paint,0); }catch(e){ console.warn('[age]',e); } } };
+      window.setView.__aeWrapped=true;
+    }
+    // ops sync rebuilds the stock view in place — repaint after it settles
+    var s=window.opsSyncFromSheet;
+    if(typeof s==='function' && !s.__aeWrapped){
+      window.opsSyncFromSheet=function(){ var r=s.apply(this,arguments); setTimeout(paint,1200); return r; };
+      window.opsSyncFromSheet.__aeWrapped=true;
+    }
+    try{ var a=document.querySelector('.nav-item.active'); if(a && a.dataset.view==='stock') setTimeout(paint,0); }catch(e){}
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init); else init();
+})();
+</script>
+
 </html>
