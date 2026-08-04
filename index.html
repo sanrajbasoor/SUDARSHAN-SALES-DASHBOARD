@@ -3744,8 +3744,8 @@ document.addEventListener('DOMContentLoaded', initApp);
 <script>
 (function(){
   "use strict";
-  var PREF='hero-ageing-export-prefs-v1';
-  var DEF={loc:'', model:'', st:'', minAge:60, sort:'age'};
+  var PREF='hero-ageing-export-prefs-v2';
+  var DEF={loc:'', model:'', st:'', minAge:180, sort:'age'};
   var prefs; try{ prefs=Object.assign({},DEF,JSON.parse(localStorage.getItem(PREF))||{}); }catch(e){ prefs=Object.assign({},DEF); }
   function save(){ try{ localStorage.setItem(PREF,JSON.stringify(prefs)); }catch(e){} }
 
@@ -3765,8 +3765,11 @@ document.addEventListener('DOMContentLoaded', initApp);
   function rate(){ var o; try{ o=JSON.parse(localStorage.getItem('hero-ops-v1'))||{}; }catch(e){ o={}; }
     return (o.finance && o.finance.rate) || 11; }
 
-  function band(a){ return a<=30?'0-30':a<=45?'31-45':a<=60?'46-60':a<=90?'61-90':'90+'; }
-  function bandCol(a){ return a<=30?'#2bd47d':a<=45?'#8fd47d':a<=60?'#ffb02e':a<=90?'#ff8b3d':'#ff5c5c'; }
+  function band(a){ return a<=30?'0-30':a<=45?'31-45':a<=60?'46-60':a<=90?'61-90':a<=180?'91-180':'180+'; }
+  function bandCol(a){ return a<=30?'#2bd47d':a<=45?'#8fd47d':a<=60?'#ffb02e':a<=90?'#ff8b3d':a<=180?'#ff5c5c':'#ff2e2e'; }
+  var PRESET=[[30,'1 month +'],[60,'2 months +'],[90,'3 months +'],[180,'6 months +'],[365,'1 year +']];
+  function ageLbl(){ var d=prefs.minAge;
+    return d+' days'+(d>=365?' (~'+(Math.round(d/365*10)/10)+' yr)':d>=60?' (~'+Math.round(d/30.44)+' mo)':''); }
 
   function units(){
     var r=reg(); if(!r) return [];
@@ -3804,7 +3807,10 @@ document.addEventListener('DOMContentLoaded', initApp);
             'Monthly interest','Inward date','Status','Action'];
   function line(u){
     var mi=Math.round(u.dlp*rate()/100/12);
-    var act=u.age>90?'Clear now — discount or transfer':u.age>60?'Push this month':'Watch';
+    var act=u.age>365?'Critical — write down, transfer or bulk-deal now'
+           :u.age>180?'Clear now — discount, do not hold another quarter'
+           :u.age>90 ?'Discount or transfer to a faster counter'
+           :u.age>60 ?'Push this month':'Watch';
     return [u.loc,u.age,band(u.age),u.mo,u.c,u.vin,u.dlp,mi,u.inw,u.st,act];
   }
   window.ageExport=function(kind){
@@ -3818,7 +3824,7 @@ document.addEventListener('DOMContentLoaded', initApp);
                  if(prefs.st && String(u.st||'')!==prefs.st) return false;
                  return true; })
                      .sort(function(a,b){ return String(a.loc).localeCompare(String(b.loc)) || b.age-a.age; });
-      if(!all.length){ if(typeof showToast==='function') showToast('Nothing above '+prefs.minAge+' days'); return; }
+      if(!all.length){ if(typeof showToast==='function') showToast('Nothing above '+ageLbl()); return; }
       var rows=[HEAD], cur=null, n=0, val=0;
       function flush(){ if(cur!==null) rows.push([cur+' — SUBTOTAL',' ',' ',' ',' ',n+' units',val,Math.round(val*rate()/100/12),' ',' ',' ']); }
       all.forEach(function(u){
@@ -3882,7 +3888,12 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'<select class="filter-select" onchange="ageSet(\'loc\',this.value)"><option value="">All counters</option>'
       + uniq('loc').map(function(l){ return '<option value="'+esc(l)+'"'+(prefs.loc===l?' selected':'')+'>'+esc(shortLoc(l))+'</option>'; }).join('')
       +'</select></label>'
-      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Older than'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">&#9203; Ageing'
+      +'<select class="filter-select" onchange="ageSet(\'minAge\',this.value)">'
+      + PRESET.map(function(p){ return '<option value="'+p[0]+'"'+(prefs.minAge===p[0]?' selected':'')+'>'+p[1]+'</option>'; }).join('')
+      + (PRESET.some(function(p){ return p[0]===prefs.minAge; })?'':'<option value="'+prefs.minAge+'" selected>Custom &mdash; '+prefs.minAge+' days +</option>')
+      +'</select></label>'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">or exactly'
       +'<input type="number" min="0" max="999" step="5" value="'+prefs.minAge+'" onchange="ageSet(\'minAge\',this.value)" style="width:70px;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:6px 8px;border-radius:8px"/> days</label>'
       +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Model'
       +'<select class="filter-select" onchange="ageSet(\'model\',this.value)"><option value="">All models</option>'
@@ -3913,7 +3924,7 @@ document.addEventListener('DOMContentLoaded', initApp);
 
     /* per-counter roll-up */
     if(bk.length){
-      h+='<h3 style="margin:16px 0 6px;font-size:14px">Ageing above '+prefs.minAge+' days, by counter</h3>'
+      h+='<h3 style="margin:16px 0 6px;font-size:14px">Ageing above '+ageLbl()+', by counter</h3>'
         +'<p class="help-text" style="margin-bottom:8px">Click a counter to filter the list and the export to it.</p>'
         +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Counter</th>'
         +'<th style="text-align:right">Units</th><th style="text-align:right">Share</th>'
@@ -3933,9 +3944,9 @@ document.addEventListener('DOMContentLoaded', initApp);
     }
 
     /* the list itself */
-    h+='<h3 style="margin:16px 0 6px;font-size:14px">'+(prefs.loc?esc(shortLoc(prefs.loc)):'All counters')+' &mdash; units older than '+prefs.minAge+' days</h3>';
+    h+='<h3 style="margin:16px 0 6px;font-size:14px">'+(prefs.loc?esc(shortLoc(prefs.loc)):'All counters')+' &mdash; units older than '+ageLbl()+'</h3>';
     if(!n){
-      h+='<p class="help-text" style="padding:14px;text-align:center;color:#2bd47d">&#10003; Nothing above '+prefs.minAge+' days for this selection.</p>';
+      h+='<p class="help-text" style="padding:14px;text-align:center;color:#2bd47d">&#10003; Nothing above '+ageLbl()+' for this selection.</p>';
     } else {
       h+='<div style="overflow-x:auto;max-height:420px"><table class="table"><thead><tr>'
         +'<th style="text-align:right">Age</th><th>Band</th><th>Model</th><th>Colour</th><th>Counter</th>'
@@ -3957,7 +3968,12 @@ document.addEventListener('DOMContentLoaded', initApp);
     return h;
   }
 
-  /* ---------------- mount: sit directly under the ageing card ---------------- */
+  /* ---------------- mount: sit directly under the ageing card ----------------
+     renderStock() rebuilds #ops-stock-root from several places that never go
+     through setView (background sync, DMS paste import, snapshot reset), so a
+     MutationObserver re-seats the panel whenever it gets wiped. Without this it
+     silently disappears a second or two after load, once the first sync lands. */
+  var busy=false, watching=false;
   function node(){
     var d=document.getElementById('age-export-root');
     if(!d){ d=document.createElement('div'); d.id='age-export-root'; }
@@ -3965,37 +3981,53 @@ document.addEventListener('DOMContentLoaded', initApp);
   }
   function place(){
     var view=document.getElementById('view-stock'); if(!view) return false;
-    var d=node();
-    // renderStock() rebuilds #ops-stock-root, so re-seat the panel after every repaint
-    var host=null, root=document.getElementById('ops-stock-root');
+    var d=node(), host=null, root=document.getElementById('ops-stock-root');
     if(root){
       var cards=root.querySelectorAll('.card');
       for(var i=0;i<cards.length;i++){
-        var t=(cards[i].querySelector('h3')||{}).textContent||'';
-        if(/stock ageing/i.test(t)){ host=cards[i]; break; }
+        var hd=cards[i].querySelector('h3');
+        if(hd && /stock\s+ageing/i.test(hd.textContent||'')){ host=cards[i]; break; }
       }
     }
-    if(host && host.parentNode){ if(d.previousElementSibling!==host) host.parentNode.insertBefore(d, host.nextSibling); }
-    else if(!d.parentNode){ view.appendChild(d); }
+    if(host && host.parentNode){
+      if(d.previousElementSibling!==host) host.parentNode.insertBefore(d, host.nextSibling);
+    } else if(root){
+      if(d.parentNode!==root) root.appendChild(d);      // ageing card not rendered yet
+    } else if(d.parentNode!==view){ view.appendChild(d); }
     return true;
   }
-  function paint(){ if(!place()) return; node().innerHTML=panelHtml(); }
+  function paint(){
+    if(busy) return; busy=true;
+    try{ if(place()) node().innerHTML=panelHtml(); }
+    catch(e){ console.warn('[age-export]',e); }
+    finally{ busy=false; }
+  }
   window.__agePaint=paint;
 
+  function watch(){
+    if(watching || typeof MutationObserver!=='function') return;
+    var root=document.getElementById('ops-stock-root'); if(!root) return;
+    new MutationObserver(function(){
+      var d=document.getElementById('age-export-root');
+      if(!d || !d.parentNode) paint();                  // wiped by a renderStock() repaint
+    }).observe(root,{childList:true});
+    watching=true;
+  }
+
   function init(){
-    place();
-    var o=window.setView;
-    if(typeof o==='function' && !o.__aeWrapped){
-      window.setView=function(n){ o(n); if(n==='stock'){ try{ setTimeout(paint,0); }catch(e){ console.warn('[age]',e); } } };
-      window.setView.__aeWrapped=true;
-    }
-    // ops sync rebuilds the stock view in place — repaint after it settles
-    var s=window.opsSyncFromSheet;
-    if(typeof s==='function' && !s.__aeWrapped){
-      window.opsSyncFromSheet=function(){ var r=s.apply(this,arguments); setTimeout(paint,1200); return r; };
-      window.opsSyncFromSheet.__aeWrapped=true;
-    }
-    try{ var a=document.querySelector('.nav-item.active'); if(a && a.dataset.view==='stock') setTimeout(paint,0); }catch(e){}
+    var tries=0;
+    (function wait(){
+      if(document.getElementById('view-stock')){
+        watch(); paint();
+        var o=window.setView;
+        if(typeof o==='function' && !o.__aeWrapped){
+          window.setView=function(n){ o(n); if(n==='stock'){ watch(); setTimeout(paint,0); } };
+          window.setView.__aeWrapped=true;
+        }
+        return;
+      }
+      if(++tries<60) setTimeout(wait,250);              // Stock tab is injected by the ops module
+    })();
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init); else init();
 })();
