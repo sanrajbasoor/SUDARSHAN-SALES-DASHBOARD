@@ -2689,4 +2689,348 @@ document.addEventListener('DOMContentLoaded', initApp);
 })();
 </script>
 
+<!-- ===== STOCK vs DEMAND — sub-section inside the Stock tab (additive, self-contained) =====
+     Sub-section rendered inside the Stock tab, below the existing stock panels.
+     It reads ops data from localStorage['hero-ops-v1'] (stock, salesRows / salesByMonth,
+     transit) and open bookings from the live `enquiries` array. Nothing else is touched.
+     ========================================================================================= -->
+<script>
+(function(){
+  "use strict";
+  var OPS_KEY='hero-ops-v1', PREF_KEY='hero-svd-prefs-v1';
+  var DEF={win:3, grp:'family', target:45, loc:'all', src:'both'};
+  var prefs;
+  try{ prefs=Object.assign({},DEF,JSON.parse(localStorage.getItem(PREF_KEY))||{}); }catch(e){ prefs=Object.assign({},DEF); }
+  function savePrefs(){ try{ localStorage.setItem(PREF_KEY,JSON.stringify(prefs)); }catch(e){} }
+
+  function ops(){ try{ return JSON.parse(localStorage.getItem(OPS_KEY))||{}; }catch(e){ return {}; } }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function num(v){ v=Number(v); return isFinite(v)?v:0; }
+
+  /* ---------- model naming: the stock sheet, the sales register and the CRM
+       all spell models differently ("SPLENDOR +", "Splendor+ XTEC 2.0",
+       "Splendor Plus"). Family grouping makes them comparable. ---------- */
+  var FAM=[
+    ['VIDA',            /vida|vx2|^v[12](plus|pro|lite|go|max)?$/],
+    ['X440',            /x440|harley/],
+    ['XPULSE',          /xpulse/],
+    ['KARIZMA XMR',     /karizma|xmr/],
+    ['XTREME 125R',     /xtreme125/],
+    ['XTREME 160+',     /xtreme(160|200|210|250)/],
+    ['XTREME',          /xtreme/],
+    ['XOOM',            /xoom/],
+    ['DESTINI',         /destini/],
+    ['PLEASURE+',       /pleasure/],
+    ['MAESTRO',         /maestro/],
+    ['GLAMOUR',         /glamour/],
+    ['SUPER SPLENDOR',  /supersplendor|superspl|ssxtec/],
+    ['SPLENDOR',        /splendor/],
+    ['PASSION',         /passion/],
+    ['HF 100',          /hf100/],
+    ['HF DELUXE',       /hfdeluxe|hfdlx|^hf/]
+  ];
+  function keyOf(m){
+    var n=String(m==null?'':m).toLowerCase().replace(/[^a-z0-9]/g,'');
+    if(!n) return null;
+    if(prefs.grp==='exact') return {k:n, d:String(m).trim().toUpperCase()};
+    for(var i=0;i<FAM.length;i++){ if(FAM[i][1].test(n)) return {k:FAM[i][0], d:FAM[i][0]}; }
+    return {k:n, d:String(m).trim().toUpperCase()};
+  }
+
+  /* ---------- available sales months, newest first ---------- */
+  function monthsAvailable(){
+    var o=ops(), s={};
+    if(o.salesRows && o.salesRows.length) o.salesRows.forEach(function(r){ if(r.m) s[r.m]=1; });
+    if(o.salesByMonth) Object.keys(o.salesByMonth).forEach(function(m){ s[m]=1; });
+    if(!Object.keys(s).length){
+      try{ (enquiries||[]).forEach(function(e){ if(e.stage==='Won'){ var k=(e.createdAt||'').slice(0,7); if(/^\d{4}-\d{2}$/.test(k)) s[k]=1; } }); }catch(e){}
+    }
+    return Object.keys(s).sort().reverse();
+  }
+
+  /* ---------- units retailed per model over the window ---------- */
+  function soldByModel(months){
+    var o=ops(), out={}, src;
+    function add(m,n){ var k=keyOf(m); if(!k) return; (out[k.k]=out[k.k]||{d:k.d,n:0}).n+=n; }
+    if(o.salesRows && o.salesRows.length){
+      src='sales register (invoice-level)';
+      o.salesRows.forEach(function(r){ if(months.indexOf(r.m)>-1) add(r.mo,1); });
+      return {map:out, src:src};
+    }
+    if(o.salesByMonth && Object.keys(o.salesByMonth).length){
+      months.forEach(function(ym){ var b=o.salesByMonth[ym]; if(b&&b.models) Object.keys(b.models).forEach(function(m){ add(m,num(b.models[m])); }); });
+      if(Object.keys(out).length) return {map:out, src:'monthly sales pivot'};
+    }
+    src='CRM won enquiries — install OpsData2.gs for true retail figures';
+    try{ (enquiries||[]).forEach(function(e){ if(e.stage!=='Won') return; var ym=(e.createdAt||'').slice(0,7); if(months.length && months.indexOf(ym)<0) return; add(e.model,1); }); }catch(e){}
+    return {map:out, src:src};
+  }
+
+  /* ---------- open bookings = committed demand not yet delivered ---------- */
+  function bookedByModel(){
+    var out={};
+    try{ (enquiries||[]).forEach(function(e){ if(e.stage!=='Booked') return; var k=keyOf(e.model); if(!k) return; (out[k.k]=out[k.k]||{d:k.d,n:0}).n++; }); }catch(e){}
+    return out;
+  }
+
+  /* ---------- stock on hand + where it sits ---------- */
+  function stockByModel(){
+    var o=ops(), out={};
+    (o.stock||[]).forEach(function(r){
+      if(prefs.loc==='nodc' && /festival|(^|\W)dc(\W|$)/i.test(r.loc||'')) return;
+      if(prefs.loc!=='all' && prefs.loc!=='nodc' && r.loc!==prefs.loc) return;
+      var k=keyOf(r.model); if(!k) return;
+      var s=out[k.k]=out[k.k]||{d:k.d,n:0,locs:{}};
+      s.n+=num(r.qty); s.locs[r.loc]=(s.locs[r.loc]||0)+num(r.qty);
+    });
+    (o.premium||[]).forEach(function(r){ var k=keyOf(r.model); if(!k) return; var s=out[k.k]=out[k.k]||{d:k.d,n:0,locs:{}}; s.n+=num(r.qty); });
+    return out;
+  }
+  function transitByModel(){
+    var o=ops(), out={};
+    (o.transit||[]).forEach(function(r){ var k=keyOf(r.model); if(!k) return; (out[k.k]=out[k.k]||{d:k.d,n:0}).n+=num(r.qty); });
+    return out;
+  }
+  function locations(){
+    var o=ops(), s={}; (o.stock||[]).forEach(function(r){ if(r.loc) s[r.loc]=1; }); return Object.keys(s).sort();
+  }
+
+  /* ====================== THE MODEL ====================== */
+  function build(){
+    var all=monthsAvailable();
+    var months=all.slice(0, Math.max(1, prefs.win));
+    var nMon=months.length||1;
+    var sold=soldByModel(months), bkg=bookedByModel(), stk=stockByModel(), trn=transitByModel();
+
+    var keys={}, disp={};
+    [sold.map, bkg, stk, trn].forEach(function(m){ Object.keys(m).forEach(function(k){ keys[k]=1; if(!disp[k]) disp[k]=m[k].d; }); });
+
+    var rows=Object.keys(keys).map(function(k){
+      var s=num(stk[k]&&stk[k].n), t=num(trn[k]&&trn[k].n);
+      var sd=num(sold.map[k]&&sold.map[k].n), bk=num(bkg[k]&&bkg[k].n);
+      var perMon = sd/nMon, perDay = perMon/30.44;
+      var demand = prefs.src==='sold' ? sd : prefs.src==='booked' ? bk : sd+bk;
+      var cover  = perDay>0 ? s/perDay : (s>0?Infinity:0);
+      var need   = Math.max(0, Math.ceil(perDay*prefs.target + bk - s - t));
+      var excess = perDay>0 ? Math.max(0, s - Math.ceil(perDay*60)) : (sd===0&&bk===0 ? s : 0);
+      // no demand at all: idle units are dead capital, an empty shelf is simply not a problem
+      var status = (sd===0 && bk===0) ? (s>0 ? 'dead' : 'ok')
+                 : cover<21 ? 'low' : cover>60 ? 'over' : 'ok';
+      return {k:k, m:disp[k], stock:s, transit:t, sold:sd, bkg:bk, demand:demand,
+              perMon:perMon, cover:cover, need:need, excess:excess, status:status,
+              locs:(stk[k]&&stk[k].locs)||{}};
+    }).filter(function(r){ return r.stock>0 || r.demand>0 || r.transit>0; });
+
+    return {rows:rows, months:months, nMon:nMon, all:all, src:sold.src};
+  }
+
+  /* ====================== RENDER ====================== */
+  var SORT={k:'need', dir:-1};
+  var LBL={low:'Understocked', ok:'Healthy', over:'Overstocked', dead:'Dead stock'};
+  var COL={low:'#ff5c5c', ok:'#2bd47d', over:'#ffb02e', dead:'#94a0c8'};
+
+  function kpi(v,l,color,sub){
+    return '<div class="card kpi"><h3>'+l+'</h3><div class="kpi-value"'+(color?(' style="color:'+color+'"'):'')+'>'+v+'</div><div class="kpi-trend">'+(sub||'&nbsp;')+'</div></div>';
+  }
+  function cover(c){ return c===Infinity ? '&infin;' : Math.round(c); }
+
+  function render(){
+    var root=document.getElementById('svd-root'); if(!root) return;
+    var D=build(), rows=D.rows;
+
+    var tStock=0,tTransit=0,tSold=0,tBkg=0,tNeed=0,tExcess=0,nLow=0,nDead=0,deadU=0;
+    rows.forEach(function(r){ tStock+=r.stock; tTransit+=r.transit; tSold+=r.sold; tBkg+=r.bkg;
+      tNeed+=r.need; tExcess+=r.excess; if(r.status==='low')nLow++; if(r.status==='dead'){nDead++;deadU+=r.stock;} });
+    var perDayAll=(tSold/D.nMon)/30.44, coverAll=perDayAll>0?Math.round(tStock/perDayAll):0;
+
+    var monLbl=D.months.length ? (typeof formatMonthLabel==='function'
+      ? D.months.slice().reverse().map(formatMonthLabel).join(' → ')
+      : D.months.slice().reverse().join(' → ')) : 'no sales months found';
+
+    var h='';
+
+    /* --- controls --- */
+    h+='<div class="card" style="margin-bottom:14px;border-left:4px solid var(--accent)">'
+      +'<h3>&#9878;&#65039; Stock vs Demand</h3>'
+      +'<p class="help-text">What is standing on the floor against what actually sells &mdash; per model, so you know <b>which model to indent and how many</b>, and which units are dead capital. Demand comes from the <b>'+esc(D.src)+'</b>; open bookings come from the CRM.</p>'
+      +'<div class="filters" style="margin:10px 0 0">'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Demand window'
+      +'<select class="filter-select" onchange="svdSet(\'win\',this.value)">'
+        +[1,3,6,12].map(function(n){return '<option value="'+n+'"'+(prefs.win==n?' selected':'')+'>Last '+n+' month'+(n>1?'s':'')+'</option>';}).join('')
+      +'</select></label>'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Demand ='
+      +'<select class="filter-select" onchange="svdSet(\'src\',this.value)">'
+        +'<option value="both"'+(prefs.src==='both'?' selected':'')+'>Retailed + open bookings</option>'
+        +'<option value="sold"'+(prefs.src==='sold'?' selected':'')+'>Retailed only</option>'
+        +'<option value="booked"'+(prefs.src==='booked'?' selected':'')+'>Open bookings only</option>'
+      +'</select></label>'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Group by'
+      +'<select class="filter-select" onchange="svdSet(\'grp\',this.value)">'
+        +'<option value="family"'+(prefs.grp==='family'?' selected':'')+'>Model family (recommended)</option>'
+        +'<option value="exact"'+(prefs.grp==='exact'?' selected':'')+'>Exact variant name</option>'
+      +'</select></label>'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Stock at'
+      +'<select class="filter-select" onchange="svdSet(\'loc\',this.value)">'
+        +'<option value="all"'+(prefs.loc==='all'?' selected':'')+'>All locations</option>'
+        +'<option value="nodc"'+(prefs.loc==='nodc'?' selected':'')+'>Exclude festival-DC</option>'
+        +locations().map(function(l){return '<option value="'+esc(l)+'"'+(prefs.loc===l?' selected':'')+'>'+esc(l)+' only</option>';}).join('')
+      +'</select></label>'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Target cover'
+      +'<input type="number" min="7" max="180" step="1" value="'+prefs.target+'" onchange="svdSet(\'target\',this.value)" style="width:70px;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:6px 8px;border-radius:8px"/> days</label>'
+      +'<button class="btn btn-sm" onclick="svdExport()" style="margin-left:auto">&#11015;&#65039; Export indent list</button>'
+      +'</div>'
+      +'<p class="help-text" style="margin-top:8px">Window: <b>'+esc(monLbl)+'</b> &middot; '+D.all.length+' month(s) of sales history available. Stock is a live snapshot, so the month filter at the top of the page does not apply here &mdash; use the window selector above.</p>'
+      +'</div>';
+
+    if(!rows.length){
+      root.innerHTML=h+'<div class="card"><p class="help-text" style="text-align:center;padding:18px">No stock or sales data yet. Press <b>&#128260; Sync from Sheet</b> above, or paste a stock pivot into the import panel.</p></div>';
+      return;
+    }
+
+    /* --- KPIs --- */
+    h+='<div class="grid grid-4">';
+    h+=kpi(tStock,'Stock on hand','#5b9eff',(tTransit?tTransit+' more in transit':'nothing in transit'));
+    h+=kpi(tSold,'Retailed in window','#2bd47d',(tSold/D.nMon).toFixed(0)+' per month avg');
+    h+=kpi(coverAll?coverAll+' d':'&mdash;','Overall days of cover',coverAll?(coverAll<21?'#ff5c5c':coverAll>60?'#ffb02e':'#2bd47d'):'',
+           'target '+prefs.target+' days');
+    h+=kpi(tBkg,'Open bookings','#a05bff','committed, not delivered');
+    h+='</div>';
+    h+='<div class="grid grid-4" style="margin-top:12px">';
+    h+=kpi(nLow,'Models understocked',nLow?'#ff5c5c':'#2bd47d',nLow?'below 21 days cover':'none — healthy');
+    h+=kpi(tNeed,'Units to indent','#ffb02e','to reach '+prefs.target+'-day cover');
+    h+=kpi(deadU,'Dead stock units',deadU?'#ff5c5c':'#2bd47d',nDead+' model(s), zero demand');
+    h+=kpi(tExcess,'Excess over 60 days','#ffb02e','clear or transfer these');
+    h+='</div>';
+
+    /* --- chart --- */
+    h+='<div class="card" style="margin-top:14px"><h3>Stock on hand vs demand &mdash; by model</h3>'
+      +'<div class="chart-wrap" style="height:'+Math.max(280, Math.min(rows.length,14)*30+60)+'px"><canvas id="svd-chart"></canvas></div>'
+      +'<p class="help-text">Blue bar longer than red = sitting stock. Red longer than blue = you are about to lose sales.</p></div>';
+
+    /* --- table --- */
+    var rank={low:0,dead:1,ok:2,over:3};
+    var sorted=rows.slice().sort(function(a,b){
+      var x=a[SORT.k], y=b[SORT.k];
+      if(SORT.k==='m') return SORT.dir*String(x).localeCompare(String(y));
+      if(SORT.k==='status'){ x=rank[x]; y=rank[y]; }
+      if(x===Infinity)x=1e9; if(y===Infinity)y=1e9;
+      return SORT.dir*((x||0)-(y||0));
+    });
+    function th(k,l,r){ return '<th onclick="svdSort(\''+k+'\')" style="cursor:pointer'+(r?';text-align:right':'')+'" title="Sort">'+l+(SORT.k===k?(SORT.dir<0?' &#9660;':' &#9650;'):'')+'</th>'; }
+
+    h+='<div class="card" style="margin-top:14px"><h3>Indent recommendation</h3>'
+      +'<p class="help-text">Sorted by what needs ordering first. <b>Indent qty</b> = (demand per day &times; target cover) + open bookings &minus; stock &minus; in-transit. Click a column to re-sort.</p>'
+      +'<div style="overflow-x:auto"><table class="table"><thead><tr>'
+      +th('m','Model')+th('stock','Stock',1)+th('transit','Transit',1)+th('sold','Retailed',1)+th('bkg','Open bkg',1)
+      +th('demand','Demand',1)+th('perMon','Per month',1)+th('cover','Days cover',1)+th('status','Status')
+      +th('need','Indent qty',1)+th('excess','Excess',1)+'<th>Where it is</th></tr></thead><tbody>';
+
+    sorted.forEach(function(r){
+      var locTxt=Object.keys(r.locs).filter(function(l){return r.locs[l]>0;})
+        .sort(function(a,b){return r.locs[b]-r.locs[a];})
+        .map(function(l){ return esc(l.replace('Festival Counter-DC','Fest-DC').replace('Damoh Naka','DN').replace('Madan Mahal','MML').replace('Napier Town','NT'))+'&nbsp;'+r.locs[l]; })
+        .join(' &middot; ');
+      h+='<tr style="border-top:1px solid var(--line)">'
+        +'<td style="font-weight:700">'+esc(r.m)+'</td>'
+        +'<td style="text-align:right;font-weight:700">'+r.stock+'</td>'
+        +'<td style="text-align:right;color:'+(r.transit?'#ffb02e':'var(--muted)')+'">'+(r.transit||'&middot;')+'</td>'
+        +'<td style="text-align:right">'+r.sold+'</td>'
+        +'<td style="text-align:right;color:'+(r.bkg?'#a05bff':'var(--muted)')+'">'+(r.bkg||'&middot;')+'</td>'
+        +'<td style="text-align:right;font-weight:700">'+r.demand+'</td>'
+        +'<td style="text-align:right;color:var(--muted)">'+r.perMon.toFixed(1)+'</td>'
+        +'<td style="text-align:right;font-weight:700;color:'+COL[r.status]+'">'+cover(r.cover)+'</td>'
+        +'<td><span style="background:'+COL[r.status]+'22;color:'+COL[r.status]+';padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap">'+LBL[r.status]+'</span></td>'
+        +'<td style="text-align:right;font-weight:800;color:'+(r.need?'#ff5c5c':'var(--muted)')+'">'+(r.need||'&middot;')+'</td>'
+        +'<td style="text-align:right;color:'+(r.excess?'#ffb02e':'var(--muted)')+'">'+(r.excess||'&middot;')+'</td>'
+        +'<td style="color:var(--muted);font-size:12px">'+(locTxt||'&mdash;')+'</td></tr>';
+    });
+    h+='</tbody></table></div>'
+      +'<p class="help-text" style="margin-top:10px"><b>Understocked</b> &lt; 21 days cover &middot; <b>Healthy</b> 21&ndash;60 &middot; <b>Overstocked</b> &gt; 60 &middot; <b>Dead stock</b> = units on the floor with zero retail and zero bookings in the window. '
+      +'Days cover assumes the last '+D.nMon+' month(s) of retail continue at the same rate.</p></div>';
+
+    /* --- action summary --- */
+    var order=sorted.filter(function(r){return r.need>0;}).sort(function(a,b){return b.need-a.need;}).slice(0,6);
+    var clear=rows.filter(function(r){return r.excess>0||r.status==='dead';}).sort(function(a,b){return b.excess-a.excess;}).slice(0,6);
+    h+='<div class="grid grid-2" style="margin-top:14px">'
+      +'<div class="card" style="border-left:4px solid #ff5c5c"><h3>&#128666; Order now</h3>'
+      +(order.length?'<table class="table"><tbody>'+order.map(function(r){
+          return '<tr><td style="font-weight:600">'+esc(r.m)+'</td><td style="color:var(--muted);font-size:12px">'+cover(r.cover)+'d cover</td><td style="text-align:right;font-weight:800;color:#ff5c5c">'+r.need+' units</td></tr>';
+        }).join('')+'</tbody></table>':'<p class="help-text">Nothing below target cover &mdash; the floor is balanced.</p>')
+      +'</div>'
+      +'<div class="card" style="border-left:4px solid #ffb02e"><h3>&#129529; Clear or transfer</h3>'
+      +(clear.length?'<table class="table"><tbody>'+clear.map(function(r){
+          return '<tr><td style="font-weight:600">'+esc(r.m)+'</td><td style="color:var(--muted);font-size:12px">'+(r.status==='dead'?'no demand':cover(r.cover)+'d cover')+'</td><td style="text-align:right;font-weight:800;color:#ffb02e">'+(r.excess||r.stock)+' units</td></tr>';
+        }).join('')+'</tbody></table>':'<p class="help-text">No excess stock &mdash; nothing idle.</p>')
+      +'<p class="help-text" style="margin-top:8px">Every excess unit is floor-plan interest with no return. Move it to a counter that is selling it, or discount it.</p>'
+      +'</div></div>';
+
+    root.innerHTML=h;
+
+    /* --- chart draw --- */
+    var top=rows.slice().sort(function(a,b){return Math.max(b.stock,b.demand)-Math.max(a.stock,a.demand);}).slice(0,14);
+    if(typeof drawChart==='function'){
+      drawChart('svd-chart','bar',{
+        labels: top.map(function(r){return r.m;}),
+        datasets:[
+          {label:'Stock on hand', data:top.map(function(r){return r.stock;}), backgroundColor:'#5b9eff'},
+          {label:'Demand ('+D.nMon+' mo)', data:top.map(function(r){return r.demand;}), backgroundColor:'#ff2e2e'}
+        ]
+      },{indexAxis:'y', plugins:{legend:{labels:{color:'#e7ecf7'}}}});
+    }
+  }
+
+  /* ====================== PUBLIC HANDLERS ====================== */
+  window.svdSet=function(k,v){
+    if(k==='target'){ v=Math.max(7,Math.min(180,parseInt(v,10)||45)); }
+    else if(k==='win'){ v=parseInt(v,10)||3; }
+    prefs[k]=v; savePrefs(); render();
+  };
+  window.svdSort=function(k){ SORT.dir = (SORT.k===k) ? -SORT.dir : (k==='m'?1:-1); SORT.k=k; render(); };
+  window.svdExport=function(){
+    var D=build();
+    if(!D.rows.length){ if(typeof showToast==='function') showToast('Nothing to export'); return; }
+    function cell(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }
+    var head=['Model','Stock on hand','In transit','Retailed ('+D.nMon+' mo)','Open bookings','Demand','Per month','Days cover','Status','Indent qty','Excess units','Locations'];
+    var lines=[head.map(cell).join(',')];
+    D.rows.slice().sort(function(a,b){return b.need-a.need;}).forEach(function(r){
+      var locTxt=Object.keys(r.locs).filter(function(l){return r.locs[l]>0;}).map(function(l){return l+' '+r.locs[l];}).join(' | ');
+      lines.push([r.m,r.stock,r.transit,r.sold,r.bkg,r.demand,r.perMon.toFixed(1),
+                  (r.cover===Infinity?'':Math.round(r.cover)),LBL[r.status],r.need,r.excess,locTxt].map(cell).join(','));
+    });
+    var blob=new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8;'});
+    var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download='stock_vs_demand_'+prefs.win+'mo_'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); },2000);
+    if(typeof showToast==='function') showToast('Exported '+D.rows.length+' model(s)');
+  };
+
+  /* ====================== MOUNT ====================== */
+  function mount(){
+    var view=document.getElementById('view-stock'); if(!view) return false;
+    if(document.getElementById('svd-root')) return true;
+    var d=document.createElement('div');
+    d.id='svd-root'; d.style.marginTop='14px';
+    view.appendChild(d);          // sibling of #ops-stock-root, so renderStock() never wipes it
+    return true;
+  }
+  function boot(){
+    var tries=0;
+    (function wait(){
+      if(mount()){
+        var orig=window.setView;
+        if(typeof orig==='function' && !orig.__svdWrapped){
+          window.setView=function(name){ orig(name); if(name==='stock'){ try{ mount(); render(); }catch(e){ console.warn('[svd]',e); } } };
+          window.setView.__svdWrapped=true;
+        }
+        try{ var a=document.querySelector('.nav-item.active'); if(a && a.dataset.view==='stock') render(); }catch(e){}
+        return;
+      }
+      if(++tries<40) setTimeout(wait,250);   // the Stock tab is injected by the ops module
+    })();
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot); else boot();
+})();
+</script>
+
 </html>
