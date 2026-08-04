@@ -3033,4 +3033,501 @@ document.addEventListener('DOMContentLoaded', initApp);
 })();
 </script>
 
+<!-- ===== FINANCE FUNNEL — sub-section inside the Finance tab (additive, self-contained) =====
+     Adds finance-file tracking to the enquiry form (status, approval / disbursal dates,
+     loan amount, rejection reason) and renders a financier-wise funnel showing exactly
+     where finance deals stall. Reads status from the synced sheet when those columns
+     exist; otherwise derives it from stage + lost reason so the funnel works on day one.
+     ========================================================================================= -->
+<script>
+(function(){
+  "use strict";
+  var PREF_KEY='hero-finfunnel-prefs-v1';
+  var DEF={stallSub:5, stallApp:7, view:'measured'};
+  var prefs; try{ prefs=Object.assign({},DEF,JSON.parse(localStorage.getItem(PREF_KEY))||{}); }catch(e){ prefs=Object.assign({},DEF); }
+  function savePrefs(){ try{ localStorage.setItem(PREF_KEY,JSON.stringify(prefs)); }catch(e){} }
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function low(s){ return String(s==null?'':s).trim().toLowerCase(); }
+  function ENQ(){ try{ return enquiries||[]; }catch(e){ return []; } }
+  function today(){ return new Date().toISOString().slice(0,10); }
+  function dayDiff(a,b){ if(!a||!b) return null; var d=(new Date(b)-new Date(a))/86400000; return isFinite(d)?Math.round(d):null; }
+  function since(d){ return d ? dayDiff(d, today()) : null; }
+  function isFin(e){ return low(e.financeRequired)==='yes'; }
+
+  /* ================= status resolution =================
+     1. explicit field written by the dashboard form
+     2. any finance-status-ish column carried in from the Google Sheet
+     3. derived from stage + lost reason                                */
+  var RANK={pending:0, submitted:1, approved:2, disbursed:3, rejected:-1};
+  var LBL={pending:'Docs pending', submitted:'Submitted', approved:'Approved', rejected:'Rejected', disbursed:'Disbursed'};
+  var CLR={pending:'#94a0c8', submitted:'#5b9eff', approved:'#ffb02e', rejected:'#ff5c5c', disbursed:'#2bd47d'};
+
+  function classify(v){
+    var t=low(v); if(!t) return null;
+    if(/disburse|disbursal|funded|fund\s*released|paid\s*out|dd\s*(issued|received|made)|amount\s*credited/.test(t)) return 'disbursed';
+    if(/reject|declin|not\s*approv|non[-\s]*approv|denied|refus|cancel|failed/.test(t))                              return 'rejected';
+    if(/approv|sanction|cleared|clear\b|limit\s*given|eligible/.test(t))                                             return 'approved';
+    if(/submit|logged|file\s*(in|sent|logged)|under\s*process|in\s*process|processing|pending\s*with|docs?\s*(sent|submitted|collected)|login/.test(t)) return 'submitted';
+    if(/pending|awaiting|await|docs?|document|kyc|incomplete|not\s*started|initiated|enquiry/.test(t))                return 'pending';
+    return null;
+  }
+  // any column the Apps Script feed might carry
+  var KEY_RE=/(fin(ance)?.*(status|stage|state)|loan.*(status|stage)|(approval|sanction|disburse\w*|credit)\s*status|^financestatus$|^loanstatus$|^sanction$|^approval$|^disbursement$)/i;
+  function feedStatus(e){
+    var direct=['financeStatus','finance_status','loanStatus','loan_status','sanctionStatus','approvalStatus','disbursementStatus','finStatus'];
+    for(var i=0;i<direct.length;i++){ var c=classify(e[direct[i]]); if(c) return c; }
+    for(var k in e){ if(!Object.prototype.hasOwnProperty.call(e,k)) continue;
+      if(KEY_RE.test(k)){ var c2=classify(e[k]); if(c2) return c2; } }
+    return null;
+  }
+  function derive(e){
+    var st=low(e.stage), why=low(e.dropReason);
+    if(st==='lost') return /finance\s*not\s*approv|emi\s*too\s*high|finance/.test(why) ? 'rejected' : 'pending';
+    if(st==='won')    return 'disbursed';
+    if(st==='booked') return 'approved';
+    if(st==='negotiation') return 'submitted';
+    return 'pending';
+  }
+  function statusOf(e){
+    var c=classify(e.financeStatus);        if(c) return {s:c, m:true};   // typed in the dashboard
+    c=feedStatus(e);                        if(c) return {s:c, m:true};   // came from the sheet
+    return {s:derive(e), m:false};                                        // inferred
+  }
+  function dateField(e,names){
+    for(var i=0;i<names.length;i++){ var v=e[names[i]]; if(v) return String(v).slice(0,10); }
+    return '';
+  }
+  function approvedOn(e){ return dateField(e,['financeApprovedAt','approvalDate','approvedOn','sanctionDate','financeApprovalDate']); }
+  function disbursedOn(e){ return dateField(e,['financeDisbursedAt','disbursementDate','disbursedOn','disbursalDate']); }
+  function loanAmt(e){ var v=e.loanAmount||e.loanAmt||e.financeAmount||e.sanctionAmount; v=Number(String(v==null?'':v).replace(/[^0-9.]/g,'')); return isFinite(v)?v:0; }
+
+  /* ================= financier names =================
+     The CRM says "Hero Fin Corp", the sale register says "HERO FINCORP LTD.".
+     Canonicalise both so the funnel and the invoice register line up.        */
+  var FIN_ALIAS=[
+    ['Hero Fin Corp',/hero\s*fin/],           ['Shree Ram',/shri?ram|shree\s*ram/],
+    ['IDFC',/idfc/],                          ['Kotak',/kotak/],
+    ['HDFC',/hdfc/],                          ['Hinduja',/hinduja/],
+    ['L&T',/l\s*&\s*t|l\s*and\s*t|lnt\b/],    ['Tata Capital',/tata/],
+    ['AU Small',/au\s*small|\bau\s*bank/],    ['Bajaj',/bajaj/],
+    ['Sudarshan Finance',/sudarshan/],        ['ICICI',/icici/],
+    ['Axis',/axis/],                          ['IndusInd',/indusind/],
+    ['Chola',/chola/],                        ['Poonawalla',/poonawalla/],
+    ['Muthoot',/muthoot/],                    ['TVS Credit',/tvs\s*credit/]
+  ];
+  function canonFin(v){
+    var t=low(v).replace(/\b(ltd|limited|pvt|private|finance|financial|services|bank|capital|prime|corp|corporation)\b\.?/g,'').trim();
+    if(!t) return '';
+    for(var i=0;i<FIN_ALIAS.length;i++){ if(FIN_ALIAS[i][1].test(low(v))) return FIN_ALIAS[i][0]; }
+    return String(v).trim().replace(/\s+/g,' ');
+  }
+
+  /* ---- financed retail straight from the sale register (measured disbursal) ----
+     ops.salesRows carries {d,m,inv,t,a,mo,s,dse}. If OpsData2.gs is extended to
+     emit the register's "Financer Name" column, this lights up automatically.  */
+  function registerFin(){
+    var o; try{ o=JSON.parse(localStorage.getItem('hero-ops-v1'))||{}; }catch(e){ o={}; }
+    var rowsR=o.salesRows||[]; if(!rowsR.length) return {has:false, map:{}, cash:0, total:0};
+    var p=''; try{ p=(typeof currentPeriod!=='undefined'&&currentPeriod)||''; }catch(e){}
+    var KEYS=['fn','fin','financer','financier','financerName','financierName','f'];
+    var has=false, map={}, cash=0, total=0;
+    rowsR.forEach(function(r){
+      if(p && r.m!==p) return;
+      var raw=null;
+      for(var i=0;i<KEYS.length;i++){ if(r[KEYS[i]]!=null && String(r[KEYS[i]]).trim()!==''){ raw=r[KEYS[i]]; break; } }
+      var seen=KEYS.some(function(k){ return Object.prototype.hasOwnProperty.call(r,k); });
+      if(seen) has=true;
+      total++;
+      if(raw==null){ cash++; return; }
+      var k=canonFin(raw); if(!k){ cash++; return; }
+      map[k]=(map[k]||0)+1;
+    });
+    return {has:has, map:map, cash:cash, total:total};
+  }
+
+  /* ================= scope: honour the Finance tab's own filters ================= */
+  function scope(){
+    var ctr=''; var el=document.getElementById('vm-finance-counter'); if(el) ctr=el.value||'';
+    var eq=function(a,b){ return low(a)===low(b); };
+    var list=ENQ().filter(function(e){
+      try{ if(typeof inPeriod==='function' && !inPeriod(e)) return false; }catch(err){}
+      if(ctr && !eq(e.counter,ctr)) return false;
+      return isFin(e);
+    });
+    return {rows:list, counter:ctr};
+  }
+
+  function rowsOf(list){
+    return list.map(function(e){
+      var st=statusOf(e), r=RANK[st.s];
+      var ap=approvedOn(e), db=disbursedOn(e);
+      return {
+        e:e, id:e.id, cust:e.customer, phone:e.phone, counter:e.counter, model:e.model, rep:e.rep,
+        stage:e.stage, financier:canonFin(e.financier)||'(no financier)',
+        s:st.s, measured:st.m, rank:r,
+        submitted: r>=1 || st.s==='rejected',
+        approved:  r>=2,
+        disbursed: r>=3,
+        rejected:  st.s==='rejected',
+        apDate:ap, dbDate:db, amt:loanAmt(e),
+        ttApprove: dayDiff(e.createdAt, ap),
+        ttDisburse: dayDiff(ap, db),
+        idle: since(e.lastContactAt||e.createdAt)
+      };
+    });
+  }
+
+  /* stalled = live file, no movement for longer than the threshold */
+  function stalledOf(rows){
+    var active; try{ active=ACTIVE_STAGES; }catch(e){ active=['New','Contacted','Qualified','Test Drive','Negotiation','Booked']; }
+    return rows.filter(function(r){
+      if(r.rejected || r.disbursed) return false;
+      if(active.indexOf(r.stage)<0) return false;
+      if(r.s==='approved'){ var d=r.apDate?since(r.apDate):r.idle; return d!=null && d>prefs.stallApp; }
+      return r.idle!=null && r.idle>prefs.stallSub;
+    }).map(function(r){
+      r.stallDays = (r.s==='approved' && r.apDate) ? since(r.apDate) : r.idle;
+      r.stallAt   = r.s==='approved' ? 'Approved, not disbursed' : r.s==='submitted' ? 'With financier, no reply' : 'Docs never submitted';
+      return r;
+    }).sort(function(a,b){ return (b.stallDays||0)-(a.stallDays||0); });
+  }
+
+  function agg(rows){
+    var a={n:rows.length, sub:0, app:0, dis:0, rej:0, pend:0, amt:0, ttA:[], ttD:[]};
+    rows.forEach(function(r){
+      if(r.submitted)a.sub++; if(r.approved)a.app++; if(r.disbursed)a.dis++;
+      if(r.rejected)a.rej++; if(r.s==='pending')a.pend++;
+      if(r.disbursed)a.amt+=r.amt;
+      if(r.ttApprove!=null && r.ttApprove>=0)a.ttA.push(r.ttApprove);
+      if(r.ttDisburse!=null && r.ttDisburse>=0)a.ttD.push(r.ttDisburse);
+    });
+    a.subPct=a.n?Math.round(a.sub/a.n*100):0;
+    a.appPct=a.sub?Math.round(a.app/a.sub*100):0;
+    a.disPct=a.app?Math.round(a.dis/a.app*100):0;
+    a.rejPct=a.sub?Math.round(a.rej/a.sub*100):0;
+    a.endPct=a.n?Math.round(a.dis/a.n*100):0;
+    var avg=function(x){ return x.length?Math.round(x.reduce(function(p,c){return p+c;},0)/x.length):null; };
+    a.avgA=avg(a.ttA); a.avgD=avg(a.ttD);
+    return a;
+  }
+
+  /* ================= rendering ================= */
+  function kpi(v,l,c,sub){ return '<div class="card kpi"><h3>'+l+'</h3><div class="kpi-value"'+(c?(' style="color:'+c+'"'):'')+'>'+v+'</div><div class="kpi-trend">'+(sub||'&nbsp;')+'</div></div>'; }
+  function rag(v,good,watch){ return v>=good?'#2bd47d':v>=watch?'#ffb02e':'#ff5c5c'; }
+  function INRk(n){ n=Math.round(Number(n)||0); if(!n) return '&mdash;'; if(n>=10000000) return '&#8377;'+(n/10000000).toFixed(2)+' Cr'; if(n>=100000) return '&#8377;'+(n/100000).toFixed(1)+' L'; return '&#8377;'+n.toLocaleString('en-IN'); }
+
+  function render(){
+    var root=document.getElementById('finfunnel-root'); if(!root) return;
+    var sc=scope(), rows=rowsOf(sc.rows), A=agg(rows), stall=stalledOf(rows);
+    var measured=rows.filter(function(r){return r.measured;}).length;
+    var per=''; try{ per=(typeof currentPeriod!=='undefined'&&currentPeriod)?formatMonthLabel(currentPeriod):'All time'; }catch(e){ per='All time'; }
+    var scopeLbl=per+(sc.counter?(' · '+sc.counter):'');
+
+    var h='';
+    h+='<div class="card" style="margin-bottom:14px;border-left:4px solid #5b9eff">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<h3 style="margin:0">&#127974; Finance funnel &mdash; '+esc(scopeLbl)+'</h3>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sm" onclick="ffExport(\'stalled\')">&#11015;&#65039; Export stalled files</button>'
+      +'<button class="btn btn-sm" onclick="ffExport(\'all\')">&#11015;&#65039; Export all files</button></div></div>'
+      +'<p class="help-text">Every finance-required enquiry, tracked from <b>docs pending &rarr; submitted &rarr; approved &rarr; disbursed</b>, split by financier. '
+      +'The biggest drop between two stages is where your money is stuck. Uses the tab&rsquo;s Month and Counter filters above.</p>'
+      +'<div class="filters" style="margin:10px 0 0">'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Stalled if submitted &gt;'
+      +'<input type="number" min="1" max="60" value="'+prefs.stallSub+'" onchange="ffSet(\'stallSub\',this.value)" style="width:60px;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:6px 8px;border-radius:8px"/> days</label>'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Approved but undisbursed &gt;'
+      +'<input type="number" min="1" max="60" value="'+prefs.stallApp+'" onchange="ffSet(\'stallApp\',this.value)" style="width:60px;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:6px 8px;border-radius:8px"/> days</label>'
+      +'<span class="help-text" style="margin-left:auto">'+measured+' of '+rows.length+' file(s) have a real finance status; the rest are inferred from stage.</span>'
+      +'</div></div>';
+
+    if(!rows.length){
+      root.innerHTML=h+'<div class="card"><p class="help-text" style="text-align:center;padding:18px">No finance-required enquiries in this view.</p></div>';
+      return;
+    }
+
+    /* --- headline --- */
+    h+='<div class="grid grid-4">';
+    h+=kpi(A.n,'Finance files','#5b9eff',A.pend+' still at docs stage');
+    h+=kpi(A.appPct+'%','Approval rate',rag(A.appPct,75,55),A.app+' of '+A.sub+' submitted');
+    h+=kpi(A.disPct+'%','Disbursal rate',rag(A.disPct,85,65),A.dis+' of '+A.app+' approved');
+    h+=kpi(stall.length,'Files stalled',stall.length?'#ff5c5c':'#2bd47d','no movement past threshold');
+    h+='</div>';
+    h+='<div class="grid grid-4" style="margin-top:12px">';
+    h+=kpi(A.rej,'Rejected','#ff5c5c',A.rejPct+'% of submitted');
+    h+=kpi(A.avgA!=null?A.avgA+' d':'&mdash;','Avg days to approve',A.avgA==null?'':(A.avgA<=3?'#2bd47d':A.avgA<=7?'#ffb02e':'#ff5c5c'),A.avgA==null?'needs approval dates':'enquiry &rarr; sanction');
+    h+=kpi(A.avgD!=null?A.avgD+' d':'&mdash;','Avg days to disburse',A.avgD==null?'':(A.avgD<=3?'#2bd47d':A.avgD<=7?'#ffb02e':'#ff5c5c'),A.avgD==null?'needs disbursal dates':'sanction &rarr; money out');
+    h+=kpi(INRk(A.amt),'Disbursed value','#2bd47d',A.amt?'across '+A.dis+' file(s)':'add loan amounts to see this');
+    h+='</div>';
+
+    /* --- funnel --- */
+    var steps=[['Finance required',A.n,'#94a0c8'],['Submitted',A.sub,'#5b9eff'],['Approved',A.app,'#ffb02e'],['Disbursed',A.dis,'#2bd47d']];
+    var worst={drop:-1,i:0};
+    for(var i=1;i<steps.length;i++){ var d=steps[i-1][1]-steps[i][1]; if(d>worst.drop){ worst={drop:d,i:i}; } }
+    h+='<div class="grid grid-2" style="margin-top:14px">';
+    h+='<div class="card"><h3>Funnel</h3><div style="margin-top:6px">';
+    steps.forEach(function(s,ix){
+      var pct=A.n?Math.round(s[1]/A.n*100):0;
+      var drop=ix?steps[ix-1][1]-s[1]:0;
+      var isWorst=ix===worst.i && worst.drop>0;
+      h+='<div style="margin-bottom:12px">'
+        +'<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">'
+        +'<span style="font-weight:600">'+s[0]+'</span>'
+        +'<span style="color:var(--muted)">'+s[1]+' &middot; '+pct+'%'+(ix?(' <span style="color:'+(isWorst?'#ff5c5c':'var(--muted)')+'">&minus;'+drop+(isWorst?' &larr; biggest drop':'')+'</span>'):'')+'</span></div>'
+        +'<div class="pb" style="height:14px"><div class="pb-fill" style="width:'+pct+'%;background:'+s[2]+'"></div></div></div>';
+    });
+    h+='</div><p class="help-text">'+(worst.drop>0
+        ? 'Most files die between <b>'+steps[worst.i-1][0]+'</b> and <b>'+steps[worst.i][0]+'</b> &mdash; '+worst.drop+' file(s). That is the stage to fix first.'
+        : 'No material drop-off &mdash; the pipeline is clean.')+'</p></div>';
+    h+='<div class="card"><h3>Where files sit right now</h3><div class="chart-wrap"><canvas id="ff-status-chart"></canvas></div></div>';
+    h+='</div>';
+
+    /* --- financier-wise --- */
+    var byF={};
+    rows.forEach(function(r){ (byF[r.financier]=byF[r.financier]||[]).push(r); });
+    var reg=registerFin();
+    var fk=Object.keys(byF); if(reg.has) Object.keys(reg.map).forEach(function(k){ if(fk.indexOf(k)<0) fk.push(k); });
+    fk.sort(function(a,b){ return ((byF[b]||[]).length+(reg.map[b]||0))-((byF[a]||[]).length+(reg.map[a]||0)); });
+    var stallByF={}; stall.forEach(function(r){ stallByF[r.financier]=(stallByF[r.financier]||0)+1; });
+
+    h+='<div class="card" style="margin-top:14px"><h3>Financier-wise performance</h3>'
+      +'<p class="help-text">Approval% is of files submitted to that financier; disbursal% is of files they approved. '
+      +'A high approval% with a low disbursal% means the sanction is coming but the money is not &mdash; chase the branch, not the customer.'
+      +(reg.has?' <b>Invoiced</b> is the hard number from the sale register &mdash; treat it as the truth and the CRM columns as the process view.':'')+'</p>'
+      +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Financier</th>'
+      +'<th style="text-align:right">Files</th><th style="text-align:right">Submitted</th><th style="text-align:right">Approved</th>'
+      +'<th style="text-align:right">Rejected</th><th style="text-align:right">Disbursed</th>'
+      +(reg.has?'<th style="text-align:right">Invoiced</th>':'')
+      +'<th style="text-align:right">Approval%</th><th style="text-align:right">Disbursal%</th>'
+      +'<th style="text-align:right">Avg approve</th><th style="text-align:right">Stalled</th><th>Weakest link</th></tr></thead><tbody>';
+    fk.forEach(function(f){
+      if(!byF[f]) byF[f]=[];
+      var a=agg(byF[f]);
+      var st=[['Submission',a.n-a.sub],['Approval',a.sub-a.app],['Disbursal',a.app-a.dis]];
+      st.sort(function(x,y){return y[1]-x[1];});
+      var weak=st[0][1]>0?st[0][0]+' (&minus;'+st[0][1]+')':'&mdash;';
+      var sc2=stallByF[f]||0;
+      h+='<tr style="border-top:1px solid var(--line)">'
+        +'<td style="font-weight:700">'+esc(f)+'</td>'
+        +'<td style="text-align:right;font-weight:700">'+a.n+'</td>'
+        +'<td style="text-align:right;color:var(--muted)">'+a.sub+'</td>'
+        +'<td style="text-align:right">'+a.app+'</td>'
+        +'<td style="text-align:right;color:'+(a.rej?'#ff5c5c':'var(--muted)')+'">'+(a.rej||'&middot;')+'</td>'
+        +'<td style="text-align:right;color:#2bd47d;font-weight:700">'+a.dis+'</td>'
+        +(reg.has?('<td style="text-align:right;font-weight:800;color:#5b9eff">'+(reg.map[f]||'&middot;')+'</td>'):'')
+        +'<td style="text-align:right;font-weight:700;color:'+rag(a.appPct,75,55)+'">'+(a.sub?a.appPct+'%':'&mdash;')+'</td>'
+        +'<td style="text-align:right;font-weight:700;color:'+rag(a.disPct,85,65)+'">'+(a.app?a.disPct+'%':'&mdash;')+'</td>'
+        +'<td style="text-align:right;color:var(--muted)">'+(a.avgA!=null?a.avgA+' d':'&mdash;')+'</td>'
+        +'<td style="text-align:right;font-weight:700;color:'+(sc2?'#ff5c5c':'var(--muted)')+'">'+(sc2||'&middot;')+'</td>'
+        +'<td style="color:var(--muted);font-size:12px">'+weak+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+    if(reg.has){
+      var fnd=reg.total-reg.cash, pen=reg.total?Math.round(fnd/reg.total*100):0;
+      h+='<p class="help-text" style="margin-top:10px">Sale register for this period: <b>'+reg.total+'</b> invoice(s) &mdash; '
+        +'<b style="color:#2bd47d">'+fnd+'</b> financed ('+pen+'% penetration), <b>'+reg.cash+'</b> cash. '
+        +'Where <b>Invoiced</b> exceeds <b>Disbursed</b>, the sale happened but the enquiry was never closed in the CRM.</p>';
+    } else {
+      h+='<div style="margin-top:12px;padding:10px 14px;border-left:4px solid var(--warn,#ffb02e);background:rgba(255,176,46,0.07);border-radius:8px">'
+        +'<div style="font-weight:700;margin-bottom:4px">&#9888;&#65039; Disbursal is inferred, not measured</div>'
+        +'<div class="help-text">Your <b>sale register</b> carries a <b>Financer Name</b> column on every invoice &mdash; that is the only hard, financier-wise disbursal figure you have. '
+        +'<b>OpsData2.gs</b> currently drops it when building <code>salesRows</code>. Add the column to that push (as <code>fn</code>) and this table gains a measured <b>Invoiced</b> column on the next sync &mdash; no dashboard change needed.</div></div>';
+    }
+    h+='</div>';
+
+    /* --- stalled files --- */
+    h+='<div class="card" style="margin-top:14px;border-left:4px solid #ff5c5c">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<h3 style="margin:0">&#128308; Stalled finance files ('+stall.length+')</h3>'
+      +'<button class="btn btn-sm" onclick="ffExport(\'stalled\')">&#11015;&#65039; Export</button></div>'
+      +'<p class="help-text">Live files with no movement. Sorted by how long they have been stuck. Click a row to open the enquiry.</p>'
+      +'<div style="overflow-x:auto"><table class="table"><thead><tr><th style="text-align:right">Days</th><th>Customer</th><th>Phone</th>'
+      +'<th>Counter</th><th>Financier</th><th>Model</th><th>DSE</th><th>Status</th><th>Stuck at</th></tr></thead><tbody>';
+    if(!stall.length) h+='<tr><td colspan="9" style="text-align:center;color:#2bd47d;padding:18px">&#10003; Nothing stalled in this view.</td></tr>';
+    stall.slice(0,300).forEach(function(r){
+      var c=r.stallDays>21?'#ff5c5c':r.stallDays>14?'#ffb02e':'var(--text)';
+      h+='<tr onclick="openModal(\''+esc(r.id)+'\')" style="cursor:pointer;border-top:1px solid var(--line)">'
+        +'<td style="text-align:right;font-weight:800;color:'+c+'">'+r.stallDays+'</td>'
+        +'<td>'+esc(r.cust)+'</td>'
+        +'<td>'+(r.phone?('<a href="tel:'+esc(r.phone)+'" style="color:#5b9eff;text-decoration:none">'+esc(r.phone)+'</a>'):'&mdash;')+'</td>'
+        +'<td style="color:var(--muted)">'+esc(r.counter)+'</td>'
+        +'<td>'+esc(r.financier)+'</td>'
+        +'<td style="color:var(--muted)">'+esc(r.model)+'</td>'
+        +'<td style="color:var(--muted)">'+esc(r.rep)+'</td>'
+        +'<td><span style="background:'+CLR[r.s]+'22;color:'+CLR[r.s]+';padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap">'+LBL[r.s]+'</span></td>'
+        +'<td style="color:var(--muted);font-size:12px">'+r.stallAt+'</td></tr>';
+    });
+    h+='</tbody></table></div></div>';
+
+    /* --- rejections --- */
+    var rej=rows.filter(function(r){return r.rejected;});
+    if(rej.length){
+      var why={};
+      rej.forEach(function(r){ var k=String(r.e.financeRejectReason||r.e.dropReason||'Not recorded').trim()||'Not recorded'; why[k]=(why[k]||0)+1; });
+      h+='<div class="card" style="margin-top:14px"><h3>Why finance files are rejected ('+rej.length+')</h3><table class="table"><tbody>';
+      Object.keys(why).sort(function(a,b){return why[b]-why[a];}).forEach(function(k){
+        h+='<tr><td>'+esc(k)+'</td><td style="text-align:right;font-weight:700;color:#ff5c5c">'+why[k]+'</td>'
+          +'<td style="text-align:right;color:var(--muted)">'+Math.round(why[k]/rej.length*100)+'%</td></tr>';
+      });
+      h+='</tbody></table><p class="help-text">Repeat reasons are usually fixable at source &mdash; wrong financier for the profile, or documents collected too late.</p></div>';
+    }
+
+    root.innerHTML=h;
+
+    var counts={pending:0,submitted:0,approved:0,rejected:0,disbursed:0};
+    rows.forEach(function(r){ counts[r.s]++; });
+    var ks=Object.keys(counts).filter(function(k){return counts[k]>0;});
+    if(typeof drawChart==='function' && ks.length){
+      drawChart('ff-status-chart','doughnut',{labels:ks.map(function(k){return LBL[k];}),
+        datasets:[{data:ks.map(function(k){return counts[k];}),backgroundColor:ks.map(function(k){return CLR[k];})}]},{});
+    }
+  }
+
+  /* ================= handlers ================= */
+  window.ffSet=function(k,v){ prefs[k]=Math.max(1,Math.min(60,parseInt(v,10)||DEF[k])); savePrefs(); render(); };
+  window.ffExport=function(kind){
+    var sc=scope(), rows=rowsOf(sc.rows);
+    var list = kind==='stalled' ? stalledOf(rows) : rows;
+    if(!list.length){ if(typeof showToast==='function') showToast('Nothing to export'); return; }
+    function cell(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }
+    var head=['ID','Customer','Phone','Counter','Financier','Model','DSE','Stage','Finance status','Status source',
+              'Approved on','Disbursed on','Loan amount','Days to approve','Days to disburse','Days idle','Stuck at'];
+    var lines=[head.map(cell).join(',')];
+    list.forEach(function(r){
+      lines.push([r.id,r.cust,r.phone,r.counter,r.financier,r.model,r.rep,r.stage,LBL[r.s],r.measured?'recorded':'inferred',
+        r.apDate,r.dbDate,r.amt||'',r.ttApprove==null?'':r.ttApprove,r.ttDisburse==null?'':r.ttDisburse,
+        r.idle==null?'':r.idle,r.stallAt||''].map(cell).join(','));
+    });
+    var p=''; try{ p=(typeof currentPeriod!=='undefined'&&currentPeriod)?currentPeriod:'all'; }catch(e){ p='all'; }
+    var blob=new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8;'});
+    var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download='finance_'+kind+'_'+(sc.counter?sc.counter.replace(/[^a-z0-9]+/gi,'-')+'_':'')+p+'_'+today()+'.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); },2000);
+    if(typeof showToast==='function') showToast('Exported '+list.length+' file(s)');
+  };
+
+  /* ================= enquiry form: finance tracking fields ================= */
+  var F_STATUS=['','Docs pending','Submitted to financier','Approved','Rejected','Disbursed'];
+  var F_REJECT=['','Low CIBIL / credit score','Income proof insufficient','No income proof / informal income',
+                'Existing loan default','Address / KYC mismatch','Guarantor not available','Down payment short',
+                'EMI too high for customer','Financier declined the model','Other'];
+  function box(label,inner){ return '<label style="flex-direction:column;gap:3px;font-size:12px;color:var(--muted)">'+label+inner+'</label>'; }
+  var IN='style="background:var(--panel);border:1px solid var(--line);color:var(--text);padding:7px 10px;border-radius:8px"';
+
+  function injectFields(){
+    if(document.getElementById('f-fin-status')) return true;
+    var fin=document.getElementById('f-financier-in'); if(!fin) return false;
+    var host=fin.parentNode; if(!host||!host.parentNode) return false;
+    var wrap=document.createElement('label');
+    wrap.className='full'; wrap.id='fin-track-wrap';
+    wrap.style.cssText='background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:4px;display:none';
+    wrap.innerHTML='<span style="font-weight:500;color:var(--text);font-size:13px;margin-bottom:8px;display:block">&#127974; Finance file tracking</span>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+      +box('File status','<select id="f-fin-status" '+IN+'>'+F_STATUS.map(function(s){return '<option value="'+esc(s)+'">'+(s||'&mdash; Select &mdash;')+'</option>';}).join('')+'</select>')
+      +box('Loan amount (&#8377;)','<input id="f-fin-amount" type="number" min="0" placeholder="e.g. 65000" '+IN+'/>')
+      +box('Approved / sanctioned on','<input id="f-fin-approved" type="date" '+IN+'/>')
+      +box('Disbursed on','<input id="f-fin-disbursed" type="date" '+IN+'/>')
+      +'</div>'
+      +'<div id="f-fin-reject-wrap" style="display:none;margin-top:10px">'
+      +box('Rejection reason','<select id="f-fin-reject" '+IN+'>'+F_REJECT.map(function(s){return '<option value="'+esc(s)+'">'+(s||'&mdash; Select a reason &mdash;')+'</option>';}).join('')+'</select>')
+      +'</div>';
+    host.parentNode.insertBefore(wrap, host.nextSibling);
+    var fr=document.getElementById('f-finance-in'); if(fr) fr.addEventListener('change',toggleFin);
+    var fs=document.getElementById('f-fin-status'); if(fs) fs.addEventListener('change',toggleReject);
+    return true;
+  }
+  function toggleFin(){
+    var w=document.getElementById('fin-track-wrap'), fr=document.getElementById('f-finance-in');
+    if(w&&fr) w.style.display = low(fr.value)==='yes' ? 'block' : 'none';
+  }
+  function toggleReject(){
+    var w=document.getElementById('f-fin-reject-wrap'), s=document.getElementById('f-fin-status');
+    if(w&&s) w.style.display = low(s.value)==='rejected' ? 'block' : 'none';
+  }
+  function fillFields(e){
+    injectFields();
+    var g=function(id){ return document.getElementById(id); };
+    if(g('f-fin-status'))    g('f-fin-status').value    = (e&&e.financeStatus)||'';
+    if(g('f-fin-amount'))    g('f-fin-amount').value    = (e&&(e.loanAmount||''))||'';
+    if(g('f-fin-approved'))  g('f-fin-approved').value  = (e&&approvedOn(e))||'';
+    if(g('f-fin-disbursed')) g('f-fin-disbursed').value = (e&&disbursedOn(e))||'';
+    if(g('f-fin-reject'))    g('f-fin-reject').value    = (e&&e.financeRejectReason)||'';
+    toggleFin(); toggleReject();
+  }
+  function readFields(){
+    var g=function(id){ var n=document.getElementById(id); return n?n.value:''; };
+    return { financeStatus:g('f-fin-status'), loanAmount:g('f-fin-amount'),
+             financeApprovedAt:g('f-fin-approved'), financeDisbursedAt:g('f-fin-disbursed'),
+             financeRejectReason:g('f-fin-reject') };
+  }
+
+  /* wrap openModal → populate; wrap saveEnquiry → persist */
+  function wrapForm(){
+    var oOpen=window.openModal;
+    if(typeof oOpen==='function' && !oOpen.__ffWrapped){
+      window.openModal=function(id){
+        var r=oOpen.apply(this,arguments);
+        setTimeout(function(){
+          var rec=null; try{ rec=id?ENQ().filter(function(x){return x.id===id;})[0]:null; }catch(e){}
+          fillFields(rec);
+        },40);
+        return r;
+      };
+      window.openModal.__ffWrapped=true;
+    }
+    var oSave=window.saveEnquiry;
+    if(typeof oSave==='function' && !oSave.__ffWrapped){
+      window.saveEnquiry=function(){
+        var wasEditing=null; try{ wasEditing=editingId; }catch(e){}
+        var vals=readFields();
+        var r=oSave.apply(this,arguments);
+        var bg=document.getElementById('modal-bg');
+        var saved = bg && (bg.style.display==='none' || !bg.classList.contains('open'));
+        if(saved){
+          try{
+            var rec = wasEditing ? ENQ().filter(function(x){return x.id===wasEditing;})[0] : ENQ()[0];
+            if(rec){
+              var finReq = low(rec.financeRequired)==='yes';
+              rec.financeStatus       = finReq ? vals.financeStatus : '';
+              rec.loanAmount          = finReq ? vals.loanAmount : '';
+              rec.financeApprovedAt   = finReq ? vals.financeApprovedAt : '';
+              rec.financeDisbursedAt  = finReq ? vals.financeDisbursedAt : '';
+              rec.financeRejectReason = (finReq && low(vals.financeStatus)==='rejected') ? vals.financeRejectReason : '';
+              if(typeof saveData==='function') saveData();
+            }
+          }catch(e){ console.warn('[ff]',e); }
+        }
+        try{ var v=document.getElementById('view-finance'); if(v&&v.classList.contains('active')) render(); }catch(e){}
+        return r;
+      };
+      window.saveEnquiry.__ffWrapped=true;
+    }
+  }
+
+  /* ================= mount ================= */
+  function mount(){
+    var view=document.getElementById('view-finance'); if(!view) return false;
+    if(document.getElementById('finfunnel-root')) return true;
+    var d=document.createElement('div'); d.id='finfunnel-root'; d.style.marginTop='14px';
+    view.appendChild(d);
+    return true;
+  }
+  function init(){
+    mount(); injectFields(); wrapForm();
+    var oView=window.setView;
+    if(typeof oView==='function' && !oView.__ffWrapped){
+      window.setView=function(name){ oView(name); if(name==='finance'){ try{ mount(); render(); }catch(e){ console.warn('[ff]',e); } } };
+      window.setView.__ffWrapped=true;
+    }
+    var oFin=window.renderFinance;   // the counter dropdown calls this directly
+    if(typeof oFin==='function' && !oFin.__ffWrapped){
+      window.renderFinance=function(){ var r=oFin.apply(this,arguments); try{ mount(); render(); }catch(e){} return r; };
+      window.renderFinance.__ffWrapped=true;
+    }
+    try{ var a=document.querySelector('.nav-item.active'); if(a && a.dataset.view==='finance') render(); }catch(e){}
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init); else init();
+})();
+</script>
+
 </html>
