@@ -4033,4 +4033,774 @@ document.addEventListener('DOMContentLoaded', initApp);
 })();
 </script>
 
+<!-- ===== SUB-DEALER NETWORK tab — Paid Check · Retail vs Target · Vahan FY26 =====
+     Additive and self-contained. Adds a "Sub-Dealer Network" nav item with three
+     sub-sections. Seeded from NETWORK-10348; updates by paste import, and picks up
+     networkPaid / vahan keys from the Apps Script feed automatically once published.
+     ================================================================================ -->
+<script>
+(function(){
+  "use strict";
+  var NKEY='hero-network-v1';
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function low(s){ return String(s==null?'':s).trim().toLowerCase(); }
+  function num(v){ v=Number(String(v==null?'':v).replace(/[^0-9.\-]/g,'')); return isFinite(v)?v:0; }
+  function INR(n){ n=Math.round(Number(n)||0); if(!n) return '₹0';
+    if(n>=10000000) return '₹'+(n/10000000).toFixed(2)+' Cr';
+    if(n>=100000) return '₹'+(n/100000).toFixed(1)+' L';
+    return '₹'+n.toLocaleString('en-IN'); }
+
+  /* match "21422 - GURUKRIPA AUTO AGENCY", "PM MOTORS-RANJHI" and "P.M Motors"
+     to the same key so the sale register can be joined to the network sheet */
+  function nkey(v){
+    var s=String(v==null?'':v).toUpperCase();
+    s=s.replace(/^\s*\d{4,6}\s*[-–]\s*/,'');          // drop the dealer code prefix
+    s=s.split(/[-–]/)[0];                              // drop the location suffix
+    return s.replace(/[^A-Z0-9]/g,'');
+  }
+
+  /* ---------- payout scheme, verbatim from the network incentive sheet ---------- */
+  var PAYOUT=[
+    {n:'Market Share',                 cond:'Growth over LY',            amt:5000, per:false},
+    {n:'My Score Network',             cond:'—',                         amt:5000, per:false},
+    {n:'New Extension Appointed',      cond:'As per market potential',   amt:5000, per:false},
+    {n:'Target achievement on dispatch',cond:'90% with paid norms',      amt:15,   per:true},
+    {n:'Target achievement on dispatch',cond:'100% with paid norms',     amt:20,   per:true},
+    {n:'Paid-up Maintain Bonus',       cond:'All network',               amt:3000, per:false},
+    {n:'Scooter growth',               cond:'10% growth over LY',        amt:3000, per:false},
+    {n:'125cc growth',                 cond:'10% growth over LY',        amt:3000, per:false},
+    {n:'Entry segment growth',         cond:'10% growth over LY',        amt:3000, per:false}
+  ];
+
+  /* ---------- seed: the live position from NETWORK-10348 ---------- */
+  function seed(){
+    function N(name,status,norm,type){ return {name:name,status:status,norm:norm,type:type,
+      o:0,d:0,r:0,c:0,target:0,debit:0,credit:0,creditVeh:0,shouldInvest:0,actualPaid:0,invested:0,gap:0}; }
+    return {
+      updatedAt:'Sheet snapshot', source:'seed',
+      networks:[
+        N('ANUSHKA MOTORS','Fail',20,'Sub-dealer'),
+        N('AYANSH MOTORS-GOUR','Fail',40,'Sub-dealer'),
+        N('GUPTA MOTORS-BAGRAJI','Pass',20,'Sub-dealer'),
+        N('MAA NARMADA TRADERS','',0,'Sub-dealer'),
+        N('MARUTI MOTORS-SEONI','Fail',40,'Sub-dealer'),
+        N('MUBEENA MOTORS-AMARPUR','Fail',40,'Sub-dealer'),
+        N('PM MOTORS-RANJHI','Pass',20,'Sub-dealer'),
+        N('UMA MOTORS-SAKKA','Fail',30,'Sub-dealer'),
+        N('21422 - GURUKRIPA AUTO AGENCY','Fail',50,'Extension counter'),
+        N('22086 - AWADHIYA AUTO AGENCY','Pass',60,'Extension counter'),
+        N('65131 - ANAND MOTORS-SHAHPURA','Pass',62,'Extension counter'),
+        N('65815 - VISHWAKARMA MOTORS','Pass',50,'Extension counter')
+      ],
+      demand:{
+        nets:['Anand','Gurukirpa','Awadiya','Pragati','Anushree','Vishwakarma'],
+        rows:[
+          {s:'Scooter',m:'DESTINI 125',k:'HDESYDRVCFIBRD',c:'FI VX DRSC CANDY BLAZING RED',v:[0,0,0,0,0,1]},
+          {s:'Scooter',m:'NEW DESTINI 125',k:'HDSTRHSZCFIBTB',c:'FI ZX+ DSSC BLUISH TEAL BLACK',v:[0,0,1,0,0,0]},
+          {s:'Scooter',m:'NEW DESTINI 125',k:'HDSTRHSZCFIGMM',c:'FI ZX+ DSSC METLK GUN METAL',v:[0,0,1,0,0,0]},
+          {s:'Scooter',m:'NEW DESTINI 125',k:'HDSTRHSZCFIPKB',c:'FI ZX+ DSSC PEARL BLUE BLACK',v:[0,0,1,0,2,0]},
+          {s:'Scooter',m:'DESTINI 110',k:'HDSTMDSZCFIMNB',c:'FI ZX DSSC METLK NEXUS BLUE',v:[0,0,0,0,1,0]},
+          {s:'Scooter',m:'DESTINI PRIME',k:'HDESHDRLMFIMNB',c:'FI DRS SM METL NEXUS BLUE',v:[0,0,1,0,0,0]},
+          {s:'Scooter',m:'DESTINI PRIME',k:'HDESHDRLMFINRD',c:'FI DRS SM NOBLE RED',v:[0,0,1,0,0,0]},
+          {s:'Entry',m:'HF DELUXE (All Blk)',k:'HDLHCDRSCFIBLK',c:'DRS C FI BLACK',v:[16,0,0,2,4,0]},
+          {s:'Entry',m:'HF DELUXE (Self)',k:'HDLHADRSCFISBK',c:'DRS CS FI BLACK-RED STRIPE',v:[0,0,2,0,2,0]},
+          {s:'Entry',m:'HF DELUXE (Self)',k:'HDLHADRSCFIBRD',c:'DRS CS FI CANDY BLAZING RED',v:[0,0,2,4,1,0]},
+          {s:'Entry',m:'HF DELUXE (Self)',k:'HDLHADRSCFIBKG',c:'DRS CS FI BLACK-GREY STR',v:[0,0,2,2,2,0]},
+          {s:'Entry',m:'HF DELUXE (Self)',k:'HDLHADRSCFIBKB',c:'DRS CS FI BLACK NEXUS BLUE',v:[0,0,0,2,1,0]},
+          {s:'Entry',m:'HF DELUXE (Pro)',k:'HDLXBIRSCFIBKB',c:'PRO i3s DRSC FI BLACK NEXUS BLUE',v:[0,0,1,0,0,0]},
+          {s:'Entry',m:'HF DELUXE (Pro)',k:'HDLXBIRSCFIBKG',c:'PRO i3s DRSC FI BLACK-GREY STRIPE',v:[0,0,1,2,0,0]},
+          {s:'Entry',m:'HF DELUXE (Pro)',k:'HDLXBIRSCFIBKR',c:'PRO i3s DRSC FI BLACK-RED STRIPE',v:[0,0,1,2,0,0]},
+          {s:'Entry',m:'HF DELUXE (Pro)',k:'HDLXBIRSCFIBKY',c:'PRO i3s DRSC FI BLK FUNK LIME YELLOW',v:[0,0,1,2,2,2]},
+          {s:'Entry',m:'HF DELUXE (Self+I3s)',k:'HDLHAIRSCFIBKG',c:'DRS C I3S FI BLK-GREY STR',v:[0,0,0,0,0,2]},
+          {s:'Deluxe 100',m:'PASSION + (Drum)',k:'HPPLBIRSCFIBHG',c:'i3S DRSC FI BLACK HEAVY GREY',v:[0,0,0,0,1,0]},
+          {s:'Deluxe 100',m:'PASSION + (Drum)',k:'HPPLBIRSCFIBKB',c:'i3S DRSC FI BLACK NEXUS BLUE',v:[0,0,1,1,1,0]},
+          {s:'Deluxe 100',m:'PASSION + (Drum)',k:'HPPLBIRSCFISBK',c:'i3S DRSC FI SPORTS RED BLACK',v:[0,0,1,0,0,0]},
+          {s:'Deluxe 100',m:'PASSION + (Disc)',k:'HPPLDISSCFIMNB',c:'i3S DSSC FI METALIC NEXUS BLUE',v:[0,0,0,2,0,0]},
+          {s:'Deluxe 100',m:'SPLENDOR + (Self)',k:'HSPLMDRSCFISBK',c:'DRSC FI BLACK SPORTS RED STRIPE',v:[0,0,0,0,2,0]},
+          {s:'Deluxe 100',m:'SPLENDOR + (Self)',k:'HSPLMDRSCFIRPB',c:'DRS C FI BLACK-RED PURPLE STRIPE',v:[0,0,1,1,2,0]},
+          {s:'Deluxe 100',m:'SPLENDOR + (Self)',k:'HSPLMDRSCFIFSV',c:'DRSC FI FORCE SILVER METALIC',v:[0,0,2,1,0,0]},
+          {s:'Deluxe 100',m:'SPLENDOR + (Self)',k:'HSPLMDRSCFIBHG',c:'DRSC FI BLACK HEAVY GREY',v:[0,0,2,2,2,0]},
+          {s:'Deluxe 100',m:'SPLENDOR + (All Blk)',k:'HSPUNIRSCFIBLA',c:'i3S DRSC FI BLACK AND ACCENT',v:[3,0,2,4,6,0]},
+          {s:'Deluxe 100',m:'SPLENDOR + (Ltd Edition)',k:'HSPUNHRSCFIIDG',c:'i3S DRSC FI INDUSTRIAL DARK GREY',v:[3,0,0,0,0,0]},
+          {s:'Deluxe 100',m:'SPLENDOR+ XTEC',k:'HSPLMTSSCFIBSB',c:'I3S DSSC FI BLACK-SPARKING BLUE',v:[0,0,0,0,2,0]},
+          {s:'Deluxe 100',m:'SPLENDOR+ XTEC',k:'HSPLMTSSCFIRBK',c:'I3S DSSC FI BLACK-RED STRIPES',v:[0,0,0,0,2,1]},
+          {s:'Deluxe 100',m:'SPLENDOR+ XTEC',k:'HSPLMTRSCFIBSB',c:'I3S DRSC FI BLACK-SPARKING BLUE',v:[0,0,1,1,0,0]},
+          {s:'Deluxe 100',m:'SPLENDOR+ XTEC',k:'HSPLMTRSCFIRBK',c:'I3S DRSC FI BLACK-RED STRIPES',v:[0,0,1,1,0,1]},
+          {s:'Deluxe 100',m:'SPLENDOR+ XTEC',k:'HSPLMTRSCFITGB',c:'I3S DRSC FI BLACK TORNADO GREY',v:[0,0,1,1,2,0]},
+          {s:'Deluxe 100',m:'SPLENDOR+ XTEC 2.0',k:'HSPPLHRSCFIBHG',c:'I3S DRSC FI BLACK HEAVY GREY',v:[8,0,3,2,2,0]},
+          {s:'Deluxe 100',m:'SPLENDOR+ XTEC 2.0',k:'HSPPLHRSCFIMGM',c:'I3S DRSC FI MAT GUN METAL',v:[3,0,0,1,0,0]},
+          {s:'Deluxe 100',m:'SPLENDOR + (Self+I3s)',k:'HSPLMIRSCFIBHG',c:'I3S DRSC FI BLACK HEAVY GREY',v:[3,0,0,0,0,0]},
+          {s:'125cc',m:'GLAMOUR X (Drum)',k:'HGLMRDRSCFIBRE',c:'DRUM BLACK PEARL RED',v:[2,0,0,0,0,0]},
+          {s:'125cc',m:'GLAMOUR X (Drum)',k:'HGLMRDRSCFIBRD',c:'DRUM CANDY BLAZING RED',v:[2,0,0,1,1,0]},
+          {s:'125cc',m:'GLAMOUR X (Drum)',k:'HGLMRDRSCFIBLB',c:'DRUM BLACK TEAL BLUE',v:[0,0,0,1,0,0]},
+          {s:'125cc',m:'GLAMOUR X (Disc)',k:'HGLMRDSSCFIMMS',c:'DISC MATT METALLIC SILVER',v:[0,0,0,0,1,0]},
+          {s:'125cc',m:'GLAMOUR X (Disc)',k:'HGLMRDSSCFIBLB',c:'DISC BLACK TEAL BLUE',v:[0,0,1,1,0,0]},
+          {s:'125cc',m:'GLAMOUR X (Disc)',k:'HGLMRDSSCFIBRD',c:'DISC CANDY BLAZING RED',v:[0,0,1,1,0,0]},
+          {s:'125cc',m:'GLAMOUR X (Disc)',k:'HGLMRDSSCFIMNB',c:'DISC METALLIC NEXUS BLUE',v:[0,0,1,0,1,0]},
+          {s:'125cc',m:'SUPER SPLENDOR XTEC (Disc)',k:'HSPSEDSSCFIBRD',c:'FI DSSC CANDY BLAZING RED',v:[0,0,1,1,0,0]},
+          {s:'125cc',m:'SUPER SPLENDOR XTEC (Disc)',k:'HSPSEDSSCFIGBL',c:'FI DSSC GLOSSY BLACK',v:[0,0,1,1,0,0]},
+          {s:'125cc',m:'SUPER SPLENDOR XTEC (Disc)',k:'HSPSEDSSCFIMAG',c:'FI DSSC MAT AXIS GRAY MET',v:[0,0,1,1,0,0]},
+          {s:'125cc',m:'SUPER SPLENDOR XTEC (Drum)',k:'HSPSEDRSCFIMBN',c:'FI DRSC MATT NEXUS BLUE',v:[0,0,0,1,0,0]},
+          {s:'125cc',m:'SUPER SPLENDOR XTEC (Drum)',k:'HSPSEDRSCFIMAG',c:'FI DRSC MAT AXIS GRAY MET',v:[0,0,0,1,0,0]},
+          {s:'125cc',m:'SUPER SPLENDOR XTEC 2.0 (Drum)',k:'HSPSFDRSCFIGBL',c:'FI DRSC GLOSSY BLACK',v:[0,0,0,0,1,0]},
+          {s:'125cc',m:'SUPER SPLENDOR XTEC 2.0 (Drum)',k:'HSPSFDRSCFIMBN',c:'FI DRSC MATT NEXUS BLUE',v:[0,0,0,0,1,0]},
+          {s:'125cc',m:'SUPER SPLENDOR XTEC 2.0 (Disc)',k:'HSPSFDSSCFIMBN',c:'FI DSSC MATT NEXUS BLUE',v:[0,0,1,0,0,0]},
+          {s:'125cc',m:'SUPER SPLENDOR XTEC 2.0 (Disc)',k:'HSPSFDSSCFIMBC',c:'FI DSSC MAT CHESTNUT BROWN',v:[0,0,1,0,0,0]},
+          {s:'125cc',m:'SUPER SPLENDOR XTEC 2.0 (Disc)',k:'HSPSFDSSCFIMAG',c:'FI DSSC MAT AXIS GRAY MET',v:[0,0,1,0,0,0]},
+          {s:'125cc',m:'SUPER SPLENDOR XTEC 2.0 (Disc)',k:'HSPSFDSSCFIGBL',c:'FI DSSC GLOSSY BLACK',v:[0,0,1,0,0,0]},
+          {s:'125cc',m:'SUPER SPLENDOR XTEC 2.0 (Disc)',k:'HSPSFDSSCFIBRD',c:'FI DSSC CANDY BLAZING RED',v:[0,0,1,0,0,0]},
+          {s:'125cc',m:'XTREME 125R (IBS)',k:'HXTRPISSCFISRD',c:'FI IBS DS SL CS SPORTS RED',v:[0,0,0,1,0,0]},
+          {s:'125cc',m:'XTREME 125R (IBS) ETB',k:'HXTRPISSCFIBCB',c:'IBS DSSC BLACK COCKTAIL BLUE',v:[0,0,0,1,0,0]},
+          {s:'125cc',m:'XTREME 125R (IBS) ETB',k:'HXTRPISSCFIBMY',c:'IBS DSSC BLACK MOON YELLOW',v:[0,0,0,0,0,1]},
+          {s:'125cc',m:'XTREME 125R (Dual ABS)',k:'HXTRSASSCFIBLG',c:'DC LCD DSSC BLACK LEAF GREEN',v:[0,0,0,1,0,0]},
+          {s:'125cc',m:'XTREME 125R (Dual ABS)',k:'HXTRSASSCFIBPR',c:'DC LCD DSSC BLACK PEARL RED',v:[0,0,0,1,0,0]}
+        ]
+      },
+      vahan:{
+        rto:'JABALPUR RTO — MP20', fy:'FY 2025-26',
+        months:['Apr-25','May-25','Jun-25','Jul-25','Aug-25','Sep-25','Oct-25','Nov-25','Dec-25','Jan-26','Feb-26','Mar-26'],
+        makers:[
+          {m:'HERO MOTOCORP LTD',                        v:[1023,903,782,746,776,823,2350,1402,515,1157,0,0]},
+          {m:'HONDA MOTORCYCLE AND SCOOTER INDIA',       v:[1227,1157,836,854,914,971,2796,1296,647,1251,0,0]},
+          {m:'SUZUKI MOTORCYCLE INDIA PVT LTD',          v:[703,600,591,600,623,849,1249,708,489,901,0,0]},
+          {m:'BAJAJ AUTO LTD',                           v:[410,402,340,247,281,342,796,411,207,387,0,0]},
+          {m:'ROYAL-ENFIELD (EICHER)',                   v:[214,214,133,176,187,216,471,316,155,268,0,0]},
+          {m:'INDIA YAMAHA MOTOR PVT LTD',               v:[37,42,29,25,31,49,132,35,36,45,0,0]},
+          {m:'CLASSIC LEGENDS PVT LTD',                  v:[10,9,7,8,9,9,30,17,5,14,0,0]}
+        ]
+      }
+    };
+  }
+  var net;
+  function load(){ try{ var r=localStorage.getItem(NKEY); net=r?JSON.parse(r):seed(); }catch(e){ net=seed(); }
+    if(!net||!net.networks) net=seed(); if(!net.vahan) net.vahan=seed().vahan;
+    if(!net.demand||!net.demand.rows) net.demand=seed().demand; }
+  function store(){ try{ localStorage.setItem(NKEY,JSON.stringify(net)); }catch(e){} }
+  load();
+
+  /* ---------- retail per sub-dealer, from the sale register the dashboard already has ---------- */
+  function retailMap(){
+    var o; try{ o=JSON.parse(localStorage.getItem('hero-ops-v1'))||{}; }catch(e){ o={}; }
+    var p=''; try{ p=(typeof currentPeriod!=='undefined'&&currentPeriod)||''; }catch(e){}
+    var b=null, scope='all time';
+    if(p && o.salesByMonth && o.salesByMonth[p]){ b=o.salesByMonth[p]; scope=p; }
+    else if(o.salesAll) b=o.salesAll;
+    else b=o.sales;
+    var map={}, tot=0;
+    if(b && b.subDealers) Object.keys(b.subDealers).forEach(function(k){ map[nkey(k)]=(map[nkey(k)]||0)+num(b.subDealers[k]); tot+=num(b.subDealers[k]); });
+    return {map:map, total:tot, scope:scope, has:!!(b&&b.subDealers&&Object.keys(b.subDealers).length)};
+  }
+
+  /* ---------- derived ---------- */
+  function rows(){
+    var R=retailMap();
+    return net.networks.map(function(n){
+      var r=Object.assign({},n);
+      r.retail = R.map[nkey(n.name)]||0;
+      r.disp   = r.d || r.retail;                       // dispatch if the sheet has it, else retail
+      r.ach    = r.target ? Math.round(r.disp/r.target*100) : 0;
+      r.pass   = low(r.status)==='pass';
+      r.fail   = low(r.status)==='fail';
+      r.paidGap= Math.max(0, num(r.norm) - num(r.actualPaid));
+      // per-vehicle dispatch payout is gated on paid norms — a Fail forfeits all of it
+      var rateV = r.ach>=100?20 : r.ach>=90?15 : 0;
+      r.perVeh  = rateV;
+      r.earned    = r.pass ? (r.disp*rateV + 3000) : 0;
+      r.forfeited = r.fail ? (r.disp*(rateV||20) + 3000) : 0;
+      return r;
+    });
+  }
+  function vahanCalc(){
+    var v=net.vahan, ms=v.months||[], mk=v.makers||[];
+    var live=[]; for(var i=0;i<ms.length;i++){ if(mk.some(function(x){ return num(x.v[i])>0; })) live.push(i); }
+    var tot=live.map(function(i){ return mk.reduce(function(a,x){ return a+num(x.v[i]); },0); });
+    var out=mk.map(function(x){
+      var vals=live.map(function(i){ return num(x.v[i]); });
+      var sum=vals.reduce(function(a,b){return a+b;},0);
+      var grand=tot.reduce(function(a,b){return a+b;},0);
+      return {m:x.m, vals:vals, sum:sum, share:grand?(sum/grand*100):0,
+              last:vals.length?vals[vals.length-1]:0, prev:vals.length>1?vals[vals.length-2]:0};
+    }).sort(function(a,b){ return b.sum-a.sum; });
+    return {labels:live.map(function(i){ return ms[i]; }), makers:out,
+            totals:tot, grand:tot.reduce(function(a,b){return a+b;},0)};
+  }
+
+
+  /* ---------- network demand ---------- */
+  var DF={net:'',seg:''};
+  window.netDF=function(k,v){ DF[k]=v; render(); };
+  function fam(v){
+    var n=String(v==null?'':v).toLowerCase().replace(/[^a-z0-9]/g,'');
+    var F=[['DESTINI',/destini/],['PLEASURE',/pleasure/],['XOOM',/xoom/],['PASSION',/passion/],
+           ['SUPER SPLENDOR',/supersplendor|supspl/],['SPLENDOR',/splendor|\bspl/],['GLAMOUR',/glamour/],
+           ['XTREME',/xtreme/],['HF DELUXE',/hf/]];
+    for(var i=0;i<F.length;i++){ if(F[i][1].test(n)) return F[i][0]; }
+    return String(v||'').toUpperCase();
+  }
+  function stockFam(){
+    var o; try{ o=JSON.parse(localStorage.getItem('hero-ops-v1'))||{}; }catch(e){ o={}; }
+    var m={}, any=false;
+    (o.stock||[]).forEach(function(r){ var k=fam(r.model); if(!k) return; m[k]=(m[k]||0)+num(r.qty); any=true; });
+    return {map:m, has:any};
+  }
+  function demandCalc(){
+    var d=net.demand||{nets:[],rows:[]}, nets=d.nets||[], rws=d.rows||[];
+    var byNet=nets.map(function(n,i){ return {n:n,i:i,total:rws.reduce(function(a,r){ return a+num(r.v[i]); },0)}; });
+    var segMap={}, order=[];
+    rws.forEach(function(r){
+      if(!segMap[r.s]){ segMap[r.s]={s:r.s,v:nets.map(function(){return 0;}),tot:0}; order.push(r.s); }
+      var g=segMap[r.s];
+      nets.forEach(function(_,i){ g.v[i]+=num(r.v[i]); g.tot+=num(r.v[i]); });
+    });
+    var famMap={};
+    rws.forEach(function(r){ var k=fam(r.m); famMap[k]=(famMap[k]||0)+r.v.reduce(function(a,b){return a+num(b);},0); });
+    return {nets:nets, rows:rws, byNet:byNet, segs:order.map(function(s){return segMap[s];}),
+            fams:famMap, grand:byNet.reduce(function(a,x){return a+x.total;},0)};
+  }
+  function demandFiltered(){
+    var D=demandCalc(), ni=DF.net?D.nets.indexOf(DF.net):-1;
+    return D.rows.filter(function(r){
+      if(DF.seg && r.s!==DF.seg) return false;
+      if(ni>=0) return num(r.v[ni])>0;
+      return r.v.some(function(x){ return num(x)>0; });
+    }).map(function(r){
+      var tot = ni>=0 ? num(r.v[ni]) : r.v.reduce(function(a,b){return a+num(b);},0);
+      return {r:r, tot:tot};
+    }).sort(function(a,b){ return b.tot-a.tot; });
+  }
+
+  function renderDemand(){
+    var D=demandCalc(), S=stockFam(), F=demandFiltered();
+    var ni=DF.net?D.nets.indexOf(DF.net):-1;
+    var shown=F.reduce(function(a,x){return a+x.tot;},0);
+    var active=D.byNet.filter(function(x){return x.total>0;});
+    var topN=D.byNet.slice().sort(function(a,b){return b.total-a.total;})[0];
+    var idle=D.byNet.filter(function(x){return x.total===0;});
+
+    // what can be served from dealership stock today, at model-family level
+    var canServe=0, mustIndent=0, shortFams=[];
+    Object.keys(D.fams).forEach(function(k){
+      var need=D.fams[k], have=S.has?(S.map[k]||0):0;
+      canServe+=Math.min(need,have);
+      if(need>have){ mustIndent+=(need-have); shortFams.push({k:k,need:need,have:have,gap:need-have}); }
+    });
+    shortFams.sort(function(a,b){ return b.gap-a.gap; });
+
+    var h='<div class="card" style="margin-bottom:14px;border-left:4px solid var(--accent)">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<h3 style="margin:0">&#128230; Network Demand &mdash; what the network is asking for</h3>'
+      +'<button class="btn btn-sm" onclick="netExport(\'demand\')">&#11015;&#65039; Export indent</button></div>'
+      +'<p class="help-text">SKU and colour level demand from each network. Cross-checked against your own stock on hand, '
+      +'so you can see what ships today and what has to be indented from Hero. A network asking for nothing is not a network with no customers &mdash; '
+      +'it is a network that has stopped asking.</p></div>';
+
+    h+='<div class="grid grid-4">';
+    h+=kpi(D.grand,'Units demanded','#5b9eff',D.rows.length+' SKUs across '+D.segs.length+' segments');
+    h+=kpi(active.length+' / '+D.nets.length,'Networks demanding',idle.length?'#ffb02e':'#2bd47d',idle.length?idle.map(function(x){return x.n;}).join(', ')+' asked for nothing':'all active');
+    h+=kpi(S.has?canServe:'&mdash;','Servable from stock',S.has?'#2bd47d':'var(--muted)',S.has?'available today (model level)':'sync stock to calculate');
+    h+=kpi(S.has?mustIndent:'&mdash;','Must indent',S.has&&mustIndent?'#ff5c5c':'#2bd47d',S.has?'not on your floor':'sync stock to calculate');
+    h+='</div>';
+
+    /* segment x network matrix */
+    h+='<div class="card" style="margin-top:14px"><h3>Demand matrix &mdash; segment &times; network</h3>'
+      +'<p class="help-text">Click a network to filter the SKU list and the export to it.</p>'
+      +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Segment</th>'
+      + D.nets.map(function(n){ var sel=DF.net===n;
+          return '<th style="text-align:right;cursor:pointer'+(sel?';background:var(--panel-2)':'')+'" onclick="netDF(\'net\','+JSON.stringify(sel?'':n)+')">'+esc(n)+(sel?' &#9664;':'')+'</th>'; }).join('')
+      +'<th style="text-align:right">Total</th></tr></thead><tbody>';
+    D.segs.forEach(function(g){
+      var sel=DF.seg===g.s;
+      h+='<tr style="border-top:1px solid var(--line)'+(sel?';background:var(--panel-2)':'')+'">'
+        +'<td style="font-weight:700;cursor:pointer" onclick="netDF(\'seg\','+JSON.stringify(sel?'':g.s)+')">'+esc(g.s)+(sel?' &#9664;':'')+'</td>'
+        + g.v.map(function(x){ return '<td style="text-align:right'+(x?';font-weight:700':';color:var(--muted)')+'">'+(x||'&middot;')+'</td>'; }).join('')
+        +'<td style="text-align:right;font-weight:800">'+g.tot+'</td></tr>';
+    });
+    h+='<tr style="border-top:2px solid var(--line)"><td style="font-weight:800">TOTAL</td>'
+      + D.byNet.map(function(x){ return '<td style="text-align:right;font-weight:800;color:'+(x.total?'#2bd47d':'#ff5c5c')+'">'+x.total+'</td>'; }).join('')
+      +'<td style="text-align:right;font-weight:800">'+D.grand+'</td></tr>';
+    h+='</tbody></table></div>'
+      + (topN&&topN.total?('<p class="help-text" style="margin-top:8px"><b>'+esc(topN.n)+'</b> is asking for the most ('+topN.total+' units, '
+        +Math.round(topN.total/D.grand*100)+'% of network demand)'+(idle.length?('. <b style="color:#ffb02e">'+idle.map(function(x){return esc(x.n);}).join(', ')+'</b> submitted a blank sheet &mdash; chase it before the indent closes.'):'.')+'</p>'):'')
+      +'</div>';
+
+    /* fulfilment */
+    if(S.has){
+      h+='<div class="card" style="margin-top:14px"><h3>Can you serve it? &mdash; demand vs your stock on hand</h3>'
+        +'<p class="help-text">Matched at model-family level (colour and variant are not tracked in the stock feed), so treat this as the shortlist to verify, not a picking list.</p>'
+        +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Model family</th>'
+        +'<th style="text-align:right">Network demand</th><th style="text-align:right">Your stock</th>'
+        +'<th style="text-align:right">Can serve</th><th style="text-align:right">Short by</th><th>Action</th></tr></thead><tbody>';
+      Object.keys(D.fams).sort(function(a,b){ return D.fams[b]-D.fams[a]; }).forEach(function(k){
+        var need=D.fams[k], have=S.map[k]||0, serve=Math.min(need,have), gap=Math.max(0,need-have);
+        h+='<tr style="border-top:1px solid var(--line)'+(gap?';background:rgba(255,92,92,0.05)':'')+'">'
+          +'<td style="font-weight:700">'+esc(k)+'</td>'
+          +'<td style="text-align:right;font-weight:700">'+need+'</td>'
+          +'<td style="text-align:right;color:var(--muted)">'+have+'</td>'
+          +'<td style="text-align:right;color:#2bd47d;font-weight:700">'+serve+'</td>'
+          +'<td style="text-align:right;color:'+(gap?'#ff5c5c':'var(--muted)')+';font-weight:800">'+(gap||'&middot;')+'</td>'
+          +'<td style="font-size:12px;color:'+(gap?'#ff5c5c':'#2bd47d')+'">'+(gap?'Indent '+gap+' from Hero':'&#10003; Ship from floor')+'</td></tr>';
+      });
+      h+='</tbody></table></div></div>';
+    }
+
+    /* SKU list */
+    h+='<div class="card" style="margin-top:14px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<h3 style="margin:0">SKU-level demand'+(DF.net?(' &mdash; '+esc(DF.net)):'')+(DF.seg?(' &mdash; '+esc(DF.seg)):'')+'</h3>'
+      +'<div class="filters" style="margin:0">'
+      +'<select class="filter-select" onchange="netDF(\'net\',this.value)"><option value="">All networks</option>'
+      + D.nets.map(function(n){ return '<option value="'+esc(n)+'"'+(DF.net===n?' selected':'')+'>'+esc(n)+'</option>'; }).join('')
+      +'</select>'
+      +'<select class="filter-select" onchange="netDF(\'seg\',this.value)"><option value="">All segments</option>'
+      + D.segs.map(function(g){ return '<option value="'+esc(g.s)+'"'+(DF.seg===g.s?' selected':'')+'>'+esc(g.s)+'</option>'; }).join('')
+      +'</select></div></div>'
+      +'<p class="help-text">'+F.length+' SKU line(s), '+shown+' unit(s). Export gives you the indent list for this exact selection.</p>'
+      +'<div style="overflow-x:auto;max-height:460px"><table class="table"><thead><tr><th>Segment</th><th>Model</th><th>Colour / variant</th><th>SKU</th>'
+      + (ni>=0?('<th style="text-align:right">'+esc(DF.net)+'</th>'):D.nets.map(function(n){ return '<th style="text-align:right">'+esc(n.slice(0,8))+'</th>'; }).join(''))
+      +'<th style="text-align:right">Total</th></tr></thead><tbody>';
+    if(!F.length) h+='<tr><td colspan="12" style="text-align:center;color:var(--muted);padding:16px">No demand for this selection.</td></tr>';
+    F.forEach(function(x){
+      var r=x.r;
+      h+='<tr style="border-top:1px solid var(--line)">'
+        +'<td style="color:var(--muted);font-size:12px">'+esc(r.s)+'</td>'
+        +'<td style="font-weight:600">'+esc(r.m)+'</td>'
+        +'<td style="color:var(--muted);font-size:12px">'+esc(r.c)+'</td>'
+        +'<td style="font-family:monospace;font-size:11px;color:var(--muted)">'+esc(r.k)+'</td>'
+        + (ni>=0 ? ('<td style="text-align:right;font-weight:800">'+num(r.v[ni])+'</td>')
+                 : r.v.map(function(q){ return '<td style="text-align:right'+(q?';font-weight:700':';color:var(--muted)')+'">'+(num(q)||'&middot;')+'</td>'; }).join(''))
+        +'<td style="text-align:right;font-weight:800">'+x.tot+'</td></tr>';
+    });
+    h+='</tbody></table></div></div>';
+
+    h+=importPanel('demand','Network Demand',
+      'Paste the demand sheet including the <code>Model | SKU | COLOURS | &lt;network names&gt;</code> header row. '
+      +'Network columns are read from that header, so adding or dropping a network needs no code change. Segment headers are picked up from the '
+      +'<code>Demand Total</code> blocks if present.');
+    return h;
+  }
+
+  /* ---------- shared bits ---------- */
+  function kpi(v,l,c,sub){ return '<div class="card kpi"><h3>'+l+'</h3><div class="kpi-value"'+(c?(' style="color:'+c+'"'):'')+'>'+v+'</div><div class="kpi-trend">'+(sub||'&nbsp;')+'</div></div>'; }
+  var TAB='paid';
+  window.netTab=function(t){ TAB=t; render(); };
+
+  function subnav(){
+    var items=[['paid','&#9989; Paid Check'],['retail','&#128202; Retail vs Target'],['demand','&#128230; Network Demand'],['vahan','&#128663; Vahan FY26']];
+    return '<div class="filters" style="margin-bottom:14px">'
+      + items.map(function(i){
+          var on=TAB===i[0];
+          return '<button class="btn btn-sm'+(on?' btn-primary':'')+'" onclick="netTab(\''+i[0]+'\')">'+i[1]+'</button>';
+        }).join('')
+      + '<span class="help-text" style="margin-left:auto">Source: '+esc(net.source==='seed'?'Sheet snapshot':net.source)+' &middot; '+esc(net.updatedAt)+'</span>'
+      + '</div>';
+  }
+  function importPanel(kind,label,hint){
+    return '<div class="card" style="margin-bottom:14px;border-left:4px solid var(--accent-2)">'
+      +'<h3>&#128229; Update '+label+' from the sheet</h3>'
+      +'<p class="help-text">'+hint+'</p>'
+      +'<textarea id="net-paste-'+kind+'" style="width:100%;min-height:90px;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:8px;font-family:monospace;font-size:12px;margin-top:8px" placeholder="Paste rows including the header row (tab or comma separated)"></textarea>'
+      +'<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'
+      +'<button class="btn btn-primary btn-sm" onclick="netImport(\''+kind+'\')">Load '+label+'</button>'
+      +'<button class="btn btn-sm" onclick="netSync()">&#128260; Sync from feed</button>'
+      +'<button class="btn btn-sm btn-ghost" onclick="netReset()">Reset to snapshot</button>'
+      +'</div></div>';
+  }
+
+  /* ================= 1. PAID CHECK ================= */
+  function renderPaid(){
+    var R=rows(), fail=R.filter(function(r){return r.fail;}), pass=R.filter(function(r){return r.pass;});
+    var forf=R.reduce(function(a,r){return a+r.forfeited;},0);
+    var gap=R.reduce(function(a,r){return a+num(r.gap);},0);
+    var pend=R.filter(function(r){ return !r.pass && !r.fail; }).length;
+
+    var h='<div class="card" style="margin-bottom:14px;border-left:4px solid '+(fail.length?'#ff5c5c':'#2bd47d')+'">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<h3 style="margin:0">&#9989; Paid Check &mdash; are they holding their paid-up stock?</h3>'
+      +'<button class="btn btn-sm" onclick="netExport(\'paid\')">&#11015;&#65039; Export</button></div>'
+      +'<p class="help-text">Every network must hold its <b>paid norm</b> in fully-paid stock. A <b>Fail</b> does not just block the '
+      +'Rs.3,000 paid-up bonus &mdash; it forfeits the entire per-vehicle dispatch payout, because both the 90% (Rs.15/veh) and '
+      +'100% (Rs.20/veh) slabs are written as <i>&ldquo;with paid norms&rdquo;</i>.</p></div>';
+
+    h+='<div class="grid grid-4">';
+    h+=kpi(R.length,'Networks','#5b9eff',pass.length+' pass &middot; '+fail.length+' fail'+(pend?' &middot; '+pend+' unrated':''));
+    h+=kpi(fail.length,'Failing paid norms',fail.length?'#ff5c5c':'#2bd47d',R.length?Math.round(fail.length/R.length*100)+'% of network':'');
+    h+=kpi(INR(forf),'Incentive at risk','#ff5c5c','forfeited while they fail');
+    h+=kpi(gap?INR(gap):'&mdash;','Fund gap',gap?'#ffb02e':'var(--muted)',gap?'under-invested':'paste the sheet to populate');
+    h+='</div>';
+
+    if(fail.length){
+      h+='<div class="card" style="margin-top:14px;border-left:4px solid #ff5c5c">'
+        +'<h3 style="color:#ff5c5c">&#128308; Failing now &mdash; fix these first</h3>'
+        +'<p class="help-text">Ordered by what the failure is costing. Each of these is money already earned and then given back.</p>'
+        +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Network</th><th>Type</th>'
+        +'<th style="text-align:right">Paid norm</th><th style="text-align:right">Actual paid stk</th>'
+        +'<th style="text-align:right">Short by</th><th style="text-align:right">Retail</th>'
+        +'<th style="text-align:right">Incentive forfeited</th></tr></thead><tbody>';
+      fail.slice().sort(function(a,b){return b.forfeited-a.forfeited;}).forEach(function(r){
+        h+='<tr style="border-top:1px solid var(--line)">'
+          +'<td style="font-weight:700">'+esc(r.name)+'</td>'
+          +'<td style="color:var(--muted);font-size:12px">'+esc(r.type)+'</td>'
+          +'<td style="text-align:right;font-weight:700">'+(r.norm||'&mdash;')+'</td>'
+          +'<td style="text-align:right">'+(r.actualPaid||'&mdash;')+'</td>'
+          +'<td style="text-align:right;font-weight:800;color:#ff5c5c">'+(r.paidGap||'&mdash;')+'</td>'
+          +'<td style="text-align:right;color:var(--muted)">'+(r.retail||'&middot;')+'</td>'
+          +'<td style="text-align:right;font-weight:800;color:#ff5c5c">'+INR(r.forfeited)+'</td></tr>';
+      });
+      h+='</tbody></table></div></div>';
+    }
+
+    h+='<div class="card" style="margin-top:14px"><h3>All networks</h3>'
+      +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Network</th><th>Type</th><th>Status</th>'
+      +'<th style="text-align:right">Paid norm</th><th style="text-align:right">Actual paid</th><th style="text-align:right">Gap</th>'
+      +'<th style="text-align:right">O</th><th style="text-align:right">D</th><th style="text-align:right">R</th><th style="text-align:right">C</th>'
+      +'<th style="text-align:right">Debit</th><th style="text-align:right">Fund gap</th></tr></thead><tbody>';
+    R.slice().sort(function(a,b){ return (a.pass?1:0)-(b.pass?1:0) || b.norm-a.norm; }).forEach(function(r){
+      var col=r.pass?'#2bd47d':r.fail?'#ff5c5c':'var(--muted)';
+      h+='<tr style="border-top:1px solid var(--line)'+(r.fail?';background:rgba(255,92,92,0.05)':'')+'">'
+        +'<td style="font-weight:700">'+esc(r.name)+'</td>'
+        +'<td style="color:var(--muted);font-size:12px">'+esc(r.type)+'</td>'
+        +'<td><span style="background:'+col+'22;color:'+col+';padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">'+esc(r.status||'Not rated')+'</span></td>'
+        +'<td style="text-align:right;font-weight:700">'+(r.norm||'&mdash;')+'</td>'
+        +'<td style="text-align:right">'+(r.actualPaid||'&mdash;')+'</td>'
+        +'<td style="text-align:right;color:'+(r.paidGap?'#ff5c5c':'var(--muted)')+'">'+(r.paidGap||'&middot;')+'</td>'
+        +'<td style="text-align:right;color:var(--muted)">'+(r.o||'&middot;')+'</td>'
+        +'<td style="text-align:right">'+(r.d||'&middot;')+'</td>'
+        +'<td style="text-align:right">'+(r.r||'&middot;')+'</td>'
+        +'<td style="text-align:right;color:var(--muted)">'+(r.c||'&middot;')+'</td>'
+        +'<td style="text-align:right;color:'+(r.debit?'#ffb02e':'var(--muted)')+'">'+(r.debit?INR(r.debit):'&middot;')+'</td>'
+        +'<td style="text-align:right;color:'+(r.gap?'#ff5c5c':'var(--muted)')+'">'+(r.gap?INR(r.gap):'&middot;')+'</td></tr>';
+    });
+    h+='</tbody></table></div>'
+      +'<p class="help-text" style="margin-top:10px">O / D / R / C, debit and fund gap fill in once you paste the network sheet below &mdash; '
+      +'those columns are merged cells in the source and do not survive a plain copy of the name column alone.</p></div>';
+
+    h+='<div class="card" style="margin-top:14px"><h3>Network payout scheme</h3>'
+      +'<p class="help-text">What each network can earn. Note how many lines are conditional on paid norms.</p>'
+      +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Head</th><th>Condition</th><th style="text-align:right">Payout</th></tr></thead><tbody>';
+    PAYOUT.forEach(function(p){
+      var gated=/paid norm/i.test(p.cond);
+      h+='<tr style="border-top:1px solid var(--line)"><td'+(gated?' style="font-weight:700"':'')+'>'+esc(p.n)+'</td>'
+        +'<td style="color:'+(gated?'#ff5c5c':'var(--muted)')+';font-size:12px">'+esc(p.cond)+(gated?' &#9888;&#65039;':'')+'</td>'
+        +'<td style="text-align:right;font-weight:700">'+(p.per?('Rs. '+p.amt+' / veh'):INR(p.amt))+'</td></tr>';
+    });
+    h+='</tbody></table></div></div>';
+
+    h+=importPanel('paid','Paid Check',
+      'Copy the network table including its header row &mdash; <code>Sr | NETWORK NAME | Status | PAID NORM | O | D | R | C | Target | Debit | Credit | ... | FUND GAP</code>. '
+      +'Column order is detected from the header, so extra or missing columns are fine.');
+    return h;
+  }
+
+  /* ================= 2. RETAIL vs TARGET ================= */
+  function renderRetail(){
+    var R=rows(), Rm=retailMap();
+    var subs=R.filter(function(r){ return r.type==='Sub-dealer'; });
+    var totR=R.reduce(function(a,r){return a+r.retail;},0);
+    var totT=R.reduce(function(a,r){return a+num(r.target);},0);
+    var ach=totT?Math.round(totR/totT*100):0;
+    var zero=R.filter(function(r){ return r.retail===0; });
+
+    var h='<div class="card" style="margin-bottom:14px;border-left:4px solid #5b9eff">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<h3 style="margin:0">&#128202; Retail vs target &mdash; '+esc(Rm.scope==='all time'?'all time':Rm.scope)+'</h3>'
+      +'<button class="btn btn-sm" onclick="netExport(\'retail\')">&#11015;&#65039; Export</button></div>'
+      +'<p class="help-text">Retail comes from the <b>sale register&rsquo;s Account Name</b> column, which is already synced &mdash; no extra data entry. '
+      +'Targets come from the network sheet. Uses the Month filter at the top of the page.</p></div>';
+
+    if(!Rm.has){
+      h+='<div class="card" style="margin-bottom:14px;border-left:4px solid var(--warn,#ffb02e)">'
+        +'<b>&#9888;&#65039; No sub-dealer retail in the feed yet.</b> <span class="help-text">Press <b>&#128260; Sync from Sheet</b> on the '
+        +'Reconcile tab &mdash; sub-dealer retail is read from the sale register&rsquo;s Account Name column.</span></div>';
+    }
+
+    h+='<div class="grid grid-4">';
+    h+=kpi(totR,'Network retail','#2bd47d',subs.length+' sub-dealers + '+(R.length-subs.length)+' extensions');
+    h+=kpi(totT?totT:'&mdash;','Combined target','',totT?'from the network sheet':'paste the sheet to populate');
+    h+=kpi(totT?ach+'%':'&mdash;','Achievement',totT?(ach>=100?'#2bd47d':ach>=90?'#ffb02e':'#ff5c5c'):'',totT?'90% and 100% are payout gates':'');
+    h+=kpi(zero.length,'Zero-retail networks',zero.length?'#ff5c5c':'#2bd47d',zero.length?'no invoices in this period':'all active');
+    h+='</div>';
+
+    h+='<div class="card" style="margin-top:14px"><h3>Network-wise retail</h3>'
+      +'<p class="help-text">The payout slab is the per-vehicle rate this network qualifies for &mdash; and it pays <b>only</b> if Paid Check is a Pass.</p>'
+      +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Network</th><th>Type</th><th>Paid Check</th>'
+      +'<th style="text-align:right">Retail</th><th style="text-align:right">Dispatch</th><th style="text-align:right">Target</th>'
+      +'<th style="text-align:right">Ach%</th><th style="text-align:right">Slab</th><th style="text-align:right">Earned</th>'
+      +'<th style="text-align:right">Forfeited</th></tr></thead><tbody>';
+    R.slice().sort(function(a,b){ return b.retail-a.retail; }).forEach(function(r){
+      var col=r.pass?'#2bd47d':r.fail?'#ff5c5c':'var(--muted)';
+      var ac=r.target?(r.ach>=100?'#2bd47d':r.ach>=90?'#ffb02e':'#ff5c5c'):'var(--muted)';
+      h+='<tr style="border-top:1px solid var(--line)">'
+        +'<td style="font-weight:700">'+esc(r.name)+'</td>'
+        +'<td style="color:var(--muted);font-size:12px">'+esc(r.type)+'</td>'
+        +'<td><span style="color:'+col+';font-weight:700;font-size:12px">'+(r.status?esc(r.status):'&mdash;')+'</span></td>'
+        +'<td style="text-align:right;font-weight:800;color:'+(r.retail?'#2bd47d':'#ff5c5c')+'">'+r.retail+'</td>'
+        +'<td style="text-align:right;color:var(--muted)">'+(r.d||'&middot;')+'</td>'
+        +'<td style="text-align:right">'+(r.target||'&mdash;')+'</td>'
+        +'<td style="text-align:right;font-weight:700;color:'+ac+'">'+(r.target?r.ach+'%':'&mdash;')+'</td>'
+        +'<td style="text-align:right;color:var(--muted)">'+(r.perVeh?('Rs.'+r.perVeh):'&mdash;')+'</td>'
+        +'<td style="text-align:right;color:#2bd47d">'+(r.earned?INR(r.earned):'&middot;')+'</td>'
+        +'<td style="text-align:right;color:#ff5c5c">'+(r.forfeited?INR(r.forfeited):'&middot;')+'</td></tr>';
+    });
+    h+='</tbody></table></div></div>';
+
+    h+='<div class="card" style="margin-top:14px"><h3>Retail share of network</h3><div class="chart-wrap"><canvas id="net-retail-chart"></canvas></div></div>';
+    h+=importPanel('paid','Paid Check &amp; targets',
+      'Targets and dispatch live in the same network table as Paid Check &mdash; paste it once and both sub-sections fill in.');
+    return h;
+  }
+
+  /* ================= 3. VAHAN FY26 ================= */
+  function renderVahan(){
+    var V=vahanCalc();
+    var hero=V.makers.filter(function(m){ return /hero/i.test(m.m); })[0];
+    var top=V.makers[0];
+    var rank=V.makers.map(function(m){return m.m;}).indexOf(hero?hero.m:'')+1;
+
+    var h='<div class="card" style="margin-bottom:14px;border-left:4px solid var(--accent)">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<h3 style="margin:0">&#128663; Vahan '+esc(net.vahan.fy||'FY26')+' &mdash; '+esc(net.vahan.rto||'RTO')+'</h3>'
+      +'<button class="btn btn-sm" onclick="netExport(\'vahan\')">&#11015;&#65039; Export</button></div>'
+      +'<p class="help-text">Registrations from the Vahan portal &mdash; the only number that is not self-reported, so it is the honest read on '
+      +'market share. Your network sells into this territory; a sub-dealer failing paid norms in a growing market is share handed to Honda.</p></div>';
+
+    h+='<div class="grid grid-4">';
+    h+=kpi(hero?hero.sum.toLocaleString('en-IN'):'&mdash;','Hero registrations','#ff2e2e',V.labels.length+' month(s) of FY');
+    h+=kpi(hero?hero.share.toFixed(1)+'%':'&mdash;','Hero market share',hero&&hero.share>=30?'#2bd47d':'#ffb02e','of '+V.grand.toLocaleString('en-IN')+' total');
+    h+=kpi(rank?('#'+rank):'&mdash;','Rank in RTO',rank===1?'#2bd47d':'#ffb02e',top?('leader: '+esc(top.m.split(' ')[0])):'');
+    var gapU = (hero&&top&&top!==hero)?(top.sum-hero.sum):0;
+    h+=kpi(gapU?gapU.toLocaleString('en-IN'):'&mdash;','Units behind leader',gapU?'#ff5c5c':'#2bd47d',gapU?'to take the #1 slot':'you are #1');
+    h+='</div>';
+
+    h+='<div class="grid grid-2" style="margin-top:14px">'
+      +'<div class="card"><h3>Monthly registrations</h3><div class="chart-wrap"><canvas id="net-vahan-trend"></canvas></div></div>'
+      +'<div class="card"><h3>Market share</h3><div class="chart-wrap"><canvas id="net-vahan-share"></canvas></div></div>'
+      +'</div>';
+
+    h+='<div class="card" style="margin-top:14px"><h3>Maker-wise, month by month</h3>'
+      +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Maker</th>'
+      + V.labels.map(function(l){ return '<th style="text-align:right">'+esc(l)+'</th>'; }).join('')
+      +'<th style="text-align:right">Total</th><th style="text-align:right">Share</th></tr></thead><tbody>';
+    V.makers.forEach(function(m){
+      var isH=/hero/i.test(m.m);
+      h+='<tr style="border-top:1px solid var(--line)'+(isH?';background:rgba(255,46,46,0.07)':'')+'">'
+        +'<td style="font-weight:'+(isH?'800':'600')+';color:'+(isH?'#ff2e2e':'var(--text)')+'">'+esc(m.m)+'</td>'
+        + m.vals.map(function(v){ return '<td style="text-align:right;color:var(--muted)">'+(v?v.toLocaleString('en-IN'):'&middot;')+'</td>'; }).join('')
+        +'<td style="text-align:right;font-weight:800">'+m.sum.toLocaleString('en-IN')+'</td>'
+        +'<td style="text-align:right;font-weight:700;color:'+(isH?'#ff2e2e':'var(--muted)')+'">'+m.share.toFixed(1)+'%</td></tr>';
+    });
+    h+='<tr style="border-top:2px solid var(--line)"><td style="font-weight:800">TOTAL</td>'
+      + V.totals.map(function(t){ return '<td style="text-align:right;font-weight:700">'+t.toLocaleString('en-IN')+'</td>'; }).join('')
+      +'<td style="text-align:right;font-weight:800">'+V.grand.toLocaleString('en-IN')+'</td><td style="text-align:right">100%</td></tr>';
+    h+='</tbody></table></div></div>';
+
+    h+=importPanel('vahan','Vahan',
+      'Paste the Vahan maker-month table &mdash; first column the maker name, then one column per month, header row included '
+      +'(<code>Maker | Apr-25 | May-25 | ...</code>). The S.No column is ignored if present.');
+    return h;
+  }
+
+  /* ================= import / export / sync ================= */
+  function split(t){ return t.split(/\r?\n/).map(function(l){ return l.split(/\t|,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(function(c){ return c.replace(/^"|"$/g,'').trim(); }); }).filter(function(r){ return r.join('').trim()!==''; }); }
+  window.netImport=function(kind){
+    var ta=document.getElementById('net-paste-'+kind); if(!ta) return;
+    var txt=(ta.value||'').trim(); if(!txt){ if(typeof showToast==='function') showToast('Paste some rows first'); return; }
+    var rs=split(txt);
+    try{
+      if(kind==='paid'){
+        var hi=-1, map={};
+        for(var i=0;i<rs.length;i++){ if(rs[i].some(function(c){ return /network\s*name/i.test(c); })){ hi=i; break; } }
+        if(hi<0) throw new Error('could not find the NETWORK NAME header row');
+        rs[hi].forEach(function(c,ix){
+          var t=low(c);
+          if(/network\s*name/.test(t)) map.name=ix;
+          else if(/^status$/.test(t)) map.status=ix;
+          else if(/paid\s*norm/.test(t)) map.norm=ix;
+          else if(/^o$/.test(t)) map.o=ix; else if(/^d$/.test(t)) map.d=ix;
+          else if(/^r$/.test(t)) map.r=ix; else if(/^c$/.test(t)) map.c=ix;
+          else if(/^target$/.test(t)) map.target=ix;
+          else if(/^debit$/.test(t)) map.debit=ix;
+          else if(/^credit$/.test(t)) map.credit=ix;
+          else if(/credit\s*vehicle/.test(t)) map.creditVeh=ix;
+          else if(/should\s*be\s*invested/.test(t)) map.shouldInvest=ix;
+          else if(/actual\s*paid/.test(t)) map.actualPaid=ix;
+          else if(/invested\s*in\s*business/.test(t)) map.invested=ix;
+          else if(/fund\s*gap/.test(t)) map.gap=ix;
+        });
+        if(map.name==null) throw new Error('NETWORK NAME column not found');
+        var out=[];
+        for(var j=hi+1;j<rs.length;j++){
+          var r=rs[j], nm=(r[map.name]||'').trim();
+          if(!nm || /^(total|grand)/i.test(nm)) continue;
+          var prev=net.networks.filter(function(x){ return nkey(x.name)===nkey(nm); })[0]||{};
+          out.push({name:nm, type:prev.type||(/^\s*\d{4,6}\s*[-–]/.test(nm)?'Extension counter':'Sub-dealer'),
+            status:(map.status!=null?r[map.status]:'')||'', norm:num(map.norm!=null?r[map.norm]:0),
+            o:num(r[map.o]), d:num(r[map.d]), r:num(r[map.r]), c:num(r[map.c]),
+            target:num(r[map.target]), debit:num(r[map.debit]), credit:num(r[map.credit]),
+            creditVeh:num(r[map.creditVeh]), shouldInvest:num(r[map.shouldInvest]),
+            actualPaid:num(r[map.actualPaid]), invested:num(r[map.invested]), gap:num(r[map.gap])});
+        }
+        if(!out.length) throw new Error('no network rows found under the header');
+        net.networks=out;
+      } else if(kind==='demand'){
+        var dh=-1;
+        for(var z=0;z<rs.length;z++){ if(rs[z].some(function(c){ return /^sku$/i.test(c); }) && rs[z].some(function(c){ return /^model$/i.test(c); })){ dh=z; break; } }
+        if(dh<0) throw new Error('could not find the Model | SKU | COLOURS header row');
+        var hd=rs[dh], mi=-1, ki=-1, ci=-1;
+        hd.forEach(function(c,ix){ var t=low(c);
+          if(t==='model'&&mi<0) mi=ix; else if(t==='sku'&&ki<0) ki=ix; else if(/colour|color/.test(t)&&ci<0) ci=ix; });
+        var netIx=[], netNm=[];
+        hd.forEach(function(c,ix){ if(ix>Math.max(mi,ki,ci) && String(c||'').trim()!==''){ netIx.push(ix); netNm.push(String(c).trim()); } });
+        if(!netIx.length) throw new Error('no network columns found to the right of COLOURS');
+        var drows=[], seg='Unsegmented';
+        for(var y=dh+1;y<rs.length;y++){
+          var rr=rs[y], m0=(rr[mi]||'').trim(), k0=(rr[ki]||'').trim();
+          var joined=rr.join(' ');
+          var sm=joined.match(/(scooter|entry|deluxe\s*100|deluxe|125\s*cc|premium|vida)\s*segment/i);
+          if(sm){ seg=sm[1].replace(/\s+/g,' ').replace(/\b\w/g,function(x){return x.toUpperCase();}); continue; }
+          if(/^model$/i.test(m0)) continue;
+          if(!k0) continue;
+          var vals=netIx.map(function(ix){ return num(rr[ix]); });
+          if(!vals.some(function(q){ return q>0; })) continue;
+          drows.push({s:seg, m:m0||'(model not given)', k:k0, c:(rr[ci]||'').trim(), v:vals});
+        }
+        if(!drows.length) throw new Error('no SKU rows with demand found');
+        net.demand={nets:netNm, rows:drows};
+      } else if(kind==='vahan'){
+        var vh=-1;
+        for(var k=0;k<rs.length;k++){ if(rs[k].some(function(c){ return /^(apr|may|jun|jul|aug|sep|oct|nov|dec|jan|feb|mar)[-\s]?\d{2}$/i.test(c); })){ vh=k; break; } }
+        if(vh<0) throw new Error('could not find a month header row (e.g. Apr-25)');
+        var cols=[], mons=[];
+        rs[vh].forEach(function(c,ix){ if(/^(apr|may|jun|jul|aug|sep|oct|nov|dec|jan|feb|mar)[-\s]?\d{2}$/i.test(c)){ cols.push(ix); mons.push(c.trim()); } });
+        var nameIx=0; rs[vh].forEach(function(c,ix){ if(/maker|manufacturer/i.test(c)) nameIx=ix; });
+        var mk=[];
+        for(var q=vh+1;q<rs.length;q++){
+          var rr=rs[q], nm2=(rr[nameIx]||'').trim();
+          if(!nm2 || /^(total|grand|s\.?\s*no)/i.test(nm2) || /^\d+$/.test(nm2)) continue;
+          mk.push({m:nm2, v:cols.map(function(ci){ return num(rr[ci]); })});
+        }
+        if(!mk.length) throw new Error('no maker rows found');
+        net.vahan={rto:net.vahan.rto||'RTO', fy:net.vahan.fy||'FY 2025-26', months:mons, makers:mk};
+      }
+      net.source='Sheet paste'; net.updatedAt=new Date().toLocaleString('en-IN'); store();
+      ta.value=''; render();
+      if(typeof showToast==='function') showToast(label(kind)+' updated');
+    }catch(e){ if(typeof showToast==='function') showToast('Import error: '+e.message); }
+  };
+  function label(k){ return k==='paid'?'Paid Check':'Vahan'; }
+  window.netReset=function(){ if(!confirm('Reset network data to the sheet snapshot?')) return; net=seed(); store(); render(); };
+  window.netSync=function(silent){
+    var url; try{ url=(config&&config.script&&config.script.url)||''; }catch(e){ url=''; }
+    if(!url){ if(!silent&&typeof showToast==='function') showToast('No Apps Script URL saved (Settings)'); return; }
+    fetch(url+'?t='+Date.now(),{cache:'no-cache',redirect:'follow'}).then(function(r){return r.json();}).then(function(j){
+      var got=false;
+      if(j.networkPaid && j.networkPaid.length){ net.networks=j.networkPaid; got=true; }
+      if(j.network && j.network.length){ net.networks=j.network; got=true; }
+      if(j.vahan && j.vahan.makers){ net.vahan=j.vahan; got=true; }
+      if(j.networkDemand && j.networkDemand.rows){ net.demand=j.networkDemand; got=true; }
+      if(got){ net.source='Apps Script'; net.updatedAt=new Date().toLocaleString('en-IN'); store(); render();
+        if(!silent&&typeof showToast==='function') showToast('Network data synced'); }
+      else if(!silent&&typeof showToast==='function') showToast('Feed has no networkPaid / vahan keys yet');
+    }).catch(function(e){ if(!silent&&typeof showToast==='function') showToast('Sync failed: '+e.message); });
+  };
+  window.netExport=function(kind){
+    function cell(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }
+    var rowsOut=[];
+    if(kind==='demand'){
+      var D=demandCalc(), F=demandFiltered(), ni=DF.net?D.nets.indexOf(DF.net):-1;
+      var S=stockFam();
+      rowsOut.push(['Segment','Model','Colour / variant','SKU']
+        .concat(ni>=0?[DF.net]:D.nets)
+        .concat(['Total demand','Model family','Your stock (family)','Action']));
+      F.forEach(function(x){
+        var r=x.r, k=fam(r.m), have=S.has?(S.map[k]||0):'';
+        rowsOut.push([r.s,r.m,r.c,r.k]
+          .concat(ni>=0?[num(r.v[ni])]:r.v.map(num))
+          .concat([x.tot,k,have,(S.has&&num(have)<x.tot)?'Indent from Hero':'Ship from floor']));
+      });
+      rowsOut.push([]);
+      rowsOut.push(['Segment'].concat(D.nets).concat(['Total']));
+      D.segs.forEach(function(g){ rowsOut.push([g.s].concat(g.v).concat([g.tot])); });
+      rowsOut.push(['TOTAL'].concat(D.byNet.map(function(b){return b.total;})).concat([D.grand]));
+    } else if(kind==='vahan'){
+      var V=vahanCalc();
+      rowsOut.push(['Maker'].concat(V.labels).concat(['Total','Share %']));
+      V.makers.forEach(function(m){ rowsOut.push([m.m].concat(m.vals).concat([m.sum,m.share.toFixed(1)])); });
+      rowsOut.push(['TOTAL'].concat(V.totals).concat([V.grand,'100']));
+    } else {
+      var R=rows();
+      rowsOut.push(['Network','Type','Paid check','Paid norm','Actual paid stock','Short by','O','D','R','C',
+                    'Target','Retail (sale register)','Achievement %','Payout slab (Rs/veh)','Earned','Forfeited',
+                    'Debit','Credit','Credit vehicles','Fund should be invested','Fund invested','Fund gap']);
+      R.forEach(function(r){ rowsOut.push([r.name,r.type,r.status,r.norm,r.actualPaid,r.paidGap,r.o,r.d,r.r,r.c,
+        r.target,r.retail,r.target?r.ach:'',r.perVeh||'',r.earned,r.forfeited,
+        r.debit,r.credit,r.creditVeh,r.shouldInvest,r.invested,r.gap]); });
+    }
+    var blob=new Blob(['﻿'+rowsOut.map(function(r){return r.map(cell).join(',');}).join('\n')],{type:'text/csv;charset=utf-8;'});
+    var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download='network_'+kind+'_'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); },2000);
+    if(typeof showToast==='function') showToast('Exported '+(rowsOut.length-1)+' row(s)');
+  };
+
+  /* ================= render + mount ================= */
+  function render(){
+    var root=document.getElementById('network-root'); if(!root) return;
+    load();
+    root.innerHTML = subnav() + (TAB==='paid'?renderPaid():TAB==='retail'?renderRetail():TAB==='demand'?renderDemand():renderVahan());
+    if(typeof drawChart!=='function') return;
+    if(TAB==='retail'){
+      var R=rows().filter(function(r){ return r.retail>0; }).sort(function(a,b){ return b.retail-a.retail; });
+      if(R.length) drawChart('net-retail-chart','bar',{labels:R.map(function(r){return r.name.replace(/^\d+\s*-\s*/,'');}),
+        datasets:[{data:R.map(function(r){return r.retail;}),
+          backgroundColor:R.map(function(r){ return r.fail?'#ff5c5c':'#2bd47d'; })}]},
+        {indexAxis:'y',plugins:{legend:{display:false}}});
+    }
+    if(TAB==='vahan'){
+      var V=vahanCalc(), cols=['#ff2e2e','#5b9eff','#2bd47d','#ffb02e','#a05bff','#5be0ff','#ff8b3d'];
+      drawChart('net-vahan-trend','line',{labels:V.labels,
+        datasets:V.makers.slice(0,5).map(function(m,i){ return {label:m.m.split(' ')[0],data:m.vals,
+          borderColor:cols[i],backgroundColor:cols[i]+'22',tension:0.3,fill:false}; })},{});
+      drawChart('net-vahan-share','doughnut',{labels:V.makers.slice(0,6).map(function(m){return m.m.split(' ')[0];}),
+        datasets:[{data:V.makers.slice(0,6).map(function(m){return m.sum;}),backgroundColor:cols}]},{});
+    }
+  }
+
+  function addNav(){
+    var items=document.querySelectorAll('.nav-item'); if(!items.length) return false;
+    if(document.querySelector('.nav-item[data-view="network"]')) return true;
+    var last=items[items.length-1], c=last.cloneNode(true);
+    c.classList.remove('active'); c.setAttribute('data-view','network'); c.textContent='Sub-Dealer Network';
+    c.onclick=function(){ window.setView('network'); };
+    last.parentNode.appendChild(c); return true;
+  }
+  function addView(){
+    if(document.getElementById('view-network')) return true;
+    var views=document.querySelectorAll('.view'); if(!views.length) return false;
+    var s=document.createElement('section'); s.className='view'; s.id='view-network';
+    s.innerHTML='<div class="filters" style="margin-bottom:10px"><label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px">&#128197; Month:'
+      +'<select class="filter-select view-month" onchange="setPeriod(this.value)"><option value="">All time</option></select></label></div>'
+      +'<div id="network-root"></div>';
+    views[views.length-1].parentNode.appendChild(s); return true;
+  }
+  function init(){
+    var tries=0;
+    (function wait(){
+      if(addNav() && addView()){
+        var o=window.setView;
+        if(typeof o==='function' && !o.__netWrapped){
+          window.setView=function(n){ o(n); if(n==='network'){ try{ render(); }catch(e){ console.warn('[net]',e); } } };
+          window.setView.__netWrapped=true;
+        }
+        try{ if(typeof refreshMonthOptions==='function') refreshMonthOptions(); }catch(e){}
+        setTimeout(function(){ try{ netSync(true); }catch(e){} },2000);
+        return;
+      }
+      if(++tries<60) setTimeout(wait,250);
+    })();
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init); else init();
+})();
+</script>
+
 </html>
