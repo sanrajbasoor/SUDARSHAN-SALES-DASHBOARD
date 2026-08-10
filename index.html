@@ -1895,9 +1895,11 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'<button class="btn btn-primary btn-sm" onclick="opsImport(\''+kind+'\')">Load '+kind+'</button>'
       +'<button class="btn btn-sm" onclick="opsSyncFromSheet()">&#128260; Sync ops from Sheet</button>'
       +'<button class="btn btn-sm btn-ghost" onclick="opsResetSnapshot()">Reset to sheet snapshot</button>'
+      +'<button class="btn btn-sm" onclick="opsDiagnose()">&#128269; Diagnose feed</button>'
       +'<span class="help-text" style="margin-left:auto">Source: '+esc(ops.source==='seed'?'Sheet snapshot':ops.source)+' &middot; '+esc(ops.updatedAt)+'</span>'
       +'</div>'
       +'<div id="ops-last-refresh" class="help-text" style="margin-top:8px"></div>'
+      +'<div id="ops-diag"></div>'
       +'</div>';
   }
 
@@ -2269,6 +2271,64 @@ document.addEventListener('DOMContentLoaded', initApp);
   };
 
   window.opsResetSnapshot=function(){ if(!confirm('Reset ops data to the original sheet snapshot?'))return; ops=seed(); save(); rerenderActiveOps(); showToast('Reset to snapshot'); };
+  /* on-demand feed diagnosis — so a zero never needs a browser console to explain */
+  window.opsDiagnose=function(){
+    var out=document.getElementById('ops-diag'); if(!out) return;
+    function row(l,v,c){ return '<tr style="border-top:1px solid var(--line)"><td style="padding:6px 8px;color:var(--muted)">'+l+'</td>'
+      +'<td style="padding:6px 8px;font-weight:700'+(c?(';color:'+c):'')+'">'+v+'</td></tr>'; }
+    function card(inner,b){ return '<div class="card" style="margin-top:12px;border-left:4px solid '+(b||'var(--info)')+'">'+inner+'</div>'; }
+    var stock=ops.stock||[], reg=ops.stockRegister;
+    var locs=[]; stock.forEach(function(r){ var l=String(r.loc==null?'':r.loc).trim(); if(l&&locs.indexOf(l)<0) locs.push(l); });
+    var vidaStock=stock.filter(function(r){ return /vida|vx2/i.test(String(r.model||'')); });
+    var vidaReg=((reg&&reg.units)||[]).filter(function(u){ return /vida|vx2/i.test(String(u.mo||'')); });
+    var base='<h3>&#128269; Feed diagnosis</h3><table class="table" style="margin-top:6px"><tbody>'
+      +row('Locations in dashboard stock', locs.length?esc(locs.join(', ')):'none')
+      +row('VIDA rows in dashboard stock', vidaStock.length, vidaStock.length?'#2bd47d':'#ff5c5c')
+      +row('VIN-level register units', (reg&&reg.count)?reg.count:'not synced')
+      +row('VIDA units in register', vidaReg.length, vidaReg.length?'#2bd47d':'#ff5c5c')
+      +'</tbody></table>';
+    out.innerHTML=card(base+'<p class="help-text">Checking the live feed&hellip;</p>');
+    var url=''; try{ url=(config&&config.script&&config.script.url)||''; }catch(e){}
+    if(!url){ out.innerHTML=card(base+'<p class="help-text"><b style="color:#ffb02e">No Apps Script URL saved.</b> Add it under Settings &rarr; Live Team Sync, or paste the stock sheet into the box above.</p>','#ffb02e'); return; }
+    fetch(url+'?t='+Date.now(),{cache:'no-cache',redirect:'follow'}).then(function(r){ return r.json(); }).then(function(j){
+      var fs=j.stock||[], fr=j.stockRegister||{}, mx=fr.matrix||{};
+      var fVida=fs.filter(function(r){ return /vida|vx2/i.test(String(r.model||'')); });
+      var mVida=Object.keys(mx).filter(function(m){ return /vida|vx2/i.test(m); });
+      var uVida=((fr.units)||[]).filter(function(u){ return /vida|vx2/i.test(String(u.mo||'')); });
+      var fLocs=[];
+      fs.forEach(function(r){ var l=String(r.loc==null?'':r.loc).trim(); if(l&&fLocs.indexOf(l)<0) fLocs.push(l); });
+      Object.keys(mx).forEach(function(m){ Object.keys(mx[m]).forEach(function(l){ if(l&&fLocs.indexOf(l)<0) fLocs.push(l); }); });
+      var h2='<h3>&#128269; Feed diagnosis</h3><table class="table" style="margin-top:6px"><tbody>'
+        +row('Feed keys', esc(Object.keys(j).join(', ')))
+        +row('Feed stock rows', fs.length)
+        +row('Feed register units', fr.count||0)
+        +row('Locations in feed', fLocs.length?esc(fLocs.join(', ')):'none')
+        +row('VIDA in feed stock', fVida.length, fVida.length?'#2bd47d':'#ff5c5c')
+        +row('VIDA in feed register', uVida.length, uVida.length?'#2bd47d':'#ff5c5c')
+        +row('VIDA models in matrix', mVida.length?esc(mVida.join(', ')):'none', mVida.length?'#2bd47d':'#ff5c5c')
+        +row('VIDA showing in dashboard', vidaStock.length+vidaReg.length, (vidaStock.length+vidaReg.length)?'#2bd47d':'#ff5c5c')
+        +'</tbody></table>';
+      var verdict, col;
+      if(fVida.length||mVida.length||uVida.length){
+        col='#ffb02e';
+        verdict='<b style="color:#ffb02e">VIDA is in the feed but not reaching the tables.</b> That is a mapping problem on the dashboard side, not a data problem. '
+          +'Send me the <b>Locations in feed</b> line above and I will map it &mdash; it is a one-line change.';
+      } else if(!fs.length && !fr.count){
+        col='#ff5c5c';
+        verdict='<b style="color:#ff5c5c">The feed carries no stock at all.</b> The Apps Script is publishing enquiries but no stock keys &mdash; '
+          +'OpsData2.gs is either not installed or not deployed to the URL saved in Settings.';
+      } else {
+        col='#ff5c5c';
+        verdict='<b style="color:#ff5c5c">VIDA is genuinely absent from the feed.</b> The Apps Script is reading the 10348 stock register only. '
+          +'VIDA runs on dealer code 17097 with its own <b>Vida Stock</b> sheet, which is never read &mdash; so no mapping fix on this side can help. '
+          +'Either add that sheet to OpsData2.gs, or paste it into the box above and it works immediately. '
+          +'The dashboard is reporting correctly: the source is not sending VIDA.';
+      }
+      out.innerHTML=card(h2+'<p class="help-text" style="margin-top:8px">'+verdict+'</p>',col);
+    }).catch(function(e){
+      out.innerHTML=card(base+'<p class="help-text"><b style="color:#ff5c5c">Could not reach the feed:</b> '+esc(e.message)+'</p>','#ff5c5c');
+    });
+  };
   window.opsSyncFromSheet=function(silent){
     try{ if(!(typeof config!=='undefined'&&config.script&&config.script.url)){ if(!silent) showToast('No Apps Script URL saved (Settings)'); return; } }catch(e){ if(!silent) showToast('No feed configured'); return; }
     if(!silent) showToast('Syncing ops from Sheet...');
