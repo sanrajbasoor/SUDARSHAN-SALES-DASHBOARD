@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>Hero MotoCorp — Dealership Sales Dashboard</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+/* Build a JS string literal that is safe inside a double-quoted HTML attribute.
+   JSON.stringify emits double quotes, which terminate the attribute early and
+   silently kill the handler - that is why onchange/onclick were doing nothing. */
+function __jsq(v){ return "'" + String(v==null?"":v)
+  .replace(/\\/g,"\\\\").replace(/'/g,"\\'")
+  .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;") + "'"; }
+</script>
 <style>
 *,*::before,*::after{box-sizing:border-box;}
 :root{--bg:#0b1020;--panel:#121935;--panel-2:#1a2347;--line:#232c52;--text:#e7ecf7;--muted:#94a0c8;--accent:#ff2e2e;--accent-2:#ffb02e;--ok:#2bd47d;--warn:#ffb02e;--danger:#ff5c5c;--info:#5b9eff;--shadow:0 6px 24px rgba(0,0,0,0.35);--r:12px;}
@@ -1145,7 +1153,7 @@ function renderLeakage() {
         +'<p class="help-text">Showing <b>'+(statusSel==='active'?'active (incl. Booked)':'open only')+'</b> enquiries. The <b>'+scopeLabel+'</b> column excludes Won/Lost/Closed'+(statusSel==='active'?'':' and Booked')+' — that is why it is lower than the raw total. Total leaks = stale + no test-ride + overdue. Highest first; click a row to drill in.</p>'
         +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Counter</th><th style="text-align:right">'+scopeLabel+'</th><th style="text-align:right">Booked</th><th style="text-align:right">Closed/Won/Lost</th><th style="text-align:right">Stale &gt;7d</th><th style="text-align:right">No test-ride</th><th style="text-align:right">Overdue FU</th><th style="text-align:right">Total leaks</th><th style="text-align:right">Leak rate</th></tr></thead><tbody>';
       rows.forEach(s=>{const tot=s.stale+s.noTD+s.overdue;const rate=s.scope?Math.round(tot/s.scope*100):0;const sel=ctrEq(ctrSel,s.c);
-        bh+='<tr onclick="document.getElementById(\'vm-leakage-counter\').value='+JSON.stringify(sel?'':s.c)+';renderLeakage();" style="cursor:pointer;'+(sel?'background:var(--panel-2)':'')+'" title="'+s.all+' total enquiries at this counter">'
+        bh+='<tr onclick="document.getElementById(\'vm-leakage-counter\').value='+__jsq(sel?'':s.c)+';renderLeakage();" style="cursor:pointer;'+(sel?'background:var(--panel-2)':'')+'" title="'+s.all+' total enquiries at this counter">'
           +'<td style="font-weight:700">'+escapeHtml(s.c)+'</td><td style="text-align:right;font-weight:700">'+s.scope+'</td>'
           +'<td style="text-align:right;color:var(--muted)">'+s.booked+'</td><td style="text-align:right;color:var(--muted)">'+s.closed+'</td>'
           +'<td style="text-align:right;color:#ffb02e">'+s.stale+'</td><td style="text-align:right;color:#ff8b3d">'+s.noTD+'</td>'
@@ -1231,7 +1239,7 @@ function renderFinance() {
         +'<p class="help-text">Share of each counter&rsquo;s enquiries that need finance, and how many of those converted. Click a row to drill in.</p>'
         +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Counter</th><th style="text-align:right">Enquiries</th><th style="text-align:right">Finance req.</th><th style="text-align:right">Penetration</th><th style="text-align:right">Finance won</th></tr></thead><tbody>';
       rows.forEach(s=>{const pen=s.total?Math.round(s.fin/s.total*100):0;const sel=ctrEq(ctrSel,s.c);
-        bh+='<tr onclick="document.getElementById(\'vm-finance-counter\').value='+JSON.stringify(sel?'':s.c)+';renderFinance();" style="cursor:pointer;'+(sel?'background:var(--panel-2)':'')+'">'
+        bh+='<tr onclick="document.getElementById(\'vm-finance-counter\').value='+__jsq(sel?'':s.c)+';renderFinance();" style="cursor:pointer;'+(sel?'background:var(--panel-2)':'')+'">'
           +'<td style="font-weight:700">'+escapeHtml(s.c)+'</td><td style="text-align:right;color:var(--muted)">'+s.total+'</td>'
           +'<td style="text-align:right;font-weight:700">'+s.fin+'</td>'
           +'<td style="text-align:right;font-weight:700;color:'+(pen>=50?'#2bd47d':pen>=30?'#ffb02e':'#ff5c5c')+'">'+pen+'%</td>'
@@ -1840,7 +1848,7 @@ document.addEventListener('DOMContentLoaded', initApp);
         +'<td style="text-align:right;color:var(--muted)">'+(x.counterTarget||'&mdash;')+'</td>'
         +'<td style="text-align:right;color:var(--muted)">'+(x.suggest||'&mdash;')+'</td>'
         +'<td style="text-align:right"><input type="number" min="0" value="'+(set?x.targetMonthly:'')+'" placeholder="not set" '
-        +'onchange="dseTarget('+JSON.stringify(x.key)+',this.value)" '
+        +'onchange="dseTarget('+__jsq(x.key)+',this.value)" '
         +'style="width:84px;text-align:right;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:5px 8px;border-radius:6px"/></td>'
         +'<td style="text-align:right;font-weight:700;color:'+(set?'#5b9eff':'var(--muted)')+'">'+(x.target||'&mdash;')+'</td>'
         +'<td style="font-size:12px;color:'+(set?'#2bd47d':'#ffb02e')+'">'+(set?'Set by you':'Not set')+'</td></tr>';
@@ -1858,8 +1866,8 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
       +'<h3 style="margin:0">&#128100; '+esc(s.name)+' &mdash; review card</h3>'
       +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
-      +'<button class="btn btn-sm" onclick="dseExportOne('+JSON.stringify(s.key)+')">&#11015;&#65039; Export sheet</button>'
-      +'<button class="btn btn-sm btn-ghost" onclick="dseOpen('+JSON.stringify(s.key)+')">Close</button></div></div>'
+      +'<button class="btn btn-sm" onclick="dseExportOne('+__jsq(s.key)+')">&#11015;&#65039; Export sheet</button>'
+      +'<button class="btn btn-sm btn-ghost" onclick="dseOpen('+__jsq(s.key)+')">Close</button></div></div>'
       +'<p class="help-text">Results for <b>'+esc(R.label)+'</b>. Funnel and speed use the trailing '+FUNNEL_DAYS+' days, so a single week still has enough volume to read.</p>';
 
     h+='<div class="grid grid-4" style="margin-top:10px">'
@@ -1887,7 +1895,7 @@ document.addEventListener('DOMContentLoaded', initApp);
 
     h+='<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:10px;padding-top:12px;border-top:1px solid var(--line)">'
       +'<label style="font-size:13px;color:var(--muted)">Monthly target for '+esc(s.name)+'&nbsp;'
-      +'<input type="number" min="0" value="'+(s.target||'')+'" onchange="dseTarget('+JSON.stringify(s.key)+',this.value)" style="width:80px;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:6px 8px;border-radius:8px"/></label>'
+      +'<input type="number" min="0" value="'+(s.target||'')+'" onchange="dseTarget('+__jsq(s.key)+',this.value)" style="width:80px;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:6px 8px;border-radius:8px"/></label>'
       +'<span class="help-text">Overdue follow-ups: <b style="color:'+(s.overdue?'#ff5c5c':'#2bd47d')+'">'+s.overdue+'</b> &middot; '
       +'No next follow-up set: <b style="color:'+(s.noFU?'#ffb02e':'#2bd47d')+'">'+s.noFU+'</b> &middot; '
       +'Finance attach on new enquiries: <b>'+(s.newEnq?Math.round(s.fin/s.newEnq*100):0)+'%</b></span>'
@@ -1974,7 +1982,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     if(!rows.length) h+='<tr><td colspan="14" style="text-align:center;color:var(--muted);padding:18px">No data for this period.</td></tr>';
     rows.forEach(function(s){
       var open=prefs.open===s.key;
-      h+='<tr onclick="dseOpen('+JSON.stringify(s.key)+')" style="cursor:pointer;border-top:1px solid var(--line)'+(open?';background:var(--panel-2)':'')+'">'
+      h+='<tr onclick="dseOpen('+__jsq(s.key)+')" style="cursor:pointer;border-top:1px solid var(--line)'+(open?';background:var(--panel-2)':'')+'">'
         +'<td style="text-align:right;color:var(--muted)">'+s.rank+'</td>'
         +'<td style="text-align:center">'+arrow(s.rankMove)+'</td>'
         +'<td style="font-weight:700">'+esc(s.name)+(open?' &#9664;':'')+'</td>'
@@ -3032,7 +3040,7 @@ document.addEventListener('DOMContentLoaded', initApp);
         +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Counter</th><th style="text-align:right">'+(dedupeOn()?'Unique cust.':'Digital enq')+'</th><th style="text-align:right">Tracked</th><th style="text-align:right">Followed up</th><th style="text-align:right">Hot</th><th style="text-align:right">Sold</th><th style="text-align:right">Conversion</th></tr></thead><tbody>';
       ck.forEach(function(c){
         var cm=metrics(dedupeOn()?dedupeRecs(byctr[c]):byctr[c]); var sel=low(selCounter())===low(c);
-        h+='<tr onclick="ctPickCounter('+JSON.stringify(sel?'':c)+')" style="cursor:pointer;'+(sel?'background:var(--panel-2)':'')+'">'
+        h+='<tr onclick="ctPickCounter('+__jsq(sel?'':c)+')" style="cursor:pointer;'+(sel?'background:var(--panel-2)':'')+'">'
           +'<td style="font-weight:700">'+esc(c)+'</td><td style="text-align:right;font-weight:700">'+cm.total+'</td>'
           +'<td style="text-align:right;color:'+(cm.trackedPct>=80?'#2bd47d':cm.trackedPct>=50?'#ffb02e':'#ff5c5c')+'">'+cm.trackedPct+'%</td>'
           +'<td style="text-align:right;color:'+(cm.followedPct>=70?'#2bd47d':cm.followedPct>=40?'#ffb02e':'#ff5c5c')+'">'+cm.followedPct+'%</td>'
@@ -4441,7 +4449,7 @@ document.addEventListener('DOMContentLoaded', initApp);
         +'<th style="text-align:right">Oldest</th></tr></thead><tbody>';
       bk.forEach(function(k){
         var s=by[k], sel=prefs.loc===k, pct=grand?Math.round(s.n/grand*100):0;
-        h+='<tr onclick="agePick('+JSON.stringify(k)+')" style="cursor:pointer;border-top:1px solid var(--line);'+(sel?'background:var(--panel-2)':'')+'">'
+        h+='<tr onclick="agePick('+__jsq(k)+')" style="cursor:pointer;border-top:1px solid var(--line);'+(sel?'background:var(--panel-2)':'')+'">'
           +'<td style="font-weight:700">'+esc(shortLoc(k))+(sel?' &#9664;':'')+'</td>'
           +'<td style="text-align:right;font-weight:800;color:'+bandCol(s.old)+'">'+s.n+'</td>'
           +'<td style="text-align:right;color:var(--muted)">'+pct+'%</td>'
@@ -4815,12 +4823,12 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'<p class="help-text">Click a network to filter the SKU list and the export to it.</p>'
       +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Segment</th>'
       + D.nets.map(function(n){ var sel=DF.net===n;
-          return '<th style="text-align:right;cursor:pointer'+(sel?';background:var(--panel-2)':'')+'" onclick="netDF(\'net\','+JSON.stringify(sel?'':n)+')">'+esc(n)+(sel?' &#9664;':'')+'</th>'; }).join('')
+          return '<th style="text-align:right;cursor:pointer'+(sel?';background:var(--panel-2)':'')+'" onclick="netDF(\'net\','+__jsq(sel?'':n)+')">'+esc(n)+(sel?' &#9664;':'')+'</th>'; }).join('')
       +'<th style="text-align:right">Total</th></tr></thead><tbody>';
     D.segs.forEach(function(g){
       var sel=DF.seg===g.s;
       h+='<tr style="border-top:1px solid var(--line)'+(sel?';background:var(--panel-2)':'')+'">'
-        +'<td style="font-weight:700;cursor:pointer" onclick="netDF(\'seg\','+JSON.stringify(sel?'':g.s)+')">'+esc(g.s)+(sel?' &#9664;':'')+'</td>'
+        +'<td style="font-weight:700;cursor:pointer" onclick="netDF(\'seg\','+__jsq(sel?'':g.s)+')">'+esc(g.s)+(sel?' &#9664;':'')+'</td>'
         + g.v.map(function(x){ return '<td style="text-align:right'+(x?';font-weight:700':';color:var(--muted)')+'">'+(x||'&middot;')+'</td>'; }).join('')
         +'<td style="text-align:right;font-weight:800">'+g.tot+'</td></tr>';
     });
