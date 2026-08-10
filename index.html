@@ -1863,9 +1863,44 @@ document.addEventListener('DOMContentLoaded', initApp);
     };
   }
   var ops;
-  function load(){ try{var r=localStorage.getItem(OPS_KEY); ops=r?JSON.parse(r):seed();}catch(e){ops=seed();} if(!ops||!ops.stock) ops=seed(); }
+  function load(){ try{var r=localStorage.getItem(OPS_KEY); ops=r?JSON.parse(r):seed();}catch(e){ops=seed();} if(!ops||!ops.stock) ops=seed(); mergeSupp(); }
   function save(){ try{localStorage.setItem(OPS_KEY,JSON.stringify(ops));}catch(e){} }
   load();
+
+  /* ---------- supplementary stock (VIDA / dealer 17097) ----------
+     The Apps Script feed only carries the 10348 register, so VIDA never arrives.
+     Supplementary rows are stored separately and re-merged after every sync, so a
+     background pull can no longer wipe them and pasting cannot wipe the ICE stock. */
+  var SUPP_KEY='hero-supp-stock-v1';
+  function suppLoad(){ try{ var r=localStorage.getItem(SUPP_KEY); var a=r?JSON.parse(r):null; return (a&&a.rows)?a:{rows:[],updatedAt:''}; }catch(e){ return {rows:[],updatedAt:''}; } }
+  function suppSave(o){ try{ localStorage.setItem(SUPP_KEY,JSON.stringify(o)); }catch(e){} }
+  function mergeSupp(){
+    var s=suppLoad(); if(!s.rows||!s.rows.length) return;
+    ops.stock=(ops.stock||[]).filter(function(r){ return !r.supp; })
+      .concat(s.rows.map(function(r){ return {model:r.model,loc:r.loc,qty:+r.qty||0,inwardDate:'',supp:true}; }));
+  }
+  window.opsSuppClear=function(){
+    if(!confirm('Remove all supplementary stock rows?')) return;
+    suppSave({rows:[],updatedAt:''});
+    ops.stock=(ops.stock||[]).filter(function(r){ return !r.supp; });
+    save(); rerenderActiveOps(); showToast('Supplementary stock cleared');
+  };
+  function suppPanel(){
+    var s=suppLoad(), tot=s.rows.reduce(function(a,r){ return a+(+r.qty||0); },0);
+    return '<div class="card" style="margin-bottom:14px;border-left:4px solid #a05bff">'
+      +'<h3>&#9889; Supplementary stock &mdash; VIDA / dealer 17097</h3>'
+      +'<p class="help-text">The Apps Script feed carries the 10348 register only, so VIDA never reaches this dashboard. '
+      +'Paste the <b>Vida Stock</b> sheet here and it is <b>added to</b> the synced stock rather than replacing it &mdash; and it is '
+      +'re-applied after every sync, so the 30-minute auto-pull cannot wipe it. Accepts either a location-column pivot '
+      +'(<code>Model | VIDA Hub | &hellip;</code>) or a simple <code>Model | Qty</code> list, in which case everything lands at VIDA Hub.</p>'
+      + (tot ? ('<p class="help-text" style="color:#a05bff"><b>Currently holding '+tot+' supplementary unit(s)</b> across '+s.rows.length+' row(s) &middot; loaded '+esc(s.updatedAt)+'</p>') : '')
+      +'<textarea id="ops-paste-supp" style="width:100%;min-height:90px;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:8px;font-family:monospace;font-size:12px;margin-top:8px" placeholder="Paste the Vida Stock rows here, header row included"></textarea>'
+      +'<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'
+      +'<button class="btn btn-primary btn-sm" onclick="opsImport(\'supp\')">Load supplementary stock</button>'
+      + (tot?'<button class="btn btn-sm btn-ghost" onclick="opsSuppClear()">Clear supplementary</button>':'')
+      +'<span class="help-text" style="margin-left:auto">Quantities only &mdash; VIN-level ageing still needs the sheet in OpsData2.gs</span>'
+      +'</div></div>';
+  }
 
   /* ---------- derived helpers ---------- */
   function stockTotal(){ return ops.stock.reduce(function(a,r){return a+(+r.qty||0);},0); }
@@ -1909,7 +1944,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     var loc=byLocation(), mdl=byModel(), total=stockTotal(), f=ops.finance;
     var transitTot=ops.transit.reduce(function(a,r){return a+(+r.qty||0);},0);
     var premTot=ops.premium.reduce(function(a,r){return a+(+r.qty||0);},0);
-    var h=exportBar('stock')+snapshotNote()+importPanel('stock');
+    var h=exportBar('stock')+snapshotNote()+importPanel('stock')+suppPanel();
     h+='<div class="grid grid-4">';
     h+=kpi(total,'Stock in hand','#5b9eff',LOC.length+' locations');
     h+=kpi(transitTot,'In transit','#ffb02e','arriving from HMCL');
@@ -2159,6 +2194,38 @@ document.addEventListener('DOMContentLoaded', initApp);
         }
         if(!newStock.length){ showToast('No model rows detected'); return; }
         ops.stock=newStock;
+      } else if(kind==='supp'){
+        var shdrS=-1, colMapS=[];
+        for(var si=0;si<rows.length;si++){ var lcS=rows[si].map(locFromToken); if(lcS.filter(Boolean).length>=1 && rows[si].some(function(c){ return /model|sku|description/i.test(c); })){ shdrS=si; colMapS=lcS; break; } }
+        var outS=[];
+        if(shdrS>=0){
+          for(var sj=shdrS+1;sj<rows.length;sj++){
+            var rS=rows[sj]; if(!rS.length) continue; var nmS=(rS[0]||'').trim();
+            if(!nmS || /^(total|grand)/i.test(nmS)) continue;
+            colMapS.forEach(function(lo,ci){ if(!lo) return; var q=parseInt(rS[ci],10); if(q>0) outS.push({model:nmS.toUpperCase(),loc:lo,qty:q}); });
+          }
+        }
+        if(!outS.length){
+          // fall back to a plain Model | Qty list, everything at the VIDA Hub
+          var qi=-1, mi2=-1, hh=-1;
+          for(var sk=0;sk<rows.length;sk++){
+            rows[sk].forEach(function(c,ix){ var t=String(c||'').toLowerCase();
+              if(hh<0 && /^(qty|quantity|stock|units|nos)$/.test(t)){ hh=sk; qi=ix; }
+              if(hh===sk && /model|description|sku/.test(t) && mi2<0) mi2=ix; });
+            if(hh>=0) break;
+          }
+          if(hh>=0){
+            if(mi2<0) mi2=0;
+            for(var sl=hh+1;sl<rows.length;sl++){
+              var rr2=rows[sl], nm2=(rr2[mi2]||'').trim(), q2=parseInt(rr2[qi],10);
+              if(!nm2 || /^(total|grand)/i.test(nm2) || !(q2>0)) continue;
+              outS.push({model:nm2.toUpperCase(),loc:'VIDA Hub',qty:q2});
+            }
+          }
+        }
+        if(!outS.length) throw new Error('no rows detected - need a Model column plus either location columns or a Qty column');
+        suppSave({rows:outS,updatedAt:new Date().toLocaleString('en-IN')});
+        mergeSupp();
       } else if(kind==='sales'){
         // detect segment header
         var shdr=-1, seg=[];
@@ -2350,6 +2417,7 @@ document.addEventListener('DOMContentLoaded', initApp);
         if(rb.length) ops.stock=rb;
       }
       if(got){ try{ if(typeof refreshMonthOptions==='function') refreshMonthOptions(); }catch(e){} }
+      if(got){ mergeSupp(); }
       if(got){ ops.source='Apps Script'; ops.updatedAt=new Date().toLocaleString('en-IN'); save(); rerenderActiveOps(); opsStamp(); if(!silent) showToast('Ops synced from Sheet'); }
       else if(!silent) showToast('Feed has no ops data yet (stock/finance/sales keys)');
     }).catch(function(e){ if(!silent) showToast('Sync failed: '+e.message); });
