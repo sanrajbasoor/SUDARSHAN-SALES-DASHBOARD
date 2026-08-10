@@ -1620,8 +1620,8 @@ document.addEventListener('DOMContentLoaded', initApp);
 (function(){
   "use strict";
   var STALE=7, FUNNEL_DAYS=90, PKEY='hero-dse-prefs-v1';
-  var prefs; try{ prefs=Object.assign({period:'tw',counter:'',open:''},JSON.parse(localStorage.getItem(PKEY))||{}); }
-             catch(e){ prefs={period:'tw',counter:'',open:''}; }
+  var prefs; try{ prefs=Object.assign({period:'tw',month:'',counter:'',open:'',showTargets:false},JSON.parse(localStorage.getItem(PKEY))||{}); }
+             catch(e){ prefs={period:'tw',month:'',counter:'',open:'',showTargets:false}; }
   function savePrefs(){ try{ localStorage.setItem(PKEY,JSON.stringify(prefs)); }catch(e){} }
 
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
@@ -1640,8 +1640,19 @@ document.addEventListener('DOMContentLoaded', initApp);
 
   /* ---------------- periods ---------------- */
   var PERIODS=[['tw','This week'],['lw','Last week'],['l4w','Last 4 weeks'],['tm','This month'],['lm','Last month'],['all','All time']];
+  function monthsAvail(){
+    try{ if(typeof getAvailableMonths==='function'){ var m=getAvailableMonths(); if(m&&m.length) return m; } }catch(e){}
+    var s={}; ENQ().forEach(function(e){ var k=(e.createdAt||'').slice(0,7); if(/^\d{4}-\d{2}$/.test(k)) s[k]=1; });
+    return Object.keys(s).sort().reverse();
+  }
+  function mlabel(ym){ try{ if(typeof formatMonthLabel==='function') return formatMonthLabel(ym); }catch(e){} return ym||''; }
   function rangeOf(k){
     var now=new Date(), ws=weekStart(now), r={};
+    if(k==='mo' && prefs.month && /^\d{4}-\d{2}$/.test(prefs.month)){
+      var p=prefs.month.split('-'), y=+p[0], mo=+p[1]-1;
+      return {from:iso(new Date(y,mo,1)), to:iso(new Date(y,mo+1,0)), label:mlabel(prefs.month),
+              prevFrom:iso(new Date(y,mo-1,1)), prevTo:iso(new Date(y,mo,0))};
+    }
     if(k==='tw'){ r={from:iso(ws),to:today(),label:'This week'}; r.prevFrom=iso(addD(ws,-7)); r.prevTo=iso(addD(ws,-1)); }
     else if(k==='lw'){ r={from:iso(addD(ws,-7)),to:iso(addD(ws,-1)),label:'Last week'}; r.prevFrom=iso(addD(ws,-14)); r.prevTo=iso(addD(ws,-8)); }
     else if(k==='l4w'){ r={from:iso(addD(ws,-21)),to:today(),label:'Last 4 weeks'}; r.prevFrom=iso(addD(ws,-49)); r.prevTo=iso(addD(ws,-22)); }
@@ -1665,14 +1676,27 @@ document.addEventListener('DOMContentLoaded', initApp);
 
   /* ---------------- per-DSE targets ---------------- */
   function targets(){ try{ if(!config.targets) config.targets={}; if(!config.targets.dse) config.targets.dse={}; return config.targets.dse; }catch(e){ return {}; } }
-  function suggestedTarget(k,dseAtCounter,counter){
-    try{
-      var t=config.targets||{};
-      if(counter && t.counters && t.counters[counter] && dseAtCounter) return Math.round(t.counters[counter]/dseAtCounter);
-      if(t.global){ var n=Object.keys(scoreAll()).length||1; return Math.round(t.global/n); }
-    }catch(e){}
-    return 0;
+  function counterTargetOf(c){ try{ return (config.targets&&config.targets.counters&&config.targets.counters[c])||0; }catch(e){ return 0; } }
+  /* a monthly target judged against one week is meaningless — scale it to the window on screen */
+  function periodDays(R){ if(R.from==='0000-01-01') return 30.44; var d=dayDiff(R.from,R.to); return (d==null?0:d)+1; }
+  function periodTarget(monthly,R){
+    if(!monthly) return null;
+    if(R.label==='All time') return monthly;
+    return Math.max(1,Math.round(monthly*periodDays(R)/30.44));
   }
+  window.dseAutoTargets=function(){
+    var B=build(), t=targets(), c=0;
+    B.rows.forEach(function(x){ if(x.key==='(UNASSIGNED)') return; if(x.suggest>0){ t[x.key]=x.suggest; c++; } });
+    try{ if(typeof saveData==='function') saveData(); }catch(e){}
+    if(typeof showToast==='function') showToast(c?('Filled '+c+' DSE target(s) from counter targets'):'Set counter targets in Settings first');
+    render();
+  };
+  window.dseClearTargets=function(){
+    if(!confirm('Clear every DSE target?')) return;
+    try{ config.targets.dse={}; if(typeof saveData==='function') saveData(); }catch(e){}
+    if(typeof showToast==='function') showToast('DSE targets cleared');
+    render();
+  };
   window.dseTarget=function(k,v){
     v=Math.max(0,parseInt(v,10)||0);
     try{ targets()[k]=v; if(typeof saveData==='function') saveData(); }catch(e){}
@@ -1737,8 +1761,11 @@ document.addEventListener('DOMContentLoaded', initApp);
       s.conv = s.fN ? Math.round(s.fWon/s.fN*100) : 0;
       s.avgSpeed = s.speed.length ? Math.round(s.speed.reduce(function(a,b){return a+b;},0)/s.speed.length*10)/10 : null;
       s.delta = s.won - s.prevWon;
-      var t=targets()[k];
-      s.target = (t!=null && t!=='') ? t : suggestedTarget(k,dseAtCounter[s.counter||'']||1,s.counter);
+      s.counterTarget = counterTargetOf(s.counter);
+      s.suggest = s.counterTarget ? Math.round(s.counterTarget/(dseAtCounter[s.counter||'']||1)) : 0;
+      var tv=targets()[k];
+      s.targetMonthly = (tv!=null && tv!=='' && +tv>0) ? +tv : null;   // only what was actually set
+      s.target = periodTarget(s.targetMonthly,R);                       // scaled to the period on screen
       s.tgtPct = s.target ? Math.round(s.won/s.target*100) : null;
       // funnel leak: the largest proportional drop between consecutive stages
       var steps=[['Enquiries',s.fN],['Contacted',s.fContacted],['Test ride offered',s.fTdOff],
@@ -1779,8 +1806,50 @@ document.addEventListener('DOMContentLoaded', initApp);
   }
   function counters(){ var s={}; ENQ().forEach(function(e){ var c=String(e.counter||'').trim(); if(c) s[c]=1; }); return Object.keys(s).sort(); }
 
-  window.dseSet=function(k,v){ prefs[k]=v; savePrefs(); render(); };
+  window.dseSet=function(k,v){
+    if(k==='month'){ prefs.month=v||''; prefs.period = v?'mo':'l4w'; }          // a month overrides the week view
+    else if(k==='period'){ prefs.period=v; if(v!=='mo') prefs.month=''; }        // a week view clears the month
+    else prefs[k]=v;
+    savePrefs(); render();
+  };
   window.dseOpen=function(k){ prefs.open = (prefs.open===k)?'':k; savePrefs(); render(); };
+
+  /* ---------------- targets ---------------- */
+  function targetsPanel(rows,R){
+    var t=targets(), anySet=Object.keys(t).some(function(k){ return +t[k]>0; });
+    var h='<div class="card" style="margin-top:14px;border-left:4px solid '+(anySet?'#5b9eff':'#ffb02e')+'">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<h3 style="margin:0">&#127919; Monthly targets by DSE &mdash; all counters</h3>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+      +'<button class="btn btn-sm btn-primary" onclick="dseAutoTargets()">Auto-fill from counter targets</button>'
+      +'<button class="btn btn-sm btn-ghost" onclick="dseClearTargets()">Clear all</button>'
+      +'<button class="btn btn-sm btn-ghost" onclick="dseSet(\'showTargets\',false)">Hide</button></div></div>'
+      +'<p class="help-text">'+(anySet
+        ? 'These are <b>monthly</b> numbers you set. The scorecard scales them to whatever period is selected &mdash; showing <b>'+esc(R.label)+'</b>, so each target below is judged on its pro-rata share of the month.'
+        : '<b style="color:#ffb02e">No DSE targets are set, and none are assumed.</b> The vs-target column stays blank until you fill these in. '
+          +'<b>Auto-fill</b> splits each counter&rsquo;s monthly target evenly across the DSEs working there &mdash; a starting point you can then edit row by row.')+'</p>'
+      +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>DSE</th><th>Counter</th>'
+      +'<th style="text-align:right">Counter target</th><th style="text-align:right">Even split</th>'
+      +'<th style="text-align:right">Monthly target</th><th style="text-align:right">'+esc(R.label)+'</th><th>Source</th></tr></thead><tbody>';
+    rows.forEach(function(x){
+      if(x.key==='(UNASSIGNED)') return;
+      var set=x.targetMonthly!=null;
+      h+='<tr style="border-top:1px solid var(--line)">'
+        +'<td style="font-weight:700">'+esc(x.name)+'</td>'
+        +'<td style="color:var(--muted)">'+esc(x.counter||'(none)')+'</td>'
+        +'<td style="text-align:right;color:var(--muted)">'+(x.counterTarget||'&mdash;')+'</td>'
+        +'<td style="text-align:right;color:var(--muted)">'+(x.suggest||'&mdash;')+'</td>'
+        +'<td style="text-align:right"><input type="number" min="0" value="'+(set?x.targetMonthly:'')+'" placeholder="not set" '
+        +'onchange="dseTarget('+JSON.stringify(x.key)+',this.value)" '
+        +'style="width:84px;text-align:right;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:5px 8px;border-radius:6px"/></td>'
+        +'<td style="text-align:right;font-weight:700;color:'+(set?'#5b9eff':'var(--muted)')+'">'+(x.target||'&mdash;')+'</td>'
+        +'<td style="font-size:12px;color:'+(set?'#2bd47d':'#ffb02e')+'">'+(set?'Set by you':'Not set')+'</td></tr>';
+    });
+    h+='</tbody></table></div>'
+      +'<p class="help-text" style="margin-top:8px">Counter targets come from <b>Settings &rarr; Monthly Targets</b>. Set those first and Auto-fill has something to divide.</p>'
+      +'</div>';
+    return h;
+  }
 
   /* ---------------- review card ---------------- */
   function reviewCard(s,R){
@@ -1794,7 +1863,7 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'<p class="help-text">Results for <b>'+esc(R.label)+'</b>. Funnel and speed use the trailing '+FUNNEL_DAYS+' days, so a single week still has enough volume to read.</p>';
 
     h+='<div class="grid grid-4" style="margin-top:10px">'
-      +kpi(s.won+' / '+(s.target||'&mdash;'),'Won vs target',s.tgtPct==null?'':rag(s.tgtPct,100,80),s.tgtPct!=null?(s.tgtPct+'% of target'):'no target set')
+      +kpi(s.won+' / '+(s.target||'&mdash;'),'Won vs target',s.tgtPct==null?'':rag(s.tgtPct,100,80),s.tgtPct!=null?(s.tgtPct+'% &middot; monthly target '+s.targetMonthly):'no target set')
       +kpi(delta(s.delta),'vs previous period','','was '+s.prevWon)
       +kpi(s.avgSpeed!=null?(s.avgSpeed+' d'):'&mdash;','Speed to first contact',s.avgSpeed==null?'':(s.avgSpeed<=1?'#2bd47d':s.avgSpeed<=3?'#ffb02e':'#ff5c5c'),'enquiry &rarr; first touch')
       +kpi(s.stale,'Untouched &gt;7 days',s.stale?'#ff5c5c':'#2bd47d','of '+s.active+' live')
@@ -1861,12 +1930,18 @@ document.addEventListener('DOMContentLoaded', initApp);
     h+='<div class="filters" style="margin-bottom:14px">'
       +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">&#128197; Period'
       +'<select class="filter-select" onchange="dseSet(\'period\',this.value)">'
+      + (prefs.period==='mo'?('<option value="mo" selected>'+esc(mlabel(prefs.month))+'</option>'):'')
       + PERIODS.map(function(p){ return '<option value="'+p[0]+'"'+(prefs.period===p[0]?' selected':'')+'>'+p[1]+'</option>'; }).join('')
+      +'</select></label>'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">&#128198; Or a month'
+      +'<select class="filter-select" onchange="dseSet(\'month\',this.value)"><option value="">&mdash; none &mdash;</option>'
+      + monthsAvail().map(function(m){ return '<option value="'+m+'"'+(prefs.month===m?' selected':'')+'>'+esc(mlabel(m))+'</option>'; }).join('')
       +'</select></label>'
       +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">&#127970; Counter'
       +'<select class="filter-select" onchange="dseSet(\'counter\',this.value)"><option value="">All counters</option>'
       + counters().map(function(c){ return '<option value="'+esc(c)+'"'+(prefs.counter===c?' selected':'')+'>'+esc(c)+'</option>'; }).join('')
       +'</select></label>'
+      +'<button class="btn btn-sm'+(prefs.showTargets?' btn-primary':'')+'" onclick="dseSet(\'showTargets\','+(prefs.showTargets?'false':'true')+')">&#127919; Targets</button>'
       +'<button class="btn btn-sm" onclick="dseExportAll()">&#11015;&#65039; Export scorecard</button>'
       +'<span class="help-text" style="margin-left:auto">'+esc(R.label)+': '+esc(R.from)+' &rarr; '+esc(R.to)
       + (R.prevFrom?(' &middot; compared with '+esc(R.prevFrom)+' &rarr; '+esc(R.prevTo)):'')+'</span></div>';
@@ -1892,7 +1967,7 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'<div style="overflow-x:auto"><table class="table"><thead><tr>'
       +'<th style="text-align:right">#</th><th style="text-align:center">Move</th><th>DSE</th>'
       +'<th style="text-align:right">Won</th><th style="text-align:center">vs prev</th>'
-      +'<th style="text-align:right">Target</th><th style="text-align:right">vs target</th>'
+      +'<th style="text-align:right">Target<br><span style="font-weight:400;text-transform:none">('+esc(R.label.toLowerCase())+')</span></th><th style="text-align:right">vs target</th>'
       +'<th style="text-align:right">New</th><th style="text-align:right">Booked</th><th style="text-align:right">Live</th>'
       +'<th style="text-align:right">Conv%</th><th style="text-align:right">Speed</th>'
       +'<th>Biggest leak</th><th style="text-align:right">Untouched</th></tr></thead><tbody>';
@@ -1905,7 +1980,7 @@ document.addEventListener('DOMContentLoaded', initApp);
         +'<td style="font-weight:700">'+esc(s.name)+(open?' &#9664;':'')+'</td>'
         +'<td style="text-align:right;font-weight:800;color:#2bd47d">'+s.won+'</td>'
         +'<td style="text-align:center">'+delta(s.delta)+'</td>'
-        +'<td style="text-align:right;color:var(--muted)">'+(s.target||'&mdash;')+'</td>'
+        +'<td style="text-align:right;color:var(--muted)" title="'+(s.targetMonthly?('Monthly target '+s.targetMonthly+', scaled to '+esc(R.label)):'No target set')+'">'+(s.target||'&mdash;')+'</td>'
         +'<td style="text-align:right;font-weight:700;color:'+(s.tgtPct==null?'var(--muted)':rag(s.tgtPct,100,80))+'">'+(s.tgtPct==null?'&mdash;':s.tgtPct+'%')+'</td>'
         +'<td style="text-align:right">'+s.newEnq+'</td>'
         +'<td style="text-align:right;color:#a05bff">'+s.booked+'</td>'
@@ -1916,6 +1991,9 @@ document.addEventListener('DOMContentLoaded', initApp);
         +'<td style="text-align:right;font-weight:700;color:'+(s.stale?'#ff5c5c':'#2bd47d')+'">'+s.stale+'</td></tr>';
     });
     h+='</tbody></table></div></div>';
+
+    var anyTarget=rows.some(function(x){ return x.targetMonthly!=null; });
+    if(prefs.showTargets || !anyTarget) h+=targetsPanel(rows,R);
 
     var open=rows.filter(function(s){ return s.key===prefs.open; })[0];
     if(open) h+=reviewCard(open,R);
@@ -1975,7 +2053,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     var out=[[s.name+' — review sheet',B.R.label+'  ('+B.R.from+' to '+B.R.to+')','']];
     out.push([]); out.push(['Metric','Value','Note']);
     out.push(['Won',s.won,'previous period '+s.prevWon+' ('+(s.delta>0?'+':'')+s.delta+')']);
-    out.push(['Target',s.target||'','achievement '+(s.tgtPct==null?'n/a':s.tgtPct+'%')]);
+    out.push(['Target ('+B.R.label+')',s.target||'','monthly target '+(s.targetMonthly||'not set')+', achievement '+(s.tgtPct==null?'n/a':s.tgtPct+'%')]);
     out.push(['Rank',s.rank,s.rankMove==null?'':('moved '+(s.rankMove>0?'up ':'down ')+Math.abs(s.rankMove))]);
     out.push(['New enquiries',s.newEnq,'']);
     out.push(['Live pipeline',s.active,'']);
