@@ -1788,6 +1788,14 @@ document.addEventListener('DOMContentLoaded', initApp);
   "use strict";
   var OPS_KEY='hero-ops-v1';
   var LOC=['Adhartal','Festival Counter-DC','Damoh Naka','Godown','Madan Mahal','Napier Town'];
+  // every location present in the feed, so a new counter (VIDA Hub, Premia, a new godown)
+  // appears the moment it turns up instead of being invisible
+  function LOCS(){
+    var seen={}, out=[];
+    LOC.forEach(function(l){ seen[l]=1; out.push(l); });
+    ((ops&&ops.stock)||[]).forEach(function(r){ var l=String(r.loc==null?'':r.loc).trim(); if(l&&!seen[l]){ seen[l]=1; out.push(l); } });
+    return out;
+  }
   var INR=function(n){ n=Math.round(Number(n)||0); var s=String(Math.abs(n)); var last3=s.slice(-3); var rest=s.slice(0,-3); if(rest) last3=','+last3; rest=rest.replace(/\B(?=(\d{2})+(?!\d))/g,','); return (n<0?'-':'')+'₹'+rest+last3; };
   function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
   function periodLabel(){ try{ return (typeof currentPeriod!=='undefined'&&currentPeriod)?formatMonthLabel(currentPeriod):'All time'; }catch(e){ return 'All time'; } }
@@ -1861,7 +1869,7 @@ document.addEventListener('DOMContentLoaded', initApp);
 
   /* ---------- derived helpers ---------- */
   function stockTotal(){ return ops.stock.reduce(function(a,r){return a+(+r.qty||0);},0); }
-  function byLocation(){ var m={}; LOC.forEach(function(l){m[l]=0;}); ops.stock.forEach(function(r){ m[r.loc]=(m[r.loc]||0)+(+r.qty||0); }); return m; }
+  function byLocation(){ var m={}; LOCS().forEach(function(l){m[l]=0;}); ops.stock.forEach(function(r){ m[r.loc]=(m[r.loc]||0)+(+r.qty||0); }); return m; }
   function byModel(){ var m={}; ops.stock.forEach(function(r){ m[r.model]=(m[r.model]||0)+(+r.qty||0); }); return m; }
   function norm(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
   function stockForEnquiryModel(model){
@@ -1909,13 +1917,27 @@ document.addEventListener('DOMContentLoaded', initApp);
 
     // location tiles
     h+='<div class="card" style="margin-top:14px"><h3>Stock by location</h3><div class="grid grid-3" style="gap:10px">';
-    LOC.forEach(function(l){ var q=loc[l]||0, pct=total?Math.round(q/total*100):0;
+    LOCS().forEach(function(l){ var q=loc[l]||0, pct=total?Math.round(q/total*100):0;
       h+='<div class="counter-card"><div class="counter-name">'+esc(l)+'<span style="color:var(--muted);font-weight:400;font-size:12px">'+pct+'%</span></div>'
         +'<div style="font-size:22px;font-weight:800">'+q+'</div>'
         +'<div class="pb"><div class="pb-fill" style="width:'+pct+'%"></div></div></div>';
     });
     h+='</div></div>';
 
+    // coverage check — a silently dropped column or an unread sheet looks identical to genuine zero stock
+    var famSeen=(ops.stock||[]).map(function(r){ return String(r.model==null?'':r.model).toLowerCase(); }).join('|');
+    var hasVida=/vida|vx2|\bv[12]\b/.test(famSeen);
+    var extraLocs=LOCS().filter(function(l){ return LOC.indexOf(l)<0; });
+    if(!hasVida || extraLocs.length){
+      h+='<div class="card" style="margin-top:14px;border-left:4px solid var(--warn,#ffb02e);background:rgba(255,176,46,0.06)">'
+        +'<h3 style="color:var(--warn,#ffb02e)">&#9888;&#65039; Stock coverage check</h3>';
+      if(!hasVida) h+='<p class="help-text"><b>No VIDA stock in this feed.</b> VIDA runs on a separate dealer code (17097) and its stock '
+        +'lives in its own <b>Vida Stock</b> sheet at the <b>VIDA Hub</b>. If the sync only reads the 10348 stock register, every VIDA model '
+        +'reads 0 here permanently &mdash; the stock is not nil, the sheet is never read. Add the Vida Stock sheet to OpsData2.gs, or paste it '
+        +'into the import panel above. Until then Stock vs Demand, the enquiry stock badge and the ageing report all understate VIDA.</p>';
+      if(extraLocs.length) h+='<p class="help-text">Locations found beyond the standard six: <b>'+extraLocs.map(esc).join('</b>, <b>')+'</b> &mdash; now included in every table above.</p>';
+      h+='</div>';
+    }
     // top models chart + grid
     h+='<div class="grid grid-2" style="margin-top:14px">';
     h+='<div class="card"><h3>Stock concentration by model</h3><div class="chart-wrap"><canvas id="ops-model-chart"></canvas></div></div>';
@@ -1930,16 +1952,16 @@ document.addEventListener('DOMContentLoaded', initApp);
 
     // model x location grid
     h+='<div class="card" style="margin-top:14px"><h3>Model &times; location availability</h3><div style="overflow-x:auto"><table class="table"><thead><tr><th>Model</th>';
-    LOC.forEach(function(l){ h+='<th style="text-align:right">'+esc(l.replace('Festival Counter-DC','Fest-DC'))+'</th>'; });
+    LOCS().forEach(function(l){ h+='<th style="text-align:right">'+esc(l.replace('Festival Counter-DC','Fest-DC'))+'</th>'; });
     h+='<th style="text-align:right">Total</th></tr></thead><tbody>';
     Object.keys(mdl).sort(function(a,b){return mdl[b]-mdl[a];}).forEach(function(m){
       var rowLoc={}; ops.stock.forEach(function(r){ if(r.model===m) rowLoc[r.loc]=(rowLoc[r.loc]||0)+(+r.qty||0); });
       h+='<tr><td style="font-weight:600">'+esc(m)+'</td>';
-      LOC.forEach(function(l){ var q=rowLoc[l]||0; h+='<td style="text-align:right'+(q===0?';color:var(--muted)':'')+'">'+(q||'&middot;')+'</td>'; });
+      LOCS().forEach(function(l){ var q=rowLoc[l]||0; h+='<td style="text-align:right'+(q===0?';color:var(--muted)':'')+'">'+(q||'&middot;')+'</td>'; });
       h+='<td style="text-align:right;font-weight:800">'+mdl[m]+'</td></tr>';
     });
     h+='<tr style="border-top:2px solid var(--line)"><td style="font-weight:800">Grand total</td>';
-    LOC.forEach(function(l){ h+='<td style="text-align:right;font-weight:800">'+(loc[l]||0)+'</td>'; });
+    LOCS().forEach(function(l){ h+='<td style="text-align:right;font-weight:800">'+(loc[l]||0)+'</td>'; });
     h+='<td style="text-align:right;font-weight:800">'+total+'</td></tr>';
     h+='</tbody></table></div></div>';
 
@@ -2102,7 +2124,21 @@ document.addEventListener('DOMContentLoaded', initApp);
 
   /* ====================== IMPORT (DMS paste) ====================== */
   function splitRows(text){ return text.split(/\r?\n/).map(function(l){return l.split(/\t|,|\s{2,}|\|/).map(function(c){return c.trim();}).filter(function(c,i,a){return !(c===''&&a.length>1&&i===a.length-1);});}).filter(function(r){return r.join('').trim()!=='';}); }
-  function locFromToken(t){ t=t.toLowerCase(); if(t.indexOf('adhar')>-1||t==='adrtl')return 'Adhartal'; if(t.indexOf('festival')>-1||t==='dc'||t.indexOf('counter-dc')>-1)return 'Festival Counter-DC'; if(t.indexOf('damoh')>-1||t==='dn')return 'Damoh Naka'; if(t.indexOf('god')>-1)return 'Godown'; if(t.indexOf('madan')>-1||t==='mm')return 'Madan Mahal'; if(t.indexOf('napier')>-1||t==='nt')return 'Napier Town'; return null; }
+  var NON_LOC=/^(model|models|sku|qty|quantity|total|grand\s*total|sr|s\.?\s*no|colour|color|variant|segment|description|desc|row\s*labels|count|sum)$/i;
+  function locFromToken(t){
+    var raw=String(t==null?'':t).trim(); if(!raw) return null;
+    var l=raw.toLowerCase();
+    if(l.indexOf('adhar')>-1||l==='adrtl'||l==='at') return 'Adhartal';
+    if(l.indexOf('festival')>-1||l==='dc'||l.indexOf('counter-dc')>-1) return 'Festival Counter-DC';
+    if(l.indexOf('damoh')>-1||l==='dn') return 'Damoh Naka';
+    if(l.indexOf('god')>-1) return 'Godown';
+    if(l.indexOf('madan')>-1||l==='mm'||l==='mml') return 'Madan Mahal';
+    if(l.indexOf('napier')>-1||l==='nt') return 'Napier Town';
+    if(l==='hub'||l.indexOf('vida')>-1||l.indexOf('ev hub')>-1||l.indexOf('electric')>-1) return 'VIDA Hub';
+    if(l.indexOf('prem')>-1) return 'Premia';
+    if(NON_LOC.test(l)||/^\d+$/.test(l)) return null;
+    return raw;   // unknown but plausible location: keep it rather than silently dropping the stock
+  }
   var MODEL_KEYS=['destini','glamour','hf del','deluxe','passion','pleasure','super splendor','splendor','xoom','xtreme','x440','xpulse','vida','karizma','maestro'];
   function looksLikeModel(s){ s=s.toLowerCase(); return MODEL_KEYS.some(function(k){return s.indexOf(k)>-1;}); }
   window.opsImport=function(kind){
