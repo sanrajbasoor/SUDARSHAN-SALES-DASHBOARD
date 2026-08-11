@@ -1628,8 +1628,8 @@ document.addEventListener('DOMContentLoaded', initApp);
 (function(){
   "use strict";
   var STALE=7, FUNNEL_DAYS=90, PKEY='hero-dse-prefs-v1';
-  var prefs; try{ prefs=Object.assign({period:'tw',month:'',counter:'',open:'',showTargets:false},JSON.parse(localStorage.getItem(PKEY))||{}); }
-             catch(e){ prefs={period:'tw',month:'',counter:'',open:'',showTargets:false}; }
+  var prefs; try{ prefs=Object.assign({period:'tw',month:'',counter:'',cmode:'enq',open:'',showTargets:false},JSON.parse(localStorage.getItem(PKEY))||{}); }
+             catch(e){ prefs={period:'tw',month:'',counter:'',cmode:'enq',open:'',showTargets:false}; }
   function savePrefs(){ try{ localStorage.setItem(PKEY,JSON.stringify(prefs)); }catch(e){} }
 
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
@@ -1677,6 +1677,33 @@ document.addEventListener('DOMContentLoaded', initApp);
   function inR(d,a,b){ return !!d && d>=a && d<=b; }
 
   /* ---------------- DSE identity ---------------- */
+  /* DSE names carry their home team as a prefix: "NT, KRISH", "DN, SARMAN THAKUR".
+     Where the prefix is not a known counter we fall back to whichever counter
+     holds the majority of that DSE's enquiries. */
+  var PREFIX={NT:'Napier Town',DN:'DN',MML:'MML (ICE)',MM:'MML (ICE)',AT:'Adhartal',ADRTL:'Adhartal',
+              HUB:'VIDA Hub',VIDA:'VIDA Hub',PREMIA:'Premia',PREMA:'Premia'};
+  function prefixTeam(name){
+    var m=String(name==null?'':name).match(/^\s*([A-Za-z]{2,6})\s*,/);
+    return m?(PREFIX[m[1].toUpperCase()]||''):'';
+  }
+  var _home=null;
+  function homeTeams(){
+    if(_home) return _home;
+    var m={};
+    ENQ().forEach(function(e){
+      var k=rkey(e.rep), c=String(e.counter==null?'':e.counter).trim()||'(none)';
+      (m[k]=m[k]||{})[c]=(m[k][c]||0)+1;
+    });
+    var out={};
+    Object.keys(m).forEach(function(k){
+      var best='',bn=-1,tot=0;
+      Object.keys(m[k]).forEach(function(c){ tot+=m[k][c]; if(m[k][c]>bn){ bn=m[k][c]; best=c; } });
+      var byName=prefixTeam(k);
+      out[k]={home:byName||best, fromName:!!byName, dominant:best, share:tot?Math.round(bn/tot*100):0};
+    });
+    _home=out; return out;
+  }
+  function teamOf(k){ var h=homeTeams()[k]; return h?h.home:''; }
   function rkey(r){ var t=String(r==null?'':r).trim();
     if(!t||/^(0+|-+|na|n\/a|#n\/?a|null|undefined|nil)$/i.test(t)) return '(UNASSIGNED)';
     return t.toUpperCase(); }
@@ -1713,8 +1740,11 @@ document.addEventListener('DOMContentLoaded', initApp);
 
   /* ---------------- scoring ---------------- */
   function pool(){
-    var c=prefs.counter;
-    return ENQ().filter(function(e){ return !c || low(e.counter)===low(c); });
+    var c=prefs.counter; if(!c) return ENQ();
+    if(prefs.cmode==='home'){                       // people based at this counter, wherever they logged it
+      return ENQ().filter(function(e){ return low(teamOf(rkey(e.rep)))===low(c); });
+    }
+    return ENQ().filter(function(e){ return low(e.counter)===low(c); });   // enquiries logged at this counter
   }
   function scoreAll(){ var m={}; pool().forEach(function(e){ m[rkey(e.rep)]=1; }); return m; }
 
@@ -1769,6 +1799,9 @@ document.addEventListener('DOMContentLoaded', initApp);
       s.conv = s.fN ? Math.round(s.fWon/s.fN*100) : 0;
       s.avgSpeed = s.speed.length ? Math.round(s.speed.reduce(function(a,b){return a+b;},0)/s.speed.length*10)/10 : null;
       s.delta = s.won - s.prevWon;
+      var hh=homeTeams()[k]||{};
+      s.home=hh.home||''; s.homeFromName=!!hh.fromName; s.homeShare=hh.share||0;
+      s.visiting = !!(prefs.counter && prefs.cmode!=='home' && s.home && low(s.home)!==low(prefs.counter));
       s.counterTarget = counterTargetOf(s.counter);
       s.suggest = s.counterTarget ? Math.round(s.counterTarget/(dseAtCounter[s.counter||'']||1)) : 0;
       var tv=targets()[k];
@@ -1818,7 +1851,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     if(k==='month'){ prefs.month=v||''; prefs.period = v?'mo':'l4w'; }          // a month overrides the week view
     else if(k==='period'){ prefs.period=v; if(v!=='mo') prefs.month=''; }        // a week view clears the month
     else prefs[k]=v;
-    savePrefs(); render();
+    _home=null; savePrefs(); render();
   };
   window.dseOpen=function(k){ prefs.open = (prefs.open===k)?'':k; savePrefs(); render(); };
 
@@ -1949,6 +1982,11 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'<select class="filter-select" onchange="dseSet(\'counter\',this.value)"><option value="">All counters</option>'
       + counters().map(function(c){ return '<option value="'+esc(c)+'"'+(prefs.counter===c?' selected':'')+'>'+esc(c)+'</option>'; }).join('')
       +'</select></label>'
+      + (prefs.counter?('<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Show'
+          +'<select class="filter-select" onchange="dseSet(\'cmode\',this.value)">'
+          +'<option value="enq"'+(prefs.cmode!=='home'?' selected':'')+'>Enquiries logged here</option>'
+          +'<option value="home"'+(prefs.cmode==='home'?' selected':'')+'>DSEs based here</option>'
+          +'</select></label>'):'')
       +'<button class="btn btn-sm'+(prefs.showTargets?' btn-primary':'')+'" onclick="dseSet(\'showTargets\','+(prefs.showTargets?'false':'true')+')">&#127919; Targets</button>'
       +'<button class="btn btn-sm" onclick="dseExportAll()">&#11015;&#65039; Export scorecard</button>'
       +'<span class="help-text" style="margin-left:auto">'+esc(R.label)+': '+esc(R.from)+' &rarr; '+esc(R.to)
@@ -1969,23 +2007,38 @@ document.addEventListener('DOMContentLoaded', initApp);
     h+=kpi(tStale,'Untouched &gt;7 days',tStale?'#ff5c5c':'#2bd47d','of '+tActive+' live enquiries');
     h+='</div>';
 
+    if(prefs.counter && prefs.cmode!=='home'){
+      var vis=rows.filter(function(x){ return x.visiting; });
+      h+='<div class="card" style="margin-top:14px;border-left:4px solid '+(vis.length?'#ffb02e':'#2bd47d')+'">'
+        +'<h3 style="margin:0 0 4px">&#128205; Who is showing under '+esc(prefs.counter)+'?</h3>'
+        +'<p class="help-text">You are seeing <b>enquiries logged at '+esc(prefs.counter)+'</b>, so any DSE who logged one appears &mdash; '
+        +'not only the '+esc(prefs.counter)+' team. '
+        + (vis.length
+            ? '<b style="color:#ffb02e">'+vis.length+' DSE(s) based elsewhere</b> have activity here: '
+              + vis.map(function(x){ return '<b>'+esc(x.name)+'</b> ('+esc(x.home)+')'; }).join(', ')
+              + '. Switch <b>Show</b> to <b>DSEs based here</b> for the '+esc(prefs.counter)+' team only.'
+            : 'Every DSE listed is based at this counter.')
+        +'</p></div>';
+    }
     h+='<div class="card" style="margin-top:14px"><h3>DSE scorecard &mdash; '+esc(R.label)+'</h3>'
       +'<p class="help-text">Ranked by wins in the period. <b>Move</b> is the change in rank against the previous period. '
       +'<b>Speed</b> and <b>Leak</b> use the trailing '+FUNNEL_DAYS+' days. Click any row for their review card.</p>'
       +'<div style="overflow-x:auto"><table class="table"><thead><tr>'
-      +'<th style="text-align:right">#</th><th style="text-align:center">Move</th><th>DSE</th>'
+      +'<th style="text-align:right">#</th><th style="text-align:center">Move</th><th>DSE</th><th>Home team</th>'
       +'<th style="text-align:right">Won</th><th style="text-align:center">vs prev</th>'
       +'<th style="text-align:right">Target<br><span style="font-weight:400;text-transform:none">('+esc(R.label.toLowerCase())+')</span></th><th style="text-align:right">vs target</th>'
       +'<th style="text-align:right">New</th><th style="text-align:right">Booked</th><th style="text-align:right">Live</th>'
       +'<th style="text-align:right">Conv%</th><th style="text-align:right">Speed</th>'
       +'<th>Biggest leak</th><th style="text-align:right">Untouched</th></tr></thead><tbody>';
-    if(!rows.length) h+='<tr><td colspan="14" style="text-align:center;color:var(--muted);padding:18px">No data for this period.</td></tr>';
+    if(!rows.length) h+='<tr><td colspan="15" style="text-align:center;color:var(--muted);padding:18px">No data for this period.</td></tr>';
     rows.forEach(function(s){
       var open=prefs.open===s.key;
       h+='<tr onclick="dseOpen('+__jsq(s.key)+')" style="cursor:pointer;border-top:1px solid var(--line)'+(open?';background:var(--panel-2)':'')+'">'
         +'<td style="text-align:right;color:var(--muted)">'+s.rank+'</td>'
         +'<td style="text-align:center">'+arrow(s.rankMove)+'</td>'
         +'<td style="font-weight:700">'+esc(s.name)+(open?' &#9664;':'')+'</td>'
+        +'<td style="font-size:12px;color:'+(s.visiting?'#ffb02e':'var(--muted)')+'" title="'+(s.homeFromName?'from the DSE name prefix':(s.homeShare+'% of their enquiries sit here'))+'">'
+        + esc(s.home||'-')+(s.visiting?' &#9888;&#65039;':'')+'</td>'
         +'<td style="text-align:right;font-weight:800;color:#2bd47d">'+s.won+'</td>'
         +'<td style="text-align:center">'+delta(s.delta)+'</td>'
         +'<td style="text-align:right;color:var(--muted)" title="'+(s.targetMonthly?('Monthly target '+s.targetMonthly+', scaled to '+esc(R.label)):'No target set')+'">'+(s.target||'&mdash;')+'</td>'
@@ -2045,11 +2098,11 @@ document.addEventListener('DOMContentLoaded', initApp);
   }
   window.dseExportAll=function(){
     var B=build();
-    var out=[['Rank','Rank move','DSE','Counter','Period','Won','Previous won','Change','Target','vs target %',
+    var out=[['Rank','Rank move','DSE','Home team','Based elsewhere','Counter','Period','Won','Previous won','Change','Target','vs target %',
               'New enquiries','Booked','Live pipeline','Conversion %','Speed to first contact (days)',
               'Biggest leak','Leak size','Untouched >7d','Overdue follow-ups','No follow-up set']];
     B.rows.forEach(function(s){
-      out.push([s.rank,s.rankMove==null?'':s.rankMove,s.name,s.counter,B.R.label,s.won,s.prevWon,s.delta,
+      out.push([s.rank,s.rankMove==null?'':s.rankMove,s.name,s.home,s.visiting?'yes':'',s.counter,B.R.label,s.won,s.prevWon,s.delta,
         s.target||'',s.tgtPct==null?'':s.tgtPct,s.newEnq,s.booked,s.active,s.conv,
         s.avgSpeed==null?'':s.avgSpeed,s.leak.drop?(s.leak.from+' -> '+s.leak.to):'',s.leak.drop||'',
         s.stale,s.overdue,s.noFU]);
@@ -2277,10 +2330,17 @@ document.addEventListener('DOMContentLoaded', initApp);
   function importPanel(kind){
     return '<div class="card" style="margin-bottom:14px;border-left:4px solid var(--accent-2)">'
       +'<h3>&#128229; Update from DMS export</h3>'
-      +'<p class="help-text">Paste the '+kind+' pivot rows copied straight from your Hero DMS export / Google Sheet, then Load. Or leave it &mdash; the panel below shows the current snapshot. When your Apps Script feed carries ops data, this updates automatically.</p>'
+      +'<p class="help-text">Paste the '+kind+' pivot rows copied straight from your Hero DMS export / Google Sheet. '
+      + (kind==='stock'
+          ? '<b>Merge</b> updates only the models in your paste and leaves the rest untouched &mdash; use this for a VIDA-only or single-segment table. <b>Replace all</b> is for a complete stock pivot covering every model. Location columns are read from the header, including <b>VIDA HUB</b> and <b>Premia</b>.'
+          : 'Or leave it &mdash; the panel below shows the current snapshot.')
+      +' When your Apps Script feed carries ops data, this updates automatically.</p>'
       +'<textarea id="ops-paste-'+kind+'" style="width:100%;min-height:90px;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:8px;font-family:monospace;font-size:12px;margin-top:8px" placeholder="Paste rows here (Tab or comma separated)"></textarea>'
       +'<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'
-      +'<button class="btn btn-primary btn-sm" onclick="opsImport(\''+kind+'\')">Load '+kind+'</button>'
+      + (kind==='stock'
+          ? ('<button class="btn btn-primary btn-sm" onclick="opsImport(\'stock\',\'merge\')" title="Update only the models in this paste">Merge into stock</button>'
+            +'<button class="btn btn-sm" onclick="opsImport(\'stock\',\'replace\')" title="Discard current stock and use only this paste">Replace all stock</button>')
+          : ('<button class="btn btn-primary btn-sm" onclick="opsImport(\''+kind+'\')">Load '+kind+'</button>'))
       +'<button class="btn btn-sm" onclick="opsSyncFromSheet()">&#128260; Sync ops from Sheet</button>'
       +'<button class="btn btn-sm btn-ghost" onclick="opsResetSnapshot()">Reset to sheet snapshot</button>'
       +'<button class="btn btn-sm" onclick="opsDiagnose()">&#128269; Diagnose feed</button>'
@@ -2531,7 +2591,7 @@ document.addEventListener('DOMContentLoaded', initApp);
   }
   var MODEL_KEYS=['destini','glamour','hf del','deluxe','passion','pleasure','super splendor','splendor','xoom','xtreme','x440','xpulse','vida','karizma','maestro'];
   function looksLikeModel(s){ s=s.toLowerCase(); return MODEL_KEYS.some(function(k){return s.indexOf(k)>-1;}); }
-  window.opsImport=function(kind){
+  window.opsImport=function(kind,mode){
     var ta=document.getElementById('ops-paste-'+kind); if(!ta) return; var text=ta.value.trim();
     if(!text){ showToast('Paste some rows first'); return; }
     var rows=splitRows(text);
@@ -2546,7 +2606,15 @@ document.addEventListener('DOMContentLoaded', initApp);
           colMap.forEach(function(loc,ci){ if(!loc) return; var q=parseInt(r[ci],10); if(q>0) newStock.push({model:name.toUpperCase(),loc:loc,qty:q,inwardDate:''}); });
         }
         if(!newStock.length){ showToast('No model rows detected'); return; }
-        ops.stock=newStock;
+        if(mode==='merge'){
+          // replace only the models present in the paste, leave everything else alone
+          var seen={}; newStock.forEach(function(r){ seen[String(r.model||'').toUpperCase().replace(/[^A-Z0-9]/g,'')]=1; });
+          var kept=(ops.stock||[]).filter(function(r){ return !seen[String(r.model||'').toUpperCase().replace(/[^A-Z0-9]/g,'')]; });
+          ops.stock=kept.concat(newStock);
+          showToast('Merged '+newStock.length+' row(s); kept '+kept.length+' existing');
+        } else {
+          ops.stock=newStock;
+        }
       } else if(kind==='supp'){
         var shdrS=-1, colMapS=[];
         for(var si=0;si<rows.length;si++){ var lcS=rows[si].map(locFromToken); if(lcS.filter(Boolean).length>=1 && rows[si].some(function(c){ return /model|sku|description/i.test(c); })){ shdrS=si; colMapS=lcS; break; } }
@@ -4069,13 +4137,15 @@ document.addEventListener('DOMContentLoaded', initApp);
     ['Napier Town', /^(nt|napier|napier ?town|napiertown|napier-town|dsent\d*)$/],
     ['DN',          /^(dn|d ?n|d\.n\.?|damoh ?naka|damohnaka|damoh|damoh-naka)$/],
     ['MML (ICE)',   /^(mml|mm|mml ?\(?ice\)?|madan ?mahal|madanmahal|madan)$/],
-    ['VIDA Hub',    /^(hub|vida|vida ?hub|vidahub|ev ?hub|electric ?hub|vida ?store)$/],
+    ['VIDA Hub',    /^(hub|vida ?hub|vidahub|ev ?hub|electric ?hub|vida ?store)$/],
     ['Adhartal',    /^(at|adhartal|adartal|adhar ?tal|adhartaal|adrtl|adhar)$/],
     ['Web',         /^(web|website|digital|online|portal)$/]
   ];
+  var MODEL_TYPE=/^(vida|ice|ev|premium|scooter|entry|deluxe|125 ?cc|mc100)$/;   // Model Type values, not counters
   function canon(v){
     var t=low(v).replace(/\s+/g,' ');
     if(!t) return null;
+    if(MODEL_TYPE.test(t)) return null;   // leave visible as-is rather than silently merging it into a counter
     for(var i=0;i<ALIAS.length;i++){ if(ALIAS[i][1].test(t)) return ALIAS[i][0]; }
     return null;                       // unrecognised: leave the value exactly as it is
   }
