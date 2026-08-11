@@ -5530,4 +5530,174 @@ document.addEventListener('DOMContentLoaded', initApp);
 })();
 </script>
 
+<!-- ===== SETTINGS: master lists vs real data (additive) =====
+     Settings renders config.reps / models / financiers / counters directly, while every
+     data view uses unionData(). So the demo seed names installed on day one still sit in
+     config, and the New Enquiry form offers them instead of the real ones. This audits
+     each list against the data and rebuilds it on demand.
+     ========================================================================== -->
+<script>
+(function(){
+  "use strict";
+  var FIELD={counters:'counter', reps:'rep', models:'model', financiers:'financier'};
+  var LABEL={counters:'Counters', reps:'Sales reps', models:'Models', financiers:'Financiers'};
+  var LIST={counters:'counter-list', reps:'rep-list', models:'model-list', financiers:'financier-list'};
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function ENQ(){ try{ return enquiries||[]; }catch(e){ return []; } }
+  var JUNK=/^(0+|-+|na|n\/a|#n\/?a|null|undefined|nil)$/i;
+
+  function counts(field){
+    var m={};
+    ENQ().forEach(function(e){
+      var v=String(e[field]==null?'':e[field]).trim();
+      if(!v||JUNK.test(v)) return;
+      m[v.toLowerCase()]=(m[v.toLowerCase()]||0)+1;
+    });
+    return m;
+  }
+  function distinct(field){
+    var seen={}, out=[];
+    ENQ().forEach(function(e){
+      var v=String(e[field]==null?'':e[field]).trim();
+      if(!v||JUNK.test(v)) return;
+      var k=v.toLowerCase();
+      if(!seen[k]){ seen[k]=1; out.push(v); }
+    });
+    return out.sort(function(a,b){ return a.localeCompare(b); });
+  }
+  /* reps additionally respect the DSE roster: drop excluded people and folded spellings */
+  function realReps(){
+    var r={}; try{ r=config.dseRoster||{}; }catch(e){}
+    var out=[], seen={};
+    distinct('rep').forEach(function(v){
+      var k=v.trim().toUpperCase(), e=r[k]||{};
+      if(e.exclude) return;
+      var target=e.mergeTo||k;
+      var t=r[target]||{};
+      if(t.exclude) return;
+      if(!seen[target]){ seen[target]=1; out.push(target===k?v:target); }
+    });
+    // roster members who have not logged an enquiry yet still belong on the list,
+    // but a spelling that has been merged away must never come back
+    Object.keys(r).forEach(function(k){
+      if(r[k].exclude || r[k].mergeTo || seen[k] || !r[k].team) return;
+      seen[k]=1; out.push(k);
+    });
+    return out.sort(function(a,b){ return a.localeCompare(b); });
+  }
+  function cfgOf(kind){ try{ return config[kind]||[]; }catch(e){ return []; } }
+
+  function audit(kind){
+    var c=counts(FIELD[kind]), cur=cfgOf(kind);
+    var unused=cur.filter(function(v){ return !c[String(v).trim().toLowerCase()]; });
+    var real=(kind==='reps')?realReps():distinct(FIELD[kind]);
+    var missing=real.filter(function(v){
+      return !cur.some(function(x){ return String(x).trim().toLowerCase()===String(v).trim().toLowerCase(); });
+    });
+    return {counts:c, cur:cur, unused:unused, missing:missing, real:real};
+  }
+
+  window.cfgRebuild=function(kind){
+    var a=audit(kind);
+    if(!a.real.length){ if(typeof showToast==='function') showToast('No values found in the data for '+LABEL[kind]); return; }
+    var keep=a.cur.filter(function(v){ return a.counts[String(v).trim().toLowerCase()]; });
+    var merged=keep.slice();
+    a.real.forEach(function(v){
+      if(!merged.some(function(x){ return String(x).trim().toLowerCase()===String(v).trim().toLowerCase(); })) merged.push(v);
+    });
+    merged.sort(function(x,y){ return String(x).localeCompare(String(y)); });
+    try{
+      config[kind]=merged;
+      if(typeof saveData==='function') saveData();
+      if(typeof refreshAllSelects==='function') refreshAllSelects();
+      if(typeof renderSettings==='function') renderSettings();
+    }catch(e){ console.warn('[cfg]',e); }
+    if(typeof showToast==='function') showToast(LABEL[kind]+': kept '+keep.length+', added '+(merged.length-keep.length)+', dropped '+a.unused.length);
+  };
+  window.cfgRebuildAll=function(){
+    if(!confirm('Rebuild all four lists from the enquiry data?\n\nEntries that appear in no enquiry (the demo defaults) will be removed.')) return;
+    ['counters','reps','models','financiers'].forEach(function(k){ try{ cfgRebuild(k); }catch(e){} });
+  };
+
+  /* usage badge on every list item, without touching their Remove handlers */
+  function annotate(kind){
+    var ul=document.getElementById(LIST[kind]); if(!ul) return;
+    var c=counts(FIELD[kind]);
+    Array.prototype.forEach.call(ul.querySelectorAll('li'), function(li){
+      if(li.querySelector('.cfg-badge')) return;
+      var sp=li.querySelector('span'); if(!sp) return;
+      var v=String(sp.textContent||'').trim(), n=c[v.toLowerCase()]||0;
+      var b=document.createElement('span');
+      b.className='cfg-badge';
+      b.style.cssText='margin-left:8px;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap;'
+        +(n?'background:rgba(43,212,125,0.15);color:#2bd47d':'background:rgba(255,92,92,0.15);color:#ff5c5c');
+      b.textContent = n ? (n+' in use') : 'unused';
+      if(!n) b.title='This name appears in no enquiry — almost certainly a demo default';
+      sp.parentNode.insertBefore(b, sp.nextSibling);
+    });
+  }
+
+  function panel(){
+    var view=document.getElementById('view-settings'); if(!view) return;
+    var d=document.getElementById('cfg-audit-root');
+    if(!d){ d=document.createElement('div'); d.id='cfg-audit-root'; view.insertBefore(d, view.firstChild); }
+    var rows=['counters','reps','models','financiers'].map(function(k){ return {k:k,a:audit(k)}; });
+    var stale=rows.reduce(function(a,r){ return a+r.a.unused.length; },0);
+    var miss=rows.reduce(function(a,r){ return a+r.a.missing.length; },0);
+    var h='<div class="card" style="margin-bottom:14px;border-left:4px solid '+((stale||miss)?'#ffb02e':'#2bd47d')+'">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<h3 style="margin:0">&#129504; Master lists vs your actual data</h3>'
+      +'<button class="btn btn-sm btn-primary" onclick="cfgRebuildAll()">&#128260; Rebuild all from data</button></div>'
+      +'<p class="help-text">These four lists feed the <b>New Enquiry form</b>. The charts and filters read the data directly, which is why they '
+      +'look correct while this page still shows the names installed on day one. Rebuilding keeps anything in use, adds what is missing, '
+      +'and drops entries that appear in no enquiry.</p>'
+      +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>List</th>'
+      +'<th style="text-align:right">In settings</th><th style="text-align:right">In your data</th>'
+      +'<th style="text-align:right">Unused</th><th style="text-align:right">Missing</th><th></th></tr></thead><tbody>';
+    rows.forEach(function(r){
+      var bad=r.a.unused.length||r.a.missing.length;
+      h+='<tr style="border-top:1px solid var(--line)">'
+        +'<td style="font-weight:700">'+LABEL[r.k]+'</td>'
+        +'<td style="text-align:right;color:var(--muted)">'+r.a.cur.length+'</td>'
+        +'<td style="text-align:right;font-weight:700">'+r.a.real.length+'</td>'
+        +'<td style="text-align:right;font-weight:700;color:'+(r.a.unused.length?'#ff5c5c':'#2bd47d')+'" title="'+esc(r.a.unused.slice(0,12).join(', '))+'">'+r.a.unused.length+'</td>'
+        +'<td style="text-align:right;font-weight:700;color:'+(r.a.missing.length?'#ffb02e':'#2bd47d')+'" title="'+esc(r.a.missing.slice(0,12).join(', '))+'">'+r.a.missing.length+'</td>'
+        +'<td style="text-align:right"><button class="btn btn-sm'+(bad?' btn-primary':'')+'" onclick="cfgRebuild('+__jsq(r.k)+')">Rebuild</button></td></tr>';
+    });
+    h+='</tbody></table></div>';
+    if(stale){
+      h+='<p class="help-text" style="margin-top:8px"><b style="color:#ff5c5c">'+stale+' entr(ies) appear in no enquiry</b> &mdash; '
+        + rows.filter(function(r){ return r.a.unused.length; })
+              .map(function(r){ return '<b>'+LABEL[r.k]+':</b> '+esc(r.a.unused.slice(0,8).join(', '))+(r.a.unused.length>8?'&hellip;':''); }).join(' &middot; ')
+        +'. Anyone adding an enquiry by hand is picking from these.</p>';
+    }
+    h+='</div>';
+    d.innerHTML=h;
+    ['counters','reps','models','financiers'].forEach(annotate);
+  }
+
+  function init(){
+    var tries=0;
+    (function wait(){
+      if(document.getElementById('view-settings')){
+        var o=window.renderSettings;
+        if(typeof o==='function' && !o.__cfgWrapped){
+          window.renderSettings=function(){ var r=o.apply(this,arguments); try{ panel(); }catch(e){ console.warn('[cfg]',e); } return r; };
+          window.renderSettings.__cfgWrapped=true;
+        }
+        var v=window.setView;
+        if(typeof v==='function' && !v.__cfgWrapped){
+          window.setView=function(n){ v(n); if(n==='settings'){ try{ setTimeout(panel,0); }catch(e){} } };
+          window.setView.__cfgWrapped=true;
+        }
+        try{ var a=document.querySelector('.nav-item.active'); if(a&&a.dataset.view==='settings') setTimeout(panel,0); }catch(e){}
+        return;
+      }
+      if(++tries<60) setTimeout(wait,250);
+    })();
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init); else init();
+})();
+</script>
+
 </html>
