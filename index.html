@@ -1521,6 +1521,26 @@ function initApp() {
 }
 document.addEventListener('DOMContentLoaded', initApp);
 </script>
+<script>
+/* Safety net. Any module that calls saveData()/saveDataLocal() while the document is
+   still parsing would write the *default* config and an empty enquiry list over
+   localStorage, because loadData() has not run yet. That silently destroys targets,
+   the DSE roster and the master lists on every page load. Block it outright. */
+(function(){
+  ['saveData','saveDataLocal'].forEach(function(fn){
+    var orig=window[fn];
+    if(typeof orig!=='function'||orig.__loadGuard) return;
+    window[fn]=function(){
+      if(document.readyState==='loading'){
+        console.warn('[guard] '+fn+'() called during page parse — blocked to protect saved settings');
+        return;
+      }
+      return orig.apply(this,arguments);
+    };
+    window[fn].__loadGuard=true;
+  });
+})();
+</script>
 <!-- ===== Auto-refresh from Google Sheets — paste this whole block just ABOVE </body> in index.html ===== -->
 <!-- Makes the dashboard pull the latest server feed on every open AND every 5 minutes, with no button click. -->
 <script>
@@ -1703,22 +1723,25 @@ document.addEventListener('DOMContentLoaded', initApp);
   /* Blank DSE names are not always unknowable — at a single-person counter they belong
      to one person. This maps "no name at this counter" to who it actually is. */
   function unassignedMap(){ try{ if(!config.dseUnassigned) config.dseUnassigned={}; return config.dseUnassigned; }catch(e){ return {}; } }
-  (function seedRoster(){
+  /* MUST run only after initApp()/loadData() has restored the saved config.
+     Running this at parse time wrote the default config straight over localStorage. */
+  function seedRoster(){
     try{
-      var v=config.dseRosterSeedV||(config.dseRosterSeeded?1:0), r=roster();
-      if(v<1) Object.keys(SEED_ROSTER).forEach(function(k){ if(!r[k]) r[k]=Object.assign({},SEED_ROSTER[k]); });
+      var v=config.dseRosterSeedV||(config.dseRosterSeeded?1:0), r=roster(), changed=false;
+      if(v<1) Object.keys(SEED_ROSTER).forEach(function(k){ if(!r[k]){ r[k]=Object.assign({},SEED_ROSTER[k]); changed=true; } });
       if(v<2){
-        if(!r['SAMEER']) r['SAMEER']={team:'VIDA Hub'};
-        var u=unassignedMap(); if(!u['VIDA Hub']) u['VIDA Hub']='SAMEER';
+        if(!r['SAMEER']){ r['SAMEER']={team:'VIDA Hub'}; changed=true; }
+        var u=unassignedMap(); if(!u['VIDA Hub']){ u['VIDA Hub']='SAMEER'; changed=true; }
       }
       if(v<3){
         // "Sabu, Karishma" in the register is a misspelling of Karishma Sahu — fold both onto one person
-        if(!r['SAHU, KARISHMA']) r['SAHU, KARISHMA']={team:'VIDA Hub'};
-        if(!r['SABU, KARISHMA']) r['SABU, KARISHMA']={team:'VIDA Hub', mergeTo:'SAHU, KARISHMA', note:'spelling variant of Karishma Sahu'};
+        if(!r['SAHU, KARISHMA']){ r['SAHU, KARISHMA']={team:'VIDA Hub'}; changed=true; }
+        if(!r['SABU, KARISHMA']){ r['SABU, KARISHMA']={team:'VIDA Hub', mergeTo:'SAHU, KARISHMA', note:'spelling variant of Karishma Sahu'}; changed=true; }
       }
-      if(v<3){ config.dseRosterSeedV=3; config.dseRosterSeeded=true; if(typeof saveData==='function') saveData(); }
+      if(v<3){ config.dseRosterSeedV=3; config.dseRosterSeeded=true; changed=true; }
+      if(changed && typeof saveData==='function') saveData();
     }catch(e){}
-  })();
+  }
   function unassignedByCounter(){
     var m={};
     ENQ().forEach(function(e){
@@ -2301,6 +2324,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     return true;
   }
   function init(){
+    seedRoster();                 // now safe: loadData() has already run
     var tries=0;
     (function wait(){
       if(ensure()){
