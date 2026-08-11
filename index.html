@@ -1700,16 +1700,50 @@ document.addEventListener('DOMContentLoaded', initApp);
     'USER, WEBSERVICE':    {exclude:true, note:'system account, not a person'}
   };
   function roster(){ try{ if(!config.dseRoster) config.dseRoster={}; return config.dseRoster; }catch(e){ return {}; } }
+  /* Blank DSE names are not always unknowable — at a single-person counter they belong
+     to one person. This maps "no name at this counter" to who it actually is. */
+  function unassignedMap(){ try{ if(!config.dseUnassigned) config.dseUnassigned={}; return config.dseUnassigned; }catch(e){ return {}; } }
   (function seedRoster(){
     try{
-      if(config.dseRosterSeeded) return;
-      var r=roster();
-      Object.keys(SEED_ROSTER).forEach(function(k){ if(!r[k]) r[k]=Object.assign({},SEED_ROSTER[k]); });
-      config.dseRosterSeeded=true;
-      if(typeof saveData==='function') saveData();
+      var v=config.dseRosterSeedV||(config.dseRosterSeeded?1:0), r=roster();
+      if(v<1) Object.keys(SEED_ROSTER).forEach(function(k){ if(!r[k]) r[k]=Object.assign({},SEED_ROSTER[k]); });
+      if(v<2){
+        if(!r['SAMEER']) r['SAMEER']={team:'VIDA Hub'};
+        var u=unassignedMap(); if(!u['VIDA Hub']) u['VIDA Hub']='SAMEER';
+      }
+      if(v<3){
+        // "Sabu, Karishma" in the register is a misspelling of Karishma Sahu — fold both onto one person
+        if(!r['SAHU, KARISHMA']) r['SAHU, KARISHMA']={team:'VIDA Hub'};
+        if(!r['SABU, KARISHMA']) r['SABU, KARISHMA']={team:'VIDA Hub', mergeTo:'SAHU, KARISHMA', note:'spelling variant of Karishma Sahu'};
+      }
+      if(v<3){ config.dseRosterSeedV=3; config.dseRosterSeeded=true; if(typeof saveData==='function') saveData(); }
     }catch(e){}
   })();
+  function unassignedByCounter(){
+    var m={};
+    ENQ().forEach(function(e){
+      if(rkey(e.rep)!=='(UNASSIGNED)') return;
+      var c=String(e.counter==null?'':e.counter).trim()||'(no counter)';
+      m[c]=(m[c]||0)+1;
+    });
+    return m;
+  }
+  window.dseUnassign=function(counter,name){
+    var u=unassignedMap();
+    if(name && String(name).trim()) u[counter]=String(name).trim().toUpperCase(); else delete u[counter];
+    try{ if(typeof saveData==='function') saveData(); }catch(e){}
+    _home=null; render();
+  };
   function dkey(repName){ var k=rkey(repName); var r=roster()[k]; return (r&&r.mergeTo)?r.mergeTo:k; }
+  function dkeyE(e){
+    var k=rkey(e&&e.rep);
+    if(k==='(UNASSIGNED)'){
+      var owner=unassignedMap()[String((e&&e.counter)==null?'':e.counter).trim()];
+      if(owner) k=String(owner).toUpperCase();
+    }
+    var r=roster()[k];
+    return (r&&r.mergeTo)?r.mergeTo:k;
+  }
   function excluded(k){ var r=roster()[k]; return !!(r&&r.exclude); }
   function teamSrc(k){
     var r=roster()[k]; if(r&&r.team) return 'roster';
@@ -1726,7 +1760,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     if(_home) return _home;
     var m={};
     ENQ().forEach(function(e){
-      var k=dkey(e.rep), c=String(e.counter==null?'':e.counter).trim()||'(none)';
+      var k=dkeyE(e), c=String(e.counter==null?'':e.counter).trim()||'(none)';
       (m[k]=m[k]||{})[c]=(m[k][c]||0)+1;
     });
     var out={};
@@ -1780,11 +1814,11 @@ document.addEventListener('DOMContentLoaded', initApp);
   function pool(){
     var c=prefs.counter; if(!c) return ENQ();
     if(prefs.cmode==='home'){                       // people based at this counter, wherever they logged it
-      return ENQ().filter(function(e){ return low(teamOf(dkey(e.rep)))===low(c); });
+      return ENQ().filter(function(e){ return low(teamOf(dkeyE(e)))===low(c); });
     }
     return ENQ().filter(function(e){ return low(e.counter)===low(c); });   // enquiries logged at this counter
   }
-  function scoreAll(){ var m={}; pool().forEach(function(e){ m[dkey(e.rep)]=1; }); return m; }
+  function scoreAll(){ var m={}; pool().forEach(function(e){ m[dkeyE(e)]=1; }); return m; }
 
   function build(){
     var R=rangeOf(prefs.period), P=pool();
@@ -1797,7 +1831,7 @@ document.addEventListener('DOMContentLoaded', initApp);
         speed:[],active:0,stale:0,overdue:0,noFU:0,fin:0,value:0});
     }
     P.forEach(function(e){
-      var k=dkey(e.rep), s=slot(k);
+      var k=dkeyE(e), s=slot(k);
       if(!s.counter && e.counter) s.counter=e.counter;
       var cd=closeDate(e), cr=e.createdAt||'';
       // results, by close date
@@ -1932,8 +1966,28 @@ document.addEventListener('DOMContentLoaded', initApp);
           +'<td style="font-size:12px;color:'+(e.team?'#2bd47d':'#ffb02e')+'">'+src+'</td></tr>';
       });
     h+='</tbody></table></div>'
-      + (exl.length?('<p class="help-text" style="margin-top:8px">Excluded and hidden from the scorecard: <b>'+exl.map(function(k){ return esc(rname(k)); }).join(', ')+'</b>.</p>'):'')
-      +'</div>';
+      + (exl.length?('<p class="help-text" style="margin-top:8px">Excluded and hidden from the scorecard: <b>'+exl.map(function(k){ return esc(rname(k)); }).join(', ')+'</b>.</p>'):'');
+
+    var ub=unassignedByCounter(), uk=Object.keys(ub).sort(function(a,b){ return ub[b]-ub[a]; }), um=unassignedMap();
+    if(uk.length){
+      h+='<h3 style="margin:18px 0 6px;font-size:14px">Blank DSE names &mdash; who do they belong to?</h3>'
+        +'<p class="help-text">Where a counter is worked by one person, an empty DSE field is not really unknown. Name them here and '
+        +'those enquiries are credited properly instead of piling into (Unassigned). Leave blank where it genuinely is not knowable &mdash; '
+        +'that residue is the data-entry problem worth chasing.</p>'
+        +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Counter</th>'
+        +'<th style="text-align:right">Blank-name enquiries</th><th>Credit them to</th><th>Status</th></tr></thead><tbody>';
+      uk.forEach(function(c){
+        var owner=um[c]||'';
+        h+='<tr style="border-top:1px solid var(--line)">'
+          +'<td style="font-weight:700">'+esc(c)+'</td>'
+          +'<td style="text-align:right;font-weight:700;color:'+(owner?'#2bd47d':'#ffb02e')+'">'+ub[c]+'</td>'
+          +'<td><input value="'+esc(owner)+'" placeholder="DSE name" onchange="dseUnassign(__jsq(c),this.value)" '
+          +'style="width:170px;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:5px 8px;border-radius:6px"/></td>'
+          +'<td style="font-size:12px;color:'+(owner?'#2bd47d':'#ffb02e')+'">'+(owner?('credited to '+esc(rname(owner))):'still unassigned')+'</td></tr>';
+      });
+      h+='</tbody></table></div>';
+    }
+    h+='</div>';
     return h;
   }
 
@@ -2016,7 +2070,7 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'Finance attach on new enquiries: <b>'+(s.newEnq?Math.round(s.fin/s.newEnq*100):0)+'%</b></span>'
       +'</div>';
 
-    var mine=pool().filter(function(e){ return dkey(e.rep)===s.key && ACT().indexOf(e.stage)>-1 && (since(e.lastContactAt||e.createdAt)||0)>STALE; })
+    var mine=pool().filter(function(e){ return dkeyE(e)===s.key && ACT().indexOf(e.stage)>-1 && (since(e.lastContactAt||e.createdAt)||0)>STALE; })
       .sort(function(a,b){ return (since(b.lastContactAt||b.createdAt)||0)-(since(a.lastContactAt||a.createdAt)||0); });
     h+='<h3 style="margin:16px 0 6px;font-size:14px">Their untouched list ('+mine.length+')</h3>';
     if(!mine.length) h+='<p class="help-text" style="color:#2bd47d">&#10003; Nothing untouched.</p>';
@@ -2147,7 +2201,7 @@ document.addEventListener('DOMContentLoaded', initApp);
 
     /* whole-team call list */
     var calls=pool().filter(function(e){ return ACT().indexOf(e.stage)>-1 && (since(e.lastContactAt||e.createdAt)||0)>STALE; })
-      .map(function(e){ return {id:e.id,c:e.customer,p:e.phone,co:e.counter,m:e.model,r:rname(dkey(e.rep)),st:e.stage,
+      .map(function(e){ return {id:e.id,c:e.customer,p:e.phone,co:e.counter,m:e.model,r:rname(dkeyE(e)),st:e.stage,
         n:e.notes,d:since(e.lastContactAt||e.createdAt)||0,lc:e.lastContactAt||e.createdAt||'',nf:e.nextFollowUp||''}; })
       .sort(function(a,b){ return b.d-a.d; });
     window.__dseCalls=calls;
@@ -2212,7 +2266,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     out.push([]); out.push(['Funnel stage','Count','Drop from previous']);
     s.steps.forEach(function(st,i){ out.push([st[0],st[1],i?(s.steps[i-1][1]-st[1]):'']); });
     if(s.leak.drop){ out.push([]); out.push(['Biggest leak',s.leak.from+' -> '+s.leak.to,s.leak.drop+' lost ('+Math.round(s.leak.pct*100)+'%)']); }
-    var mine=pool().filter(function(e){ return dkey(e.rep)===k && ACT().indexOf(e.stage)>-1 && (since(e.lastContactAt||e.createdAt)||0)>STALE; })
+    var mine=pool().filter(function(e){ return dkeyE(e)===k && ACT().indexOf(e.stage)>-1 && (since(e.lastContactAt||e.createdAt)||0)>STALE; })
       .sort(function(a,b){ return (since(b.lastContactAt||b.createdAt)||0)-(since(a.lastContactAt||a.createdAt)||0); });
     if(mine.length){
       out.push([]); out.push(['Untouched leads','','','','']);
