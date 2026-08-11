@@ -1719,6 +1719,33 @@ document.addEventListener('DOMContentLoaded', initApp);
     'JAT, TANISH':         {exclude:true, note:'not part of the DSE team'},
     'USER, WEBSERVICE':    {exclude:true, note:'system account, not a person'}
   };
+  /* The register spells the same person several ways and prefixes a team that may now be
+     out of date. These rules fold the variants onto one identity and carry the correct
+     team. Anything you set on the roster still overrides them. */
+  var NAME_RULES=[
+    {id:'ASHISH AGRAWAL',      re:/ashish/i,                     team:'Premia'},
+    {id:'ROHIT',               re:/\brohit\b/i,                  team:'Premia'},
+    {id:'DANISH KHAN',         re:/danish/i,                     team:'MML (ICE)'},
+    {id:'SAMEER',              re:/sam(ee|i)r/i,                 team:'VIDA Hub'},
+    {id:'GUPTA, SALABH',       re:/sal[ae]bh|shal[ae]?bh?\b/i,    team:'MML (ICE)'},
+    {id:'VISHWAKARMA, ISHIKA', re:/vishwakarma|ish[ik]{2}a/i,    team:'DN'},
+    {id:'SAHU, KARISHMA',      re:/kar[iy]shma|\bsa[bh]u\b/i,    team:'VIDA Hub'},
+    {id:'SAFIYA, BEBY',        re:/safiya|\bbeby\b/i,            team:'VIDA Hub'},
+    {id:'RAJAK, AMIT',         re:/rajak/i,                      team:'VIDA Hub'},
+    {id:'SAHANI, AKASH',       re:/sahani|\balah\b/i,            team:'MML (ICE)'},
+    {id:'RAIKWAR, SHIVANI',    re:/raikwar|rekvar/i,             team:'MML (ICE)'},
+    {id:'KUSHWAHA, SHRUTI',    re:/kushwaha|shruti/i,            team:'Premia'},
+    {id:'KRISH',               re:/\bkrish\b/i,                  team:'Premia'},
+    {id:'RAJ',                 re:/\braj\b/i,                    team:'Premia'},
+    {id:'PRAKASH',             re:/\bprakash\b/i,                team:'Napier Town'},
+    {id:'KOMAL',               re:/\bkomal\b/i,                  team:'Napier Town'},
+    {id:'RAJENDRA',            re:/\brajendra\b/i,               team:'Napier Town'},
+    {id:'AHIRWAR, MUSKAN',     re:/muskan/i,                     team:'Napier Town'}
+  ];
+  function ruleFor(k){
+    for(var i=0;i<NAME_RULES.length;i++){ if(NAME_RULES[i].re.test(k)) return NAME_RULES[i]; }
+    return null;
+  }
   function roster(){ try{ if(!config.dseRoster) config.dseRoster={}; return config.dseRoster; }catch(e){ return {}; } }
   /* Blank DSE names are not always unknowable — at a single-person counter they belong
      to one person. This maps "no name at this counter" to who it actually is. */
@@ -1728,6 +1755,7 @@ document.addEventListener('DOMContentLoaded', initApp);
   function seedRoster(){
     try{
       var v=config.dseRosterSeedV||(config.dseRosterSeeded?1:0), r=roster(), changed=false;
+      if(v>=5) return;
       if(v<1) Object.keys(SEED_ROSTER).forEach(function(k){ if(!r[k]){ r[k]=Object.assign({},SEED_ROSTER[k]); changed=true; } });
       if(v<2){
         if(!r['SAMEER']){ r['SAMEER']={team:'VIDA Hub'}; changed=true; }
@@ -1738,7 +1766,28 @@ document.addEventListener('DOMContentLoaded', initApp);
         if(!r['SAHU, KARISHMA']){ r['SAHU, KARISHMA']={team:'VIDA Hub'}; changed=true; }
         if(!r['SABU, KARISHMA']){ r['SABU, KARISHMA']={team:'VIDA Hub', mergeTo:'SAHU, KARISHMA', note:'spelling variant of Karishma Sahu'}; changed=true; }
       }
-      if(v<3){ config.dseRosterSeedV=3; config.dseRosterSeeded=true; changed=true; }
+      if(v<4){
+        // team moves and identity corrections given by the dealership
+        var FIX={'ASHISH AGRAWAL':'Premia','ROHIT':'Premia','DANISH KHAN':'MML (ICE)',
+                 'VISHWAKARMA, ISHIKA':'DN','GUPTA, SALABH':'MML (ICE)','SAMEER':'VIDA Hub'};
+        Object.keys(FIX).forEach(function(k){ r[k]=Object.assign({},r[k],{team:FIX[k]}); });
+        changed=true;
+      }
+      if(v<5){
+        var FIX2={'KRISH':'Premia','RAJ':'Premia','PRAKASH':'Napier Town',
+                  'KOMAL':'Napier Town','RAJENDRA':'Napier Town','AHIRWAR, MUSKAN':'Napier Town',
+                  'SAHANI, AKASH':'MML (ICE)'};
+        Object.keys(FIX2).forEach(function(k){ r[k]=Object.assign({},r[k],{team:FIX2[k]}); });
+        r['RAJ'].note='new DSE — owns the unnamed Premia enquiries';
+        r['PRAKASH'].note='exchange desk, shared between Napier Town and Premia';
+        r['SAHANI, AKASH'].note='Akash Sahani (logged as "Alah")';
+        if(r['SAHANI, ALAH']) delete r['SAHANI, ALAH'];
+        var u2=unassignedMap();
+        u2['Premia']='RAJ';
+        u2['Napier Town']='PRAKASH';
+        changed=true;
+      }
+      if(v<5){ config.dseRosterSeedV=5; config.dseRosterSeeded=true; changed=true; }
       if(changed && typeof saveData==='function') saveData();
     }catch(e){}
   }
@@ -1765,11 +1814,14 @@ document.addEventListener('DOMContentLoaded', initApp);
       if(owner) k=String(owner).toUpperCase();
     }
     var r=roster()[k];
-    return (r&&r.mergeTo)?r.mergeTo:k;
+    if(r&&r.mergeTo) return r.mergeTo;                 // your explicit merge
+    var rule=ruleFor(k);                               // then the spelling rules
+    return (rule && rule.id!==k) ? rule.id : k;
   }
   function excluded(k){ var r=roster()[k]; return !!(r&&r.exclude); }
   function teamSrc(k){
     var r=roster()[k]; if(r&&r.team) return 'roster';
+    if(ruleFor(k)) return 'rule';
     var h=homeTeams()[k]; return (h&&h.fromName)?'name':'data';
   }
   window.dseRoster=function(k,field,v){
@@ -1796,7 +1848,8 @@ document.addEventListener('DOMContentLoaded', initApp);
     _home=out; return out;
   }
   function teamOf(k){
-    var r=roster()[k]; if(r&&r.team) return r.team;      // what you told it
+    var r=roster()[k]; if(r&&r.team) return r.team;      // what you set on the roster
+    var rule=ruleFor(k); if(rule&&rule.team) return rule.team;
     var h=homeTeams()[k]; return h?h.home:'';            // then the name prefix, then the data
   }
   function rkey(r){ var t=String(r==null?'':r).trim();
@@ -1974,7 +2027,7 @@ document.addEventListener('DOMContentLoaded', initApp);
       .forEach(function(x){
         if(x.key==='(UNASSIGNED)') return;
         var e=r[x.key]||{}, hm=homeTeams()[x.key]||{};
-        var src=e.team?'Roster':(hm.fromName?'Name prefix':'Majority of data');
+        var src=e.team?'Roster':(ruleFor(x.key)?'Name rule':(hm.fromName?'Name prefix':'Majority of data'));
         h+='<tr style="border-top:1px solid var(--line)'+(e.exclude?';opacity:.55':'')+'">'
           +'<td style="font-weight:700">'+esc(x.name)+(e.note?(' <span class="help-text">('+esc(e.note)+')</span>'):'')+'</td>'
           +'<td style="color:var(--muted);font-size:12px">'+esc(hm.dominant||'&mdash;')+(hm.share?(' &middot; '+hm.share+'%'):'')+'</td>'
