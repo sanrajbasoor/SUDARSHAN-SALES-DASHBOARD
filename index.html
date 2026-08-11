@@ -1628,8 +1628,8 @@ document.addEventListener('DOMContentLoaded', initApp);
 (function(){
   "use strict";
   var STALE=7, FUNNEL_DAYS=90, PKEY='hero-dse-prefs-v1';
-  var prefs; try{ prefs=Object.assign({period:'tw',month:'',counter:'',cmode:'enq',open:'',showTargets:false},JSON.parse(localStorage.getItem(PKEY))||{}); }
-             catch(e){ prefs={period:'tw',month:'',counter:'',cmode:'enq',open:'',showTargets:false}; }
+  var prefs; try{ prefs=Object.assign({period:'tw',month:'',counter:'',cmode:'enq',open:'',showTargets:false,showRoster:false},JSON.parse(localStorage.getItem(PKEY))||{}); }
+             catch(e){ prefs={period:'tw',month:'',counter:'',cmode:'enq',open:'',showTargets:false,showRoster:false}; }
   function savePrefs(){ try{ localStorage.setItem(PKEY,JSON.stringify(prefs)); }catch(e){} }
 
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
@@ -1686,12 +1686,47 @@ document.addEventListener('DOMContentLoaded', initApp);
     var m=String(name==null?'':name).match(/^\s*([A-Za-z]{2,6})\s*,/);
     return m?(PREFIX[m[1].toUpperCase()]||''):'';
   }
+  /* An explicit roster beats inference. Seeded once from the corrections given by the
+     dealership; edit any row and it persists to config.dseRoster and syncs with the team. */
+  var SEED_ROSTER={
+    'SAFIYA, BEBY':        {team:'VIDA Hub'},
+    'RAJAK, AMIT':         {team:'VIDA Hub'},
+    'GUPTA, SALABH':       {team:'MML (ICE)'},
+    'VISHWAKARMA, ISHIKA': {team:'MML (ICE)'},
+    'KUSHWAHA, SHRUTI':    {team:'Premia'},
+    'SAHANI, ALAH':        {team:'MML (ICE)', note:'Akash Sahani'},
+    'RAIKWAR, SHIVANI':    {team:'MML (ICE)'},
+    'JAT, TANISH':         {exclude:true, note:'not part of the DSE team'},
+    'USER, WEBSERVICE':    {exclude:true, note:'system account, not a person'}
+  };
+  function roster(){ try{ if(!config.dseRoster) config.dseRoster={}; return config.dseRoster; }catch(e){ return {}; } }
+  (function seedRoster(){
+    try{
+      if(config.dseRosterSeeded) return;
+      var r=roster();
+      Object.keys(SEED_ROSTER).forEach(function(k){ if(!r[k]) r[k]=Object.assign({},SEED_ROSTER[k]); });
+      config.dseRosterSeeded=true;
+      if(typeof saveData==='function') saveData();
+    }catch(e){}
+  })();
+  function dkey(repName){ var k=rkey(repName); var r=roster()[k]; return (r&&r.mergeTo)?r.mergeTo:k; }
+  function excluded(k){ var r=roster()[k]; return !!(r&&r.exclude); }
+  function teamSrc(k){
+    var r=roster()[k]; if(r&&r.team) return 'roster';
+    var h=homeTeams()[k]; return (h&&h.fromName)?'name':'data';
+  }
+  window.dseRoster=function(k,field,v){
+    var r=roster(); if(!r[k]) r[k]={};
+    if(field==='exclude') r[k].exclude=!!v; else r[k][field]=v||'';
+    try{ if(typeof saveData==='function') saveData(); }catch(e){}
+    _home=null; render();
+  };
   var _home=null;
   function homeTeams(){
     if(_home) return _home;
     var m={};
     ENQ().forEach(function(e){
-      var k=rkey(e.rep), c=String(e.counter==null?'':e.counter).trim()||'(none)';
+      var k=dkey(e.rep), c=String(e.counter==null?'':e.counter).trim()||'(none)';
       (m[k]=m[k]||{})[c]=(m[k][c]||0)+1;
     });
     var out={};
@@ -1703,7 +1738,10 @@ document.addEventListener('DOMContentLoaded', initApp);
     });
     _home=out; return out;
   }
-  function teamOf(k){ var h=homeTeams()[k]; return h?h.home:''; }
+  function teamOf(k){
+    var r=roster()[k]; if(r&&r.team) return r.team;      // what you told it
+    var h=homeTeams()[k]; return h?h.home:'';            // then the name prefix, then the data
+  }
   function rkey(r){ var t=String(r==null?'':r).trim();
     if(!t||/^(0+|-+|na|n\/a|#n\/?a|null|undefined|nil)$/i.test(t)) return '(UNASSIGNED)';
     return t.toUpperCase(); }
@@ -1742,11 +1780,11 @@ document.addEventListener('DOMContentLoaded', initApp);
   function pool(){
     var c=prefs.counter; if(!c) return ENQ();
     if(prefs.cmode==='home'){                       // people based at this counter, wherever they logged it
-      return ENQ().filter(function(e){ return low(teamOf(rkey(e.rep)))===low(c); });
+      return ENQ().filter(function(e){ return low(teamOf(dkey(e.rep)))===low(c); });
     }
     return ENQ().filter(function(e){ return low(e.counter)===low(c); });   // enquiries logged at this counter
   }
-  function scoreAll(){ var m={}; pool().forEach(function(e){ m[rkey(e.rep)]=1; }); return m; }
+  function scoreAll(){ var m={}; pool().forEach(function(e){ m[dkey(e.rep)]=1; }); return m; }
 
   function build(){
     var R=rangeOf(prefs.period), P=pool();
@@ -1759,7 +1797,7 @@ document.addEventListener('DOMContentLoaded', initApp);
         speed:[],active:0,stale:0,overdue:0,noFU:0,fin:0,value:0});
     }
     P.forEach(function(e){
-      var k=rkey(e.rep), s=slot(k);
+      var k=dkey(e.rep), s=slot(k);
       if(!s.counter && e.counter) s.counter=e.counter;
       var cd=closeDate(e), cr=e.createdAt||'';
       // results, by close date
@@ -1800,7 +1838,8 @@ document.addEventListener('DOMContentLoaded', initApp);
       s.avgSpeed = s.speed.length ? Math.round(s.speed.reduce(function(a,b){return a+b;},0)/s.speed.length*10)/10 : null;
       s.delta = s.won - s.prevWon;
       var hh=homeTeams()[k]||{};
-      s.home=hh.home||''; s.homeFromName=!!hh.fromName; s.homeShare=hh.share||0;
+      s.home=teamOf(k)||'';                 // roster first, then name prefix, then the data
+      s.homeFromName=!!hh.fromName; s.homeShare=hh.share||0;
       s.visiting = !!(prefs.counter && prefs.cmode!=='home' && s.home && low(s.home)!==low(prefs.counter));
       s.counterTarget = counterTargetOf(s.counter);
       s.suggest = s.counterTarget ? Math.round(s.counterTarget/(dseAtCounter[s.counter||'']||1)) : 0;
@@ -1820,7 +1859,7 @@ document.addEventListener('DOMContentLoaded', initApp);
       }
       s.leak=worst;
       return s;
-    }).filter(function(s){ return s.fN>0 || s.won>0 || s.active>0 || s.newEnq>0; });
+    }).filter(function(s){ return (s.fN>0 || s.won>0 || s.active>0 || s.newEnq>0) && !excluded(s.key); });
 
     // rank now vs rank in the previous period
     var byWon=rows.slice().sort(function(a,b){ return b.won-a.won || b.conv-a.conv; });
@@ -1854,6 +1893,49 @@ document.addEventListener('DOMContentLoaded', initApp);
     _home=null; savePrefs(); render();
   };
   window.dseOpen=function(k){ prefs.open = (prefs.open===k)?'':k; savePrefs(); render(); };
+
+  /* ---------------- roster editor ---------------- */
+  function rosterPanel(rows){
+    var r=roster(), cs=counters();
+    var unros=rows.filter(function(x){ return x.key!=='(UNASSIGNED)' && !(r[x.key]&&(r[x.key].team||r[x.key].exclude)); });
+    var exl=Object.keys(r).filter(function(k){ return r[k].exclude; });
+    var h='<div class="card" style="margin-top:14px;border-left:4px solid '+(unros.length?'#ffb02e':'#5b9eff')+'">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<h3 style="margin:0">&#128101; DSE roster &mdash; who belongs where</h3>'
+      +'<button class="btn btn-sm btn-ghost" onclick="dseSet(\'showRoster\',false)">Hide</button></div>'
+      +'<p class="help-text">The scorecard trusts this list before it guesses. Set a home team, exclude anyone who is not a DSE, '
+      +'or merge a duplicate spelling into the right person. Saved to the shared config, so the whole team sees the same roster.</p>';
+    if(unros.length){
+      h+='<div style="margin:8px 0;padding:8px 12px;border-left:3px solid #ffb02e;background:rgba(255,176,46,0.08);border-radius:6px">'
+        +'<span class="help-text"><b style="color:#ffb02e">'+unros.length+' name(s) not on the roster</b> &mdash; '
+        +unros.map(function(x){ return esc(x.name); }).join(', ')+'. They fall back to a guess until you assign them.</span></div>';
+    }
+    h+='<div style="overflow-x:auto"><table class="table"><thead><tr><th>DSE</th><th>Seen mostly at</th>'
+      +'<th>Home team</th><th>Merge into</th><th style="text-align:center">Not a DSE</th><th>Source</th></tr></thead><tbody>';
+    rows.concat(exl.filter(function(k){ return !rows.some(function(x){ return x.key===k; }); })
+                   .map(function(k){ return {key:k,name:rname(k),home:'',homeShare:0}; }))
+      .forEach(function(x){
+        if(x.key==='(UNASSIGNED)') return;
+        var e=r[x.key]||{}, hm=homeTeams()[x.key]||{};
+        var src=e.team?'Roster':(hm.fromName?'Name prefix':'Majority of data');
+        h+='<tr style="border-top:1px solid var(--line)'+(e.exclude?';opacity:.55':'')+'">'
+          +'<td style="font-weight:700">'+esc(x.name)+(e.note?(' <span class="help-text">('+esc(e.note)+')</span>'):'')+'</td>'
+          +'<td style="color:var(--muted);font-size:12px">'+esc(hm.dominant||'&mdash;')+(hm.share?(' &middot; '+hm.share+'%'):'')+'</td>'
+          +'<td><select class="filter-select" onchange="dseRoster('+__jsq(x.key)+',\'team\',this.value)"><option value="">&mdash; guess &mdash;</option>'
+          + cs.map(function(c){ return '<option value="'+esc(c)+'"'+(e.team===c?' selected':'')+'>'+esc(c)+'</option>'; }).join('')
+          +'</select></td>'
+          +'<td><select class="filter-select" onchange="dseRoster('+__jsq(x.key)+',\'mergeTo\',this.value)"><option value="">&mdash; none &mdash;</option>'
+          + rows.filter(function(y){ return y.key!==x.key && y.key!=='(UNASSIGNED)'; })
+                .map(function(y){ return '<option value="'+esc(y.key)+'"'+(e.mergeTo===y.key?' selected':'')+'>'+esc(y.name)+'</option>'; }).join('')
+          +'</select></td>'
+          +'<td style="text-align:center"><input type="checkbox"'+(e.exclude?' checked':'')+' onchange="dseRoster('+__jsq(x.key)+',\'exclude\',this.checked)"/></td>'
+          +'<td style="font-size:12px;color:'+(e.team?'#2bd47d':'#ffb02e')+'">'+src+'</td></tr>';
+      });
+    h+='</tbody></table></div>'
+      + (exl.length?('<p class="help-text" style="margin-top:8px">Excluded and hidden from the scorecard: <b>'+exl.map(function(k){ return esc(rname(k)); }).join(', ')+'</b>.</p>'):'')
+      +'</div>';
+    return h;
+  }
 
   /* ---------------- targets ---------------- */
   function targetsPanel(rows,R){
@@ -1934,7 +2016,7 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'Finance attach on new enquiries: <b>'+(s.newEnq?Math.round(s.fin/s.newEnq*100):0)+'%</b></span>'
       +'</div>';
 
-    var mine=pool().filter(function(e){ return rkey(e.rep)===s.key && ACT().indexOf(e.stage)>-1 && (since(e.lastContactAt||e.createdAt)||0)>STALE; })
+    var mine=pool().filter(function(e){ return dkey(e.rep)===s.key && ACT().indexOf(e.stage)>-1 && (since(e.lastContactAt||e.createdAt)||0)>STALE; })
       .sort(function(a,b){ return (since(b.lastContactAt||b.createdAt)||0)-(since(a.lastContactAt||a.createdAt)||0); });
     h+='<h3 style="margin:16px 0 6px;font-size:14px">Their untouched list ('+mine.length+')</h3>';
     if(!mine.length) h+='<p class="help-text" style="color:#2bd47d">&#10003; Nothing untouched.</p>';
@@ -1987,6 +2069,7 @@ document.addEventListener('DOMContentLoaded', initApp);
           +'<option value="enq"'+(prefs.cmode!=='home'?' selected':'')+'>Enquiries logged here</option>'
           +'<option value="home"'+(prefs.cmode==='home'?' selected':'')+'>DSEs based here</option>'
           +'</select></label>'):'')
+      +'<button class="btn btn-sm'+(prefs.showRoster?' btn-primary':'')+'" onclick="dseSet(\'showRoster\','+(prefs.showRoster?'false':'true')+')">&#128101; Roster</button>'
       +'<button class="btn btn-sm'+(prefs.showTargets?' btn-primary':'')+'" onclick="dseSet(\'showTargets\','+(prefs.showTargets?'false':'true')+')">&#127919; Targets</button>'
       +'<button class="btn btn-sm" onclick="dseExportAll()">&#11015;&#65039; Export scorecard</button>'
       +'<span class="help-text" style="margin-left:auto">'+esc(R.label)+': '+esc(R.from)+' &rarr; '+esc(R.to)
@@ -2037,7 +2120,7 @@ document.addEventListener('DOMContentLoaded', initApp);
         +'<td style="text-align:right;color:var(--muted)">'+s.rank+'</td>'
         +'<td style="text-align:center">'+arrow(s.rankMove)+'</td>'
         +'<td style="font-weight:700">'+esc(s.name)+(open?' &#9664;':'')+'</td>'
-        +'<td style="font-size:12px;color:'+(s.visiting?'#ffb02e':'var(--muted)')+'" title="'+(s.homeFromName?'from the DSE name prefix':(s.homeShare+'% of their enquiries sit here'))+'">'
+        +'<td style="font-size:12px;color:'+(s.visiting?'#ffb02e':'var(--muted)')+'" title="'+(teamSrc(s.key)==='roster'?'set on the DSE roster':(teamSrc(s.key)==='name'?'from the DSE name prefix':(s.homeShare+'% of their enquiries sit here — not on the roster')))+'">'
         + esc(s.home||'-')+(s.visiting?' &#9888;&#65039;':'')+'</td>'
         +'<td style="text-align:right;font-weight:800;color:#2bd47d">'+s.won+'</td>'
         +'<td style="text-align:center">'+delta(s.delta)+'</td>'
@@ -2053,6 +2136,9 @@ document.addEventListener('DOMContentLoaded', initApp);
     });
     h+='</tbody></table></div></div>';
 
+    var unrostered=rows.filter(function(x){ return x.key!=='(UNASSIGNED)' && !(roster()[x.key]&&(roster()[x.key].team||roster()[x.key].exclude)); });
+    if(prefs.showRoster || unrostered.length) h+=rosterPanel(rows);
+
     var anyTarget=rows.some(function(x){ return x.targetMonthly!=null; });
     if(prefs.showTargets || !anyTarget) h+=targetsPanel(rows,R);
 
@@ -2061,7 +2147,7 @@ document.addEventListener('DOMContentLoaded', initApp);
 
     /* whole-team call list */
     var calls=pool().filter(function(e){ return ACT().indexOf(e.stage)>-1 && (since(e.lastContactAt||e.createdAt)||0)>STALE; })
-      .map(function(e){ return {id:e.id,c:e.customer,p:e.phone,co:e.counter,m:e.model,r:rname(rkey(e.rep)),st:e.stage,
+      .map(function(e){ return {id:e.id,c:e.customer,p:e.phone,co:e.counter,m:e.model,r:rname(dkey(e.rep)),st:e.stage,
         n:e.notes,d:since(e.lastContactAt||e.createdAt)||0,lc:e.lastContactAt||e.createdAt||'',nf:e.nextFollowUp||''}; })
       .sort(function(a,b){ return b.d-a.d; });
     window.__dseCalls=calls;
@@ -2126,7 +2212,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     out.push([]); out.push(['Funnel stage','Count','Drop from previous']);
     s.steps.forEach(function(st,i){ out.push([st[0],st[1],i?(s.steps[i-1][1]-st[1]):'']); });
     if(s.leak.drop){ out.push([]); out.push(['Biggest leak',s.leak.from+' -> '+s.leak.to,s.leak.drop+' lost ('+Math.round(s.leak.pct*100)+'%)']); }
-    var mine=pool().filter(function(e){ return rkey(e.rep)===k && ACT().indexOf(e.stage)>-1 && (since(e.lastContactAt||e.createdAt)||0)>STALE; })
+    var mine=pool().filter(function(e){ return dkey(e.rep)===k && ACT().indexOf(e.stage)>-1 && (since(e.lastContactAt||e.createdAt)||0)>STALE; })
       .sort(function(a,b){ return (since(b.lastContactAt||b.createdAt)||0)-(since(a.lastContactAt||a.createdAt)||0); });
     if(mine.length){
       out.push([]); out.push(['Untouched leads','','','','']);
