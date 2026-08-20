@@ -5793,11 +5793,14 @@ document.addEventListener('DOMContentLoaded', initApp);
   var SEGORD=['Entry','100cc','125cc','Scooter','Premium'];
   var PLBL={full:'Full period (Apr 25 - Aug 26)',festive:'Festive Sep-Nov 25 (season match)',recent6:'Last 6 months (Feb - Aug 26)',ytd:'FY27 YTD (Apr - Aug 26)'};
   var KEY='hero-orderplan-v1';
-  var st={total:2000,period:'festive',entry:34,csplit:null,view:'Counter',net:true,minq:1,model:'',ov:{Counter:{},Network:{},Total:{}}};
+  var st={total:2000,period:'festive',entry:34,csplit:null,view:'Counter',net:true,minq:1,model:'',bkgrp:'exact',bkexact:'',ov:{Counter:{},Network:{},Total:{}}};
   try{var s=localStorage.getItem(KEY); if(s){var o=JSON.parse(s); for(var k in o) if(k!=='ov') st[k]=o[k];}}catch(e){}
   function save(){ try{ var c={}; for(var k in st) if(k!=='ov') c[k]=st[k]; localStorage.setItem(KEY,JSON.stringify(c)); }catch(e){} }
   function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
   function nf(n){ return (Number(n)||0).toLocaleString('en-IN'); }
+  function INRs(n){ n=Math.round(Number(n)||0); var s=String(Math.abs(n)), l3=s.slice(-3), rest=s.slice(0,-3);
+    if(rest) l3=','+l3; rest=rest.replace(/\B(?=(\d{2})+(?!\d))/g,',');
+    return (n<0?'-':'')+'\u20B9'+rest+l3; }
 
   /* ---------- decode the historical mix ---------- */
   var REC=MIX.r.map(function(a){
@@ -5824,6 +5827,19 @@ document.addEventListener('DOMContentLoaded', initApp);
     keys.sort(function(a,b){ return (raw[b]-out[b])-(raw[a]-out[a]); });
     for(var i=0; rem>0; i++, rem--) out[keys[i%keys.length]]++;
     return out;
+  }
+  function modelSkus(model){ /* colour mix for a model, falling back to all-channel history */
+    var out=null;
+    ['Total'].forEach(function(){});
+    var m=base(st.period,'Total');
+    Object.keys(m).forEach(function(s){ if(m[s].models[model]) out={seg:s,skus:m[s].models[model].skus,u:m[s].models[model].u}; });
+    if(out) return out;
+    var full=null;
+    ['full','festive','recent6','ytd'].forEach(function(pp){
+      if(full) return; var b=base(pp,'Total');
+      Object.keys(b).forEach(function(s){ if(!full && b[s].models[model]) full={seg:s,skus:b[s].models[model].skus,u:b[s].models[model].u}; });
+    });
+    return full;
   }
   function histShare(m){ var t=0,o={}; SEGORD.forEach(function(s){ if(m[s]) t+=m[s].u; });
     SEGORD.forEach(function(s){ if(m[s]) o[s]=m[s].u/t*100; }); return o; }
@@ -5876,6 +5892,87 @@ document.addEventListener('DOMContentLoaded', initApp);
     return {byModel:byModel,byMC:byMC,src:src,updated:updated,total:tot,colourLevel:colourLevel};
   }
 
+  /* ---------- open bookings, from the enquiry register ---------- */
+  var CANON=MIX.m.slice();
+  var ALIAS={'PASSIONPRO':'PASSION +','PASSIONXTEC':'PASSION +','SPLENDORPLUSXTEC':'SPLENDOR+ XTEC',
+    'SUPERSPLENDOR':'SUPER SPLENDOR XTEC','SPLENDORISMART':'SPLENDOR +','HFDELUXEISMART':'HF DELUXE',
+    'XTREME160R4V':'XTREME 160R 4V','XPULSE200':'XPULSE 200 4V','XPULSE2004V':'XPULSE 200 4V',
+    'DESTINI':'DESTINI 125','PLEASURE':'PLEASURE+','GLAMOURXTEC':'GLAMOUR XTEC','XOOM':'XOOM 125'};
+  function mkey(s){ return String(s==null?'':s).toUpperCase().replace(/\+/g,' PLUS ').replace(/[^A-Z0-9]/g,''); }
+  var CANONKEY={}; CANON.forEach(function(m){ CANONKEY[mkey(m)]=m; });
+  var EVRE=/VIDA|VX2|^V[12]|EV$/;
+  var _mcache={};
+  function matchModel(raw){
+    if(_mcache[raw]!==undefined) return _mcache[raw];
+    var k=mkey(raw), out=null;
+    if(!k) out=null;
+    else if(EVRE.test(k)) out='__EV__';
+    else if(CANONKEY[k]) out=CANONKEY[k];
+    else if(ALIAS[k]) out=ALIAS[k];
+    else {
+      var best=null,bl=0;
+      Object.keys(CANONKEY).forEach(function(ck){
+        var n=Math.min(ck.length,k.length), i=0;
+        while(i<n && ck.charAt(i)===k.charAt(i)) i++;
+        if(i>=5 && (ck.indexOf(k)===0 || k.indexOf(ck)===0) && i>bl){ bl=i; best=CANONKEY[ck]; }
+      });
+      out=best;
+    }
+    _mcache[raw]=out; return out;
+  }
+  function allEnq(){
+    try{ if(typeof enquiries!=='undefined' && enquiries) return enquiries; }catch(e){}
+    try{ if(window.enquiries) return window.enquiries; }catch(e){}
+    return [];
+  }
+  function variantsOf(model){ /* invoice variant codes seen for a model, biggest first */
+    var w={};
+    REC.forEach(function(r){ if(r.model===model) w[r.variant]=(w[r.variant]||0)+r.units; });
+    return Object.keys(w).sort(function(a,b){return w[b]-w[a];});
+  }
+  function exactName(e){
+    var m=String(e.model==null?'':e.model).trim();
+    var v=String(e.variant==null?'':e.variant).trim();
+    if(v && mkey(v) && mkey(m).indexOf(mkey(v))<0) return m+' \u00B7 '+v;
+    return m||'(blank)';
+  }
+  function bookings(){
+    var open=[], all=[], ev=0, unmapped={}, total=0, amt=0, overdue=0,
+        today=new Date().toISOString().slice(0,10);
+    allEnq().forEach(function(e){
+      if(!e || e.stage!=='Booked') return;
+      total++; amt+=(parseFloat(e.bookingAmt)||0);
+      var late=!!(e.deliveryDate&&e.deliveryDate<today);
+      if(late) overdue++;
+      var m=matchModel(e.model), isEV=(m==='__EV__');
+      var b={model:isEV?null:m,isEV:isEV,exact:exactName(e),counter:e.counter||'(unassigned)',
+             amt:parseFloat(e.bookingAmt)||0,due:e.deliveryDate||'',late:late,
+             raw:e.model,rawVar:e.variant||'',id:e.id,cust:e.customer,rep:e.rep};
+      all.push(b);
+      if(isEV){ ev++; return; }
+      if(!m){ unmapped[e.model||'(blank)']=(unmapped[e.model||'(blank)']||0)+1; return; }
+      open.push(b);
+    });
+    var byModel={}, counters=[], byMC={};
+    open.forEach(function(b){
+      byModel[b.model]=(byModel[b.model]||0)+1;
+      var k=b.model+'|'+b.counter; byMC[k]=(byMC[k]||0)+1;
+    });
+    all.forEach(function(b){ if(counters.indexOf(b.counter)<0) counters.push(b.counter); });
+    counters.sort();
+    /* exact-as-recorded grouping - this is what keeps VX2 Go 3.4 apart from VX2 Go 3.1 */
+    var exact={};
+    all.forEach(function(b){
+      var g=exact[b.exact]||(exact[b.exact]={name:b.exact,n:0,late:0,amt:0,ctr:{},model:b.model,isEV:b.isEV});
+      g.n++; if(b.late) g.late++; g.amt+=b.amt; g.ctr[b.counter]=(g.ctr[b.counter]||0)+1;
+      if(!g.model && b.model) g.model=b.model;
+    });
+    var exactList=Object.keys(exact).map(function(k){ return exact[k]; })
+      .sort(function(a,b){ return (a.isEV?1:0)-(b.isEV?1:0) || b.n-a.n; });
+    return {rows:open,all:all,byModel:byModel,byMC:byMC,counters:counters,ev:ev,unmapped:unmapped,
+            exact:exactList,total:total,matched:open.length,amt:amt,overdue:overdue};
+  }
+
   /* ---------- nav + view ---------- */
   function ensureNav(){
     if(document.getElementById('view-orderplan')) return;
@@ -5913,7 +6010,7 @@ document.addEventListener('DOMContentLoaded', initApp);
   function render(){
     var root=document.getElementById('orderplan-root'); if(!root) return;
     compute();
-    var sk=stockIndex();
+    var sk=stockIndex(), BK=bookings();
     var inBand=(st.entry>=33 && st.entry<=35);
     var h='';
 
@@ -5938,7 +6035,7 @@ document.addEventListener('DOMContentLoaded', initApp);
       + kpiTile(nf(P.Counter.total),'Counter requirement','#5b9eff','Entry '+nf(eC)+' ('+(P.Counter.total?(eC/P.Counter.total*100).toFixed(1):0)+'%)')
       + kpiTile(nf(P.Network.total),'Network requirement','#ffb02e','Entry '+nf(eN)+' ('+(P.Network.total?(eN/P.Network.total*100).toFixed(1):0)+'%)')
       + kpiTile(nf(eC+eN),'Entry (HF Deluxe) units','',(st.total?((eC+eN)/st.total*100).toFixed(1):0)+'% of dispatch')
-      + kpiTile(nf(P.Counter.rows.sku.filter(function(r){return r.qty>0;}).length)+' / '+nf(P.Network.rows.sku.filter(function(r){return r.qty>0;}).length),'Colour codes to order','#2bd47d','counter / network')
+      + kpiTile(nf(BK.matched),'Open bookings (ICE)','#a05bff',(BK.overdue?nf(BK.overdue)+' past delivery date':'across '+BK.counters.length+' counters'))
       +'</div>';
 
     /* stock netting banner */
@@ -5946,7 +6043,7 @@ document.addEventListener('DOMContentLoaded', initApp);
       h+='<div class="card" style="margin-top:14px;border-left:4px solid var(--success,#2bd47d);background:rgba(43,212,125,0.06)">'
         +'<label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin:0">'
         +'<input type="checkbox" id="op-net"'+(st.net?' checked':'')+' style="width:16px;height:16px">'
-        +'<span><b>Net off stock already with us.</b> <span class="help-text">'+nf(sk.total)+' units from the Stock tab ('+esc(sk.src)+(sk.updated?', last sync '+esc(sk.updated):'')+'). '
+        +'<span><b>Net off stock in hand and add open bookings.</b> <span class="help-text">'+nf(sk.total)+' units from the Stock tab ('+esc(sk.src)+(sk.updated?', last sync '+esc(sk.updated):'')+'). '
         +(sk.colourLevel?'Colour-level match available.':'Model-level netting only &mdash; install OpsData2.gs for VIN/colour-level stock.')+'</span></span></label></div>';
     } else {
       h+='<div class="card" style="margin-top:14px;border-left:4px solid var(--muted);background:rgba(255,255,255,0.03)">'
@@ -5981,25 +6078,179 @@ document.addEventListener('DOMContentLoaded', initApp);
     h+='</tbody></table></div>';
 
     /* model table */
-    h+='<div class="card" style="margin-top:14px"><h3>Model plan</h3><table class="table"><thead><tr><th>Segment</th><th>Model</th>'
-      +'<th style="text-align:right">Historical units</th><th style="text-align:right">% in segment</th><th style="text-align:right">Order qty</th>'
-      +(st.net&&sk.total>0?'<th style="text-align:right">With us</th><th style="text-align:right">Net to order</th>':'')+'</tr></thead><tbody>';
+    var netMode=(st.net && (sk.total>0 || BK.matched>0));
+    var chScale=(st.view==='Total')?1:(q/(st.total||1));
+    function modelCalc(r){
+      var have=(st.net&&sk.total>0)?Math.round((sk.byModel[nk(r.model)]||0)*chScale):0;
+      var bkd=(st.net&&st.view!=='Network')?(BK.byModel[r.model]||0):0;
+      return {have:have,bkd:bkd,net:Math.max(0,r.qty+bkd-have)};
+    }
+    h+='<div class="card" style="margin-top:14px"><h3>Model plan</h3>';
+    if(netMode) h+='<p class="help-text">Net to order = plan qty + open bookings &minus; stock with us. '
+      +(st.view==='Network'?'Bookings are not applied here &mdash; the enquiry register covers our own counters, not network bookings.':'')
+      +(st.view!=='Total'?' Stock is apportioned to this channel in the same ratio as the dispatch split.':'')+'</p>';
+    h+='<table class="table"><thead><tr><th>Segment</th><th>Model</th>'
+      +'<th style="text-align:right">Historical units</th><th style="text-align:right">% in segment</th><th style="text-align:right">Plan qty</th>'
+      +(netMode?'<th style="text-align:right">Booked</th><th style="text-align:right">With us</th><th style="text-align:right">Net to order</th>':'')+'</tr></thead><tbody>';
+    var tPlan=0,tBkd=0,tHave=0,tNet=0;
     p.rows.mod.forEach(function(r){
-      var have=st.net&&sk.total>0?(sk.byModel[nk(r.model)]||0):0;
-      var net=Math.max(0,r.qty-(st.view==='Total'?have:Math.round(have*(q/(st.total||1)))));
+      var c=modelCalc(r); tPlan+=r.qty; tBkd+=c.bkd; tHave+=c.have; tNet+=c.net;
+      if(st.model && r.model!==st.model) return;
       h+='<tr><td style="color:var(--muted)">'+esc(SEGLBL[r.seg]||r.seg)+'</td><td style="font-weight:600">'+esc(r.model)+'</td>'
         +'<td style="text-align:right;color:var(--muted)">'+nf(r.histU)+'</td>'
         +'<td style="text-align:right;color:var(--muted)">'+r.hist.toFixed(1)+'%</td>'
-        +'<td style="text-align:right;font-weight:800">'+nf(r.qty)+'</td>'
-        +(st.net&&sk.total>0?'<td style="text-align:right;color:var(--muted)">'+(have?nf(st.view==='Total'?have:Math.round(have*(q/(st.total||1)))):'&middot;')+'</td>'
-          +'<td style="text-align:right;font-weight:800;color:'+(net>0?'var(--text)':'var(--success,#2bd47d)')+'">'+nf(net)+'</td>':'')
+        +'<td style="text-align:right;font-weight:700">'+nf(r.qty)+'</td>'
+        +(netMode?'<td style="text-align:right;font-weight:700;color:'+(c.bkd>0?'#a05bff':'var(--muted)')+'">'+(c.bkd?nf(c.bkd):'&middot;')+'</td>'
+          +'<td style="text-align:right;color:var(--muted)">'+(c.have?nf(c.have):'&middot;')+'</td>'
+          +'<td style="text-align:right;font-weight:800;font-size:15px">'+nf(c.net)+'</td>':'')
         +'</tr>';
     });
+    /* models with open bookings but no history in this channel - they still need ordering */
+    var extra=[];
+    if(st.net && st.view!=='Network'){
+      var inPlan={}; p.rows.mod.forEach(function(r){ inPlan[r.model]=1; });
+      Object.keys(BK.byModel).forEach(function(md){
+        if(inPlan[md]) return;
+        var info=modelSkus(md); if(!info) return;
+        var have=(sk.total>0)?Math.round((sk.byModel[nk(md)]||0)*chScale):0;
+        var bkd=BK.byModel[md];
+        extra.push({seg:info.seg,model:md,qty:0,bkd:bkd,have:have,net:Math.max(0,bkd-have),skus:info.skus,u:info.u});
+      });
+    }
+    extra.forEach(function(x){
+      tBkd+=x.bkd; tHave+=x.have; tNet+=x.net;
+      if(st.model && x.model!==st.model) return;
+      h+='<tr style="background:rgba(160,91,255,0.06)"><td style="color:var(--muted)">'+esc(SEGLBL[x.seg]||x.seg)+'</td>'
+        +'<td style="font-weight:600">'+esc(x.model)+' <span class="help-text">booking only</span></td>'
+        +'<td style="text-align:right;color:var(--muted)">&middot;</td><td style="text-align:right;color:var(--muted)">&middot;</td>'
+        +'<td style="text-align:right;font-weight:700">0</td>'
+        +(netMode?'<td style="text-align:right;font-weight:700;color:#a05bff">'+nf(x.bkd)+'</td>'
+          +'<td style="text-align:right;color:var(--muted)">'+(x.have?nf(x.have):'&middot;')+'</td>'
+          +'<td style="text-align:right;font-weight:800;font-size:15px">'+nf(x.net)+'</td>':'')+'</tr>';
+    });
+    if(extra.length) h+='<tr><td colspan="8" class="help-text" style="padding-top:6px">Rows marked <b>booking only</b> have no retail history in this channel for the selected period, so the season plan gives them nothing &mdash; but the open bookings still have to be ordered.</td></tr>';
+    h+='<tr style="border-top:2px solid var(--line)"><td colspan="4" style="font-weight:800">TOTAL'
+      +(st.model?' <span class="help-text">(all models &mdash; filter affects rows shown only)</span>':'')+'</td>'
+      +'<td style="text-align:right;font-weight:800">'+nf(tPlan)+'</td>'
+      +(netMode?'<td style="text-align:right;font-weight:800;color:#a05bff">'+nf(tBkd)+'</td>'
+        +'<td style="text-align:right;font-weight:800">'+nf(tHave)+'</td>'
+        +'<td style="text-align:right;font-weight:800">'+nf(tNet)+'</td>':'')+'</tr>';
     h+='</tbody></table></div>';
 
+    /* ---------- BOOKINGS: EXACT VARIANT / SKU ---------- */
+    h+='<div class="card" style="margin-top:14px"><h3>Open bookings &mdash; '+(st.bkgrp==='model'?'model wise':'exact variant wise')+'</h3>';
+    if(!BK.total){
+      h+='<p class="help-text">No enquiries are sitting at stage <b>Booked</b> right now. Once bookings are logged in the enquiry register (or synced from the Sheet) they appear here and feed the <b>Booked</b> column above.</p>';
+    } else {
+      h+='<p class="help-text">'+nf(BK.total)+' open booking(s) &middot; '+nf(BK.matched)+' matched to ICE models'
+        +(BK.ev?' &middot; '+nf(BK.ev)+' VIDA/EV (listed below, excluded from the ICE order maths)':'')
+        +(BK.amt?' &middot; '+INRs(BK.amt)+' booking amount collected':'')
+        +'. Counted regardless of the month filter &mdash; an open booking needs a vehicle whenever it was taken.</p>';
+
+      h+='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0">'
+        +'<span class="help-text">Show</span>'
+        +'<select class="filter-select" id="op-bkgrp">'
+        +'<option value="exact"'+(st.bkgrp!=='model'?' selected':'')+'>Exact variant, as recorded</option>'
+        +'<option value="model"'+(st.bkgrp==='model'?' selected':'')+'>Rolled up to model</option>'
+        +'</select>'
+        +'<span class="help-text">Filter</span>'
+        +'<select class="filter-select" id="op-bkfilter"><option value="">All ('+nf(BK.total)+')</option>';
+      if(st.bkgrp==='model'){
+        Object.keys(BK.byModel).sort(function(a,b){return BK.byModel[b]-BK.byModel[a];}).forEach(function(m){
+          h+='<option value="'+esc(m)+'"'+(st.model===m?' selected':'')+'>'+esc(m)+' ('+BK.byModel[m]+')</option>'; });
+      } else {
+        BK.exact.forEach(function(g){
+          h+='<option value="\u0001'+esc(g.name)+'"'+(st.bkexact===g.name?' selected':'')+'>'+esc(g.name)+' ('+g.n+')</option>'; });
+      }
+      h+='</select>'
+        +((st.model||st.bkexact)?'<button class="btn" id="op-bkclear">Clear filter</button>':'')
+        +'<span style="flex:1"></span><button class="btn" id="op-bkcsv">&#11015;&#65039; Export bookings</button></div>';
+
+      h+='<div style="overflow-x:auto"><table class="table"><thead><tr>'
+        +(st.bkgrp==='model'?'<th>Model</th><th>Segment</th>':'<th>Booked as recorded</th><th>Maps to</th><th>SKU / variant code</th>')
+        +BK.counters.map(function(c){ return '<th style="text-align:right">'+esc(c)+'</th>'; }).join('')
+        +'<th style="text-align:right">Bookings</th><th style="text-align:right">Overdue</th>'
+        +(st.bkgrp==='model'?'<th style="text-align:right">Plan qty</th>':'')
+        +'</tr></thead><tbody>';
+
+      var planByModel={}, segByModel={};
+      P.Total.rows.mod.forEach(function(r){ planByModel[r.model]=r.qty; segByModel[r.model]=r.seg; });
+      var colTot={}, gTot=0, gLate=0;
+
+      if(st.bkgrp==='model'){
+        Object.keys(BK.byModel).sort(function(a,b){return BK.byModel[b]-BK.byModel[a];}).forEach(function(m){
+          var late=0; BK.rows.forEach(function(b){ if(b.model===m && b.late) late++; });
+          BK.counters.forEach(function(c){ colTot[c]=(colTot[c]||0)+(BK.byMC[m+'|'+c]||0); });
+          gTot+=BK.byModel[m]; gLate+=late;
+          if(st.model && m!==st.model) return;
+          var sgl=segByModel[m]; if(!sgl){ var xi=modelSkus(m); sgl=xi?xi.seg:''; }
+          h+='<tr><td style="font-weight:600">'+esc(m)+'</td><td style="color:var(--muted)">'+(sgl?esc(SEGLBL[sgl]||sgl):'&middot;')+'</td>'
+            +BK.counters.map(function(c){ var v=BK.byMC[m+'|'+c]||0;
+                return '<td style="text-align:right'+(v?';font-weight:600':';color:var(--muted)')+'">'+(v||'&middot;')+'</td>'; }).join('')
+            +'<td style="text-align:right;font-weight:800;color:#a05bff">'+nf(BK.byModel[m])+'</td>'
+            +'<td style="text-align:right;font-weight:700;color:'+(late?'var(--danger,#ff5c5c)':'var(--muted)')+'">'+(late||'&middot;')+'</td>'
+            +'<td style="text-align:right;color:var(--muted)">'+nf(planByModel[m]||0)+'</td></tr>';
+        });
+      } else {
+        BK.exact.forEach(function(g){
+          BK.counters.forEach(function(c){ colTot[c]=(colTot[c]||0)+(g.ctr[c]||0); });
+          gTot+=g.n; gLate+=g.late;
+          if(st.bkexact && g.name!==st.bkexact) return;
+          if(st.model && g.model!==st.model) return;
+          var vcodes = g.model?variantsOf(g.model):[];
+          var skuCell;
+          if(g.isEV) skuCell='<span class="help-text">EV &mdash; not in the ICE invoice history</span>';
+          else if(!g.model) skuCell='<span style="color:var(--warn,#ffb02e)">unmapped</span>';
+          else if(vcodes.length===1) skuCell='<span style="font-family:monospace;font-size:11.5px">'+esc(vcodes[0])+'</span>';
+          else skuCell='<a href="#" data-op-drill="'+esc(g.model)+'" style="color:var(--info,#5b9eff);text-decoration:none;border-bottom:1px dotted">'
+                       +vcodes.length+' variant codes &rarr;</a>';
+          h+='<tr'+(g.isEV?' style="background:rgba(160,91,255,0.05)"':'')+'>'
+            +'<td style="font-weight:600">'+esc(g.name)+(g.isEV?' <span class="pill" style="font-size:10px;color:#a05bff">EV</span>':'')+'</td>'
+            +'<td style="color:var(--muted)">'+(g.model?esc(g.model):(g.isEV?'VIDA':'&mdash;'))+'</td>'
+            +'<td>'+skuCell+'</td>'
+            +BK.counters.map(function(c){ var v=g.ctr[c]||0;
+                return '<td style="text-align:right'+(v?';font-weight:600':';color:var(--muted)')+'">'+(v||'&middot;')+'</td>'; }).join('')
+            +'<td style="text-align:right;font-weight:800;color:#a05bff">'+nf(g.n)+'</td>'
+            +'<td style="text-align:right;font-weight:700;color:'+(g.late?'var(--danger,#ff5c5c)':'var(--muted)')+'">'+(g.late||'&middot;')+'</td></tr>';
+        });
+      }
+      h+='<tr style="border-top:2px solid var(--line)"><td style="font-weight:800">TOTAL</td><td></td>'
+        +(st.bkgrp==='model'?'':'<td></td>')
+        +BK.counters.map(function(c){ return '<td style="text-align:right;font-weight:800">'+nf(colTot[c]||0)+'</td>'; }).join('')
+        +'<td style="text-align:right;font-weight:800;color:#a05bff">'+nf(gTot)+'</td>'
+        +'<td style="text-align:right;font-weight:800">'+nf(gLate)+'</td>'
+        +(st.bkgrp==='model'?'<td></td>':'')+'</tr>';
+      h+='</tbody></table></div>';
+      if(st.bkgrp!=='model') h+='<p class="help-text" style="margin-top:10px">Rows are the exact product string from the register (model, plus the variant field when it adds something) &mdash; so <b>VX2 Go 3.4</b> and <b>VX2 Go 3.1</b> stay separate. Click a <b>variant codes</b> link to filter the colour table below to that model and see the SKU split.</p>';
+      var un=Object.keys(BK.unmapped);
+      if(un.length) h+='<p class="help-text" style="margin-top:8px"><b>Not matched to an ICE model:</b> '
+        + un.map(function(u){ return esc(u)+' ('+BK.unmapped[u]+')'; }).join(' &middot; ')
+        +'. Excluded from the Booked column &mdash; rename them in the register to the Hero model name and they map automatically.</p>';
+    }
+    h+='</div>';
+
     /* sku table */
-    var models=[]; p.rows.sku.forEach(function(r){ if(models.indexOf(r.model)<0) models.push(r.model); }); models.sort();
+    var models=[]; p.rows.sku.forEach(function(r){ if(models.indexOf(r.model)<0) models.push(r.model); });
+    /* distribute each model's net-to-order across its colours, so colours always tie back */
+    var netByModel={};
+    p.rows.mod.forEach(function(r){ netByModel[r.model]=modelCalc(r).net; });
+    var skuRows=p.rows.sku.slice();
+    extra.forEach(function(x){
+      if(models.indexOf(x.model)<0) models.push(x.model);
+      netByModel[x.model]=x.net;
+      Object.keys(x.skus).forEach(function(k){ var o=x.skus[k];
+        skuRows.push({seg:x.seg,model:x.model,variant:o.variant,color:o.color,sku:k,qty:0,histU:o.u,share:o.u/x.u*100,bookingOnly:true}); });
+    });
+    models.sort();
+    var skuNet={};
+    models.forEach(function(md){
+      var w={}; skuRows.forEach(function(r){ if(r.model===md) w[r.sku]=r.histU; });
+      var d=lr(netByModel[md]||0,w);
+      Object.keys(d).forEach(function(k){ skuNet[md+'|'+k]=d[k]; });
+    });
     h+='<div class="card" style="margin-top:14px"><h3>Colour / SKU order plan</h3>'
+      +'<p class="help-text">'+nf(skuRows.filter(function(r){return r.qty>0;}).length)+' colour codes in this channel'
+      +(netMode?'. The net column spreads each model\'s net-to-order across its colours on the same historical share, so colour quantities always add back to the model line above.':'.')+'</p>'
       +'<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">'
       +'<select class="filter-select" id="op-model"><option value="">All models</option>'
       + models.map(function(m){ return '<option'+(st.model===m?' selected':'')+'>'+esc(m)+'</option>'; }).join('')+'</select>'
@@ -6007,30 +6258,28 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'<input type="number" id="op-minq" value="'+st.minq+'" min="0" step="1" style="width:70px;padding:6px 8px;border-radius:6px;border:1px solid var(--line);background:var(--panel-2);color:var(--text)">'
       +'<span class="help-text">units (display only)</span></div>'
       +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Model</th><th>Variant</th><th>Colour</th><th>SKU</th>'
-      +'<th style="text-align:right">% in model</th><th style="text-align:right">Order qty</th>'
-      +(st.net&&sk.colourLevel?'<th style="text-align:right">With us</th><th style="text-align:right">Net</th>':'')+'</tr></thead><tbody>';
+      +'<th style="text-align:right">% in model</th><th style="text-align:right">Plan qty</th>'
+      +(netMode?(sk.colourLevel?'<th style="text-align:right">With us</th>':'')+'<th style="text-align:right">Net to order</th>':'')
+      +'</tr></thead><tbody>';
     var shown=0, shownQ=0, shownNet=0;
-    p.rows.sku.forEach(function(r){
+    skuRows.forEach(function(r){
       if(st.model && r.model!==st.model) return;
-      if(r.qty<st.minq) return;
-      shown++; shownQ+=r.qty;
-      var have=0,net=r.qty;
-      if(st.net&&sk.colourLevel){ have=sk.byMC[nk(r.model)+'|'+nk(r.color)]||0;
-        if(st.view!=='Total') have=Math.round(have*(q/(st.total||1)));
-        net=Math.max(0,r.qty-have); }
-      shownNet+=net;
+      var net=netMode?(skuNet[r.model+'|'+r.sku]||0):r.qty;
+      if(r.qty<st.minq && net<st.minq) return;
+      var have=sk.colourLevel?Math.round((sk.byMC[nk(r.model)+'|'+nk(r.color)]||0)*chScale):0;
+      shown++; shownQ+=r.qty; shownNet+=net;
       h+='<tr><td>'+esc(r.model)+'</td><td style="color:var(--muted)">'+esc(r.variant)+'</td>'
         +'<td style="font-weight:600">'+esc(r.color)+'</td>'
         +'<td style="font-family:monospace;font-size:11px;color:var(--muted)">'+esc(r.sku)+'</td>'
         +'<td style="text-align:right;color:var(--muted)">'+r.share.toFixed(1)+'%</td>'
-        +'<td style="text-align:right;font-weight:800">'+nf(r.qty)+'</td>'
-        +(st.net&&sk.colourLevel?'<td style="text-align:right;color:var(--muted)">'+(have?nf(have):'&middot;')+'</td>'
-          +'<td style="text-align:right;font-weight:800;color:'+(net>0?'var(--text)':'var(--success,#2bd47d)')+'">'+nf(net)+'</td>':'')
+        +'<td style="text-align:right;font-weight:700">'+nf(r.qty)+'</td>'
+        +(netMode?((sk.colourLevel?'<td style="text-align:right;color:var(--muted)">'+(have?nf(have):'&middot;')+'</td>':'')
+          +'<td style="text-align:right;font-weight:800;color:'+(net>0?'var(--text)':'var(--success,#2bd47d)')+'">'+nf(net)+'</td>'):'')
         +'</tr>';
     });
     h+='<tr style="border-top:2px solid var(--line)"><td colspan="5" style="font-weight:800">'+shown+' colour codes shown</td>'
       +'<td style="text-align:right;font-weight:800">'+nf(shownQ)+'</td>'
-      +(st.net&&sk.colourLevel?'<td></td><td style="text-align:right;font-weight:800">'+nf(shownNet)+'</td>':'')+'</tr>';
+      +(netMode?((sk.colourLevel?'<td></td>':'')+'<td style="text-align:right;font-weight:800">'+nf(shownNet)+'</td>'):'')+'</tr>';
     h+='</tbody></table></div></div>';
 
     h+='<div class="card" style="margin-top:14px"><h3>How this is calculated</h3><p class="help-text">'
@@ -6054,30 +6303,76 @@ document.addEventListener('DOMContentLoaded', initApp);
     if(g('op-minq')) g('op-minq').onchange=function(){ st.minq=parseInt(this.value)||0; save(); render(); };
     if(g('op-reset')) g('op-reset').onclick=function(){ st.ov[st.view]={}; render(); };
     if(g('op-csv')) g('op-csv').onclick=exportCSV;
+    if(g('op-bkgrp')) g('op-bkgrp').onchange=function(){ st.bkgrp=this.value; st.bkexact=''; save(); render(); };
+    if(g('op-bkfilter')) g('op-bkfilter').onchange=function(){
+      var v=this.value;
+      if(v.charAt(0)==='\u0001'){ st.bkexact=v.slice(1); st.model=''; }
+      else { st.model=v; st.bkexact=''; }
+      save(); render(); };
+    if(g('op-bkclear')) g('op-bkclear').onclick=function(){ st.model=''; st.bkexact=''; save(); render(); };
+    if(g('op-bkcsv')) g('op-bkcsv').onclick=exportBookings;
+    document.querySelectorAll('[data-op-drill]').forEach(function(a){ a.onclick=function(ev){
+      ev.preventDefault(); st.model=a.getAttribute('data-op-drill'); st.bkexact=''; save(); render();
+      var el=document.getElementById('op-model'); if(el) el.scrollIntoView({behavior:'smooth',block:'center'}); }; });
     document.querySelectorAll('[data-op-tab]').forEach(function(b){ b.onclick=function(){ st.view=b.getAttribute('data-op-tab'); save(); render(); }; });
     document.querySelectorAll('[data-op-seg]').forEach(function(i){ i.onchange=function(){
       var v=parseFloat(i.value); st.ov[st.view][i.getAttribute('data-op-seg')]=isNaN(v)?null:v; render(); }; });
   }
 
+  function dl(name,rows){
+    var body=rows.map(function(r){ return r.map(function(v){ v=String(v==null?'':v);
+      return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }).join(','); }).join('\n');
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob(['\uFEFF'+body],{type:'text/csv;charset=utf-8;'}));
+    a.download=name+'_'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    if(typeof showToast==='function') showToast('Exported '+(rows.length-1)+' rows');
+  }
   function exportCSV(){
-    var sk=stockIndex();
-    var rows=[['Channel','Segment','Model','Variant','Colour','SKU','Order qty','With us','Net to order']];
+    var sk=stockIndex(), BK=bookings();
+    var rows=[['Channel','Segment','Model','Variant','Colour','SKU','Plan qty','Model booked','Model with us','Net to order']];
     ['Counter','Network'].forEach(function(c){
-      P[c].rows.sku.forEach(function(r){
-        if(r.qty<=0) return;
-        var have=0;
-        if(st.net&&sk.colourLevel) have=Math.round((sk.byMC[nk(r.model)+'|'+nk(r.color)]||0)*(P[c].total/(st.total||1)));
-        rows.push([c,SEGLBL[r.seg]||r.seg,r.model,r.variant,r.color,r.sku,r.qty,have,Math.max(0,r.qty-have)]);
+      var pl=P[c], scale=pl.total/(st.total||1);
+      var netByModel={}, info={}, rowsSku=pl.rows.sku.slice(), inPlan={};
+      pl.rows.mod.forEach(function(r){
+        inPlan[r.model]=1;
+        var have=(st.net&&sk.total>0)?Math.round((sk.byModel[nk(r.model)]||0)*scale):0;
+        var bkd=(st.net&&c!=='Network')?(BK.byModel[r.model]||0):0;
+        netByModel[r.model]=Math.max(0,r.qty+bkd-have); info[r.model]={have:have,bkd:bkd};
+      });
+      if(st.net&&c!=='Network') Object.keys(BK.byModel).forEach(function(md){
+        if(inPlan[md]) return; var x=modelSkus(md); if(!x) return;
+        var have=(sk.total>0)?Math.round((sk.byModel[nk(md)]||0)*scale):0, bkd=BK.byModel[md];
+        netByModel[md]=Math.max(0,bkd-have); info[md]={have:have,bkd:bkd};
+        Object.keys(x.skus).forEach(function(k){ var o=x.skus[k];
+          rowsSku.push({seg:x.seg,model:md,variant:o.variant,color:o.color,sku:k,qty:0,histU:o.u}); });
+      });
+      var skuNet={};
+      Object.keys(netByModel).forEach(function(md){
+        var w={}; rowsSku.forEach(function(r){ if(r.model===md) w[r.sku]=r.histU; });
+        var d=lr(netByModel[md],w); Object.keys(d).forEach(function(k){ skuNet[md+'|'+k]=d[k]; });
+      });
+      rowsSku.forEach(function(r){
+        var net=st.net?(skuNet[r.model+'|'+r.sku]||0):r.qty;
+        if(r.qty<=0 && net<=0) return;
+        var i=info[r.model]||{have:0,bkd:0};
+        rows.push([c,SEGLBL[r.seg]||r.seg,r.model,r.variant,r.color,r.sku,r.qty,i.bkd,i.have,net]);
       });
     });
-    var body=rows.map(function(r){ return r.map(function(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }).join(','); }).join('\n');
-    var a=document.createElement('a');
-    a.href=URL.createObjectURL(new Blob(['﻿'+body],{type:'text/csv;charset=utf-8;'}));
-    a.download='ICE_order_plan_'+st.total+'u_'+new Date().toISOString().slice(0,10)+'.csv';
-    document.body.appendChild(a); a.click(); a.remove();
-    if(typeof showToast==='function') showToast('Exported '+(rows.length-1)+' SKU lines');
+    dl('ICE_order_plan_'+st.total+'u',rows);
   }
-
+  function exportBookings(){
+    var BK=bookings();
+    var rows=[['Enquiry ID','Customer','Booked as recorded','Variant field','Maps to model','SKU / variant codes','EV','Counter','Sales rep','Booking amount','Delivery date','Overdue']];
+    BK.all.forEach(function(b){
+      if(st.bkexact && b.exact!==st.bkexact) return;
+      if(st.model && b.model!==st.model) return;
+      rows.push([b.id||'',b.cust||'',b.exact,b.rawVar||'',b.model||'',
+                 b.model?variantsOf(b.model).join(' | '):'',b.isEV?'YES':'',
+                 b.counter,b.rep||'',b.amt||0,b.due||'',b.late?'YES':'']);
+    });
+    dl('open_bookings'+(st.bkexact?'_'+st.bkexact.replace(/[^A-Za-z0-9]+/g,'-'):(st.model?'_'+st.model.replace(/[^A-Za-z0-9]+/g,'-'):'')),rows);
+  }
   function init(){
     ensureNav();
     var orig=window.setView;
@@ -6086,6 +6381,233 @@ document.addEventListener('DOMContentLoaded', initApp);
       window.setView.__opWrapped=true;
       for(var k in orig) if(Object.prototype.hasOwnProperty.call(orig,k)) window.setView[k]=orig[k];
       window.setView.__opWrapped=true;
+    }
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init); else init();
+})();
+
+</script>
+
+<!-- ===== VIDA BOOKINGS (additive, self-contained) ===== -->
+<script>
+/* ===== VIDA BOOKINGS (additive, self-contained) =====
+   Open EV bookings broken down to the exact variant as recorded in the register. */
+(function(){
+  "use strict";
+  var KEY='hero-vida-bk-v1';
+  var st={filter:'',counter:'',sort:'n'};
+  try{ var s=localStorage.getItem(KEY); if(s){ var o=JSON.parse(s); for(var k in o) st[k]=o[k]; } }catch(e){}
+  function save(){ try{ localStorage.setItem(KEY,JSON.stringify(st)); }catch(e){} }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function nf(n){ return (Number(n)||0).toLocaleString('en-IN'); }
+  function INRs(n){ n=Math.round(Number(n)||0); var a=String(Math.abs(n)), l3=a.slice(-3), rest=a.slice(0,-3);
+    if(rest) l3=','+l3; rest=rest.replace(/\B(?=(\d{2})+(?!\d))/g,',');
+    return (n<0?'-':'')+'₹'+rest+l3; }
+  function today(){ return new Date().toISOString().slice(0,10); }
+  function days(a,b){ if(!a||!b) return null; var d=(new Date(b)-new Date(a))/86400000; return Math.round(d); }
+
+  /* ---------- is this an EV / VIDA booking? ---------- */
+  var EVRE=/vida|vx2|evooter|\bv[12]\s*(plus|pro|lite|go|max)\b/i;
+  function isVida(e){
+    var m=String(e&&e.model||''), v=String(e&&e.variant||'');
+    try{ if(typeof segmentOf==='function' && segmentOf(m)==='VIDA') return true; }catch(err){}
+    return EVRE.test(m) || EVRE.test(v);
+  }
+  function mk(s){ return String(s==null?'':s).toUpperCase().replace(/[^A-Z0-9]/g,''); }
+  function exactName(e){
+    var m=String(e.model==null?'':e.model).trim(), v=String(e.variant==null?'':e.variant).trim();
+    if(v && mk(v) && mk(m).indexOf(mk(v))<0) return m+' · '+v;
+    return m||'(blank)';
+  }
+  function allEnq(){
+    try{ if(typeof enquiries!=='undefined' && enquiries) return enquiries; }catch(e){}
+    try{ if(window.enquiries) return window.enquiries; }catch(e){}
+    return [];
+  }
+  function data(){
+    var rows=[], t=today();
+    allEnq().forEach(function(e){
+      if(!e || e.stage!=='Booked' || !isVida(e)) return;
+      var due=e.deliveryDate||'', late=!!(due&&due<t), dleft=due?days(t,due):null;
+      rows.push({id:e.id||'',cust:e.customer||'',phone:e.phone||'',variant:exactName(e),
+        counter:e.counter||'(unassigned)',rep:e.rep||'',amt:parseFloat(e.bookingAmt)||0,
+        due:due,late:late,dleft:dleft,age:days(e.createdAt,t),
+        fin:e.financeRequired||'',created:e.createdAt||''});
+    });
+    var byV={}, counters=[];
+    rows.forEach(function(r){
+      var g=byV[r.variant]||(byV[r.variant]={name:r.variant,n:0,late:0,soon:0,amt:0,ctr:{},oldest:null});
+      g.n++; g.amt+=r.amt;
+      if(r.late) g.late++; else if(r.dleft!==null && r.dleft<=7) g.soon++;
+      g.ctr[r.counter]=(g.ctr[r.counter]||0)+1;
+      if(g.oldest===null || (r.age||0)>g.oldest) g.oldest=r.age||0;
+      if(counters.indexOf(r.counter)<0) counters.push(r.counter);
+    });
+    counters.sort();
+    var list=Object.keys(byV).map(function(k){ return byV[k]; });
+    list.sort(function(a,b){ return st.sort==='name'?a.name.localeCompare(b.name):(b.n-a.n||a.name.localeCompare(b.name)); });
+    return {rows:rows,variants:list,counters:counters,
+      total:rows.length,
+      late:rows.filter(function(r){return r.late;}).length,
+      soon:rows.filter(function(r){return !r.late&&r.dleft!==null&&r.dleft<=7;}).length,
+      nodate:rows.filter(function(r){return !r.due;}).length,
+      amt:rows.reduce(function(a,r){return a+r.amt;},0)};
+  }
+
+  function kpi(v,l,color,sub){
+    return '<div class="card" style="padding:14px 16px"><div style="font-size:26px;font-weight:800;'+(color?('color:'+color):'')+'">'+v+'</div>'
+      +'<div style="font-size:12px;color:var(--muted);margin-top:4px">'+l+'</div>'
+      +(sub?'<div class="help-text" style="margin-top:2px">'+sub+'</div>':'')+'</div>';
+  }
+
+  function ensureNav(){
+    if(document.getElementById('view-vidabk')) return;
+    var nav=document.getElementById('nav'); if(!nav) return;
+    var btn=document.createElement('button');
+    btn.className='nav-item'; btn.setAttribute('data-view','vidabk');
+    btn.innerHTML='<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+      +'<polygon points="13 2 4 14 11 14 10 22 20 10 13 10 13 2"/></svg>VIDA Bookings';
+    btn.onclick=function(){ window.setView('vidabk'); };
+    var setup=nav.querySelector('.nav-section');
+    if(setup) nav.insertBefore(btn,setup); else nav.appendChild(btn);
+    var views=document.querySelectorAll('.view');
+    var sec=document.createElement('section');
+    sec.className='view'; sec.id='view-vidabk';
+    sec.innerHTML='<div id="vidabk-root"></div>';
+    if(views.length) views[views.length-1].parentNode.appendChild(sec); else document.body.appendChild(sec);
+  }
+
+  function render(){
+    var root=document.getElementById('vidabk-root'); if(!root) return;
+    var D=data(), h='';
+
+    if(!D.total){
+      root.innerHTML='<div class="card"><h3>VIDA bookings</h3>'
+        +'<p class="help-text">No VIDA / EV enquiries are sitting at stage <b>Booked</b> right now. '
+        +'This tab reads the enquiry register directly &mdash; press <b>Sync from Sheet</b> or log a booking and it appears here. '
+        +'A booking counts as VIDA when its model or variant mentions VIDA, VX2, Evooter, or a V1/V2 trim.</p></div>';
+      return;
+    }
+
+    h+='<div class="grid grid-4">'
+      + kpi(nf(D.total),'Open VIDA bookings','#a05bff',D.variants.length+' distinct variant'+(D.variants.length===1?'':'s'))
+      + kpi(nf(D.late),'Past delivery date',D.late?'#ff5c5c':'#2bd47d',D.late?'dispatch these first':'nothing overdue')
+      + kpi(nf(D.soon),'Due within 7 days','#ffb02e',(D.nodate?nf(D.nodate)+' with no date set':'all dated'))
+      + kpi(INRs(D.amt),'Booking amount held','#5b9eff','across '+D.counters.length+' counter'+(D.counters.length===1?'':'s'))
+      +'</div>';
+
+    h+='<div class="card" style="margin-top:14px"><h3>Variant wise &mdash; exactly as booked</h3>'
+      +'<p class="help-text">One row per product string from the register, so <b>VX2 Go 3.4</b> and <b>VX2 Go 3.1</b> never get merged. '
+      +'Bookings are counted regardless of the month filter at the top &mdash; an open booking needs a vehicle whenever it was taken.</p>';
+
+    h+='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0">'
+      +'<span class="help-text">Variant</span>'
+      +'<select class="filter-select" id="vb-filter"><option value="">All variants ('+nf(D.total)+')</option>'
+      + D.variants.map(function(g){ return '<option value="'+esc(g.name)+'"'+(st.filter===g.name?' selected':'')+'>'+esc(g.name)+' ('+g.n+')</option>'; }).join('')
+      +'</select>'
+      +'<span class="help-text">Counter</span>'
+      +'<select class="filter-select" id="vb-counter"><option value="">All counters</option>'
+      + D.counters.map(function(c){ return '<option value="'+esc(c)+'"'+(st.counter===c?' selected':'')+'>'+esc(c)+'</option>'; }).join('')
+      +'</select>'
+      +'<span class="help-text">Sort</span>'
+      +'<select class="filter-select" id="vb-sort">'
+      +'<option value="n"'+(st.sort!=='name'?' selected':'')+'>Most booked first</option>'
+      +'<option value="name"'+(st.sort==='name'?' selected':'')+'>Variant name</option></select>'
+      +((st.filter||st.counter)?'<button class="btn" id="vb-clear">Clear filters</button>':'')
+      +'<span style="flex:1"></span><button class="btn" id="vb-csv">&#11015;&#65039; Export VIDA bookings</button></div>';
+
+    h+='<div style="overflow-x:auto"><table class="table"><thead><tr><th>Variant, as booked</th>'
+      + D.counters.map(function(c){ return '<th style="text-align:right">'+esc(c)+'</th>'; }).join('')
+      +'<th style="text-align:right">Bookings</th><th style="text-align:right">Overdue</th>'
+      +'<th style="text-align:right">Due &le;7d</th><th style="text-align:right">Oldest</th>'
+      +'<th style="text-align:right">Amount held</th></tr></thead><tbody>';
+    var cTot={}, gN=0, gL=0, gS=0, gA=0;
+    D.variants.forEach(function(g){
+      D.counters.forEach(function(c){ cTot[c]=(cTot[c]||0)+(g.ctr[c]||0); });
+      gN+=g.n; gL+=g.late; gS+=g.soon; gA+=g.amt;
+      if(st.filter && g.name!==st.filter) return;
+      if(st.counter && !g.ctr[st.counter]) return;
+      var share=D.total?Math.round(g.n/D.total*100):0;
+      h+='<tr><td style="font-weight:600">'+esc(g.name)
+        +'<div class="pb" style="margin-top:5px;max-width:180px"><div class="pb-fill" style="width:'+share+'%;background:#a05bff"></div></div></td>'
+        + D.counters.map(function(c){ var v=g.ctr[c]||0;
+            return '<td style="text-align:right'+(v?';font-weight:600':';color:var(--muted)')+'">'+(v||'&middot;')+'</td>'; }).join('')
+        +'<td style="text-align:right;font-weight:800;font-size:15px;color:#a05bff">'+nf(g.n)+'</td>'
+        +'<td style="text-align:right;font-weight:700;color:'+(g.late?'var(--danger,#ff5c5c)':'var(--muted)')+'">'+(g.late||'&middot;')+'</td>'
+        +'<td style="text-align:right;font-weight:700;color:'+(g.soon?'var(--warn,#ffb02e)':'var(--muted)')+'">'+(g.soon||'&middot;')+'</td>'
+        +'<td style="text-align:right;color:var(--muted)">'+(g.oldest!==null?g.oldest+'d':'&middot;')+'</td>'
+        +'<td style="text-align:right">'+INRs(g.amt)+'</td></tr>';
+    });
+    h+='<tr style="border-top:2px solid var(--line)"><td style="font-weight:800">TOTAL</td>'
+      + D.counters.map(function(c){ return '<td style="text-align:right;font-weight:800">'+nf(cTot[c]||0)+'</td>'; }).join('')
+      +'<td style="text-align:right;font-weight:800;color:#a05bff">'+nf(gN)+'</td>'
+      +'<td style="text-align:right;font-weight:800">'+nf(gL)+'</td>'
+      +'<td style="text-align:right;font-weight:800">'+nf(gS)+'</td><td></td>'
+      +'<td style="text-align:right;font-weight:800">'+INRs(gA)+'</td></tr>';
+    h+='</tbody></table></div></div>';
+
+    /* line-level list, dispatch order */
+    var list=D.rows.filter(function(r){
+      if(st.filter && r.variant!==st.filter) return false;
+      if(st.counter && r.counter!==st.counter) return false;
+      return true;
+    }).sort(function(a,b){
+      var x=a.due||'9999-99-99', y=b.due||'9999-99-99';
+      return x<y?-1:x>y?1:0;
+    });
+    h+='<div class="card" style="margin-top:14px"><h3>Booking list &mdash; dispatch order</h3>'
+      +'<p class="help-text">Sorted by delivery date, earliest first. '+nf(list.length)+' booking(s) shown'
+      +((st.filter||st.counter)?' after filters':'')+'.</p>'
+      +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Delivery</th><th>Variant</th><th>Customer</th>'
+      +'<th>Counter</th><th>DSE</th><th>Finance</th><th style="text-align:right">Booking amt</th><th style="text-align:right">Booked</th></tr></thead><tbody>';
+    list.forEach(function(r){
+      var lbl, col;
+      if(!r.due){ lbl='no date'; col='var(--muted)'; }
+      else if(r.late){ lbl=Math.abs(r.dleft)+'d overdue'; col='var(--danger,#ff5c5c)'; }
+      else if(r.dleft===0){ lbl='today'; col='var(--warn,#ffb02e)'; }
+      else if(r.dleft<=7){ lbl='in '+r.dleft+'d'; col='var(--warn,#ffb02e)'; }
+      else { lbl='in '+r.dleft+'d'; col='var(--success,#2bd47d)'; }
+      h+='<tr><td style="font-weight:700;color:'+col+'">'+lbl+'<div class="help-text">'+esc(r.due||'')+'</div></td>'
+        +'<td style="font-weight:600">'+esc(r.variant)+'</td>'
+        +'<td>'+esc(r.cust)+(r.phone?'<div class="help-text">'+esc(r.phone)+'</div>':'')+'</td>'
+        +'<td style="color:var(--muted)">'+esc(r.counter)+'</td>'
+        +'<td style="color:var(--muted)">'+esc(r.rep)+'</td>'
+        +'<td style="color:var(--muted)">'+esc(r.fin||'&mdash;')+'</td>'
+        +'<td style="text-align:right">'+INRs(r.amt)+'</td>'
+        +'<td style="text-align:right;color:var(--muted)">'+(r.age!==null?r.age+'d ago':'&middot;')+'</td></tr>';
+    });
+    h+='</tbody></table></div></div>';
+
+    root.innerHTML=h;
+    var g=function(id){ return document.getElementById(id); };
+    if(g('vb-filter')) g('vb-filter').onchange=function(){ st.filter=this.value; save(); render(); };
+    if(g('vb-counter')) g('vb-counter').onchange=function(){ st.counter=this.value; save(); render(); };
+    if(g('vb-sort')) g('vb-sort').onchange=function(){ st.sort=this.value; save(); render(); };
+    if(g('vb-clear')) g('vb-clear').onclick=function(){ st.filter=''; st.counter=''; save(); render(); };
+    if(g('vb-csv')) g('vb-csv').onclick=function(){
+      var rows=[['Enquiry ID','Variant (as booked)','Customer','Phone','Counter','DSE','Finance','Booking amount','Delivery date','Status','Booked days ago']];
+      list.forEach(function(r){
+        rows.push([r.id,r.variant,r.cust,r.phone,r.counter,r.rep,r.fin,r.amt,r.due,
+          (!r.due?'no date':r.late?'overdue':(r.dleft<=7?'due soon':'scheduled')),r.age]);
+      });
+      var body=rows.map(function(x){ return x.map(function(v){ v=String(v==null?'':v);
+        return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }).join(','); }).join('\n');
+      var a=document.createElement('a');
+      a.href=URL.createObjectURL(new Blob(['﻿'+body],{type:'text/csv;charset=utf-8;'}));
+      a.download='vida_bookings'+(st.filter?'_'+st.filter.replace(/[^A-Za-z0-9]+/g,'-'):'')+'_'+today()+'.csv';
+      document.body.appendChild(a); a.click(); a.remove();
+      if(typeof showToast==='function') showToast('Exported '+(rows.length-1)+' VIDA bookings');
+    };
+  }
+
+  function init(){
+    ensureNav();
+    var orig=window.setView;
+    if(typeof orig==='function' && !orig.__vbWrapped){
+      var wrapped=function(name){ orig(name); if(name==='vidabk') render(); };
+      for(var k in orig) if(Object.prototype.hasOwnProperty.call(orig,k)) wrapped[k]=orig[k];
+      wrapped.__vbWrapped=true;
+      window.setView=wrapped;
     }
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init); else init();
