@@ -2169,6 +2169,129 @@ document.addEventListener('DOMContentLoaded', initApp);
   }
 
   /* ---------------- main render ---------------- */
+
+  /* ---------- DSE CHAMPION — top 3 in ICE and in VIDA, all counters ---------- */
+  // Deliberately ignores the Counter filter: this is a dealership-wide award, so
+  // a DSE at MML is ranked against one at Premia on the same footing. It does
+  // respect the Period selector above.
+  function champData(){
+    var R=rangeOf(prefs.period);
+    var acc={ICE:{},VIDA:{}};
+    function slot(cat,k){
+      return acc[cat][k]||(acc[cat][k]={key:k,name:rname(k),enq:0,booked:0,won:0,lost:0,counters:{}});
+    }
+    ENQ().forEach(function(e){
+      var k=dkeyE(e);
+      if(k==='(UNASSIGNED)') return;                 // nobody wins an incentive for a blank cell
+      var seg='ICE';
+      try{ if(typeof segmentOf==='function' && segmentOf(e.model)==='VIDA') seg='VIDA'; }
+      catch(err){ if(/vida|vx2/i.test(String(e.model||''))) seg='VIDA'; }
+      var s=slot(seg,k), cd=closeDate(e), cr=e.createdAt||'';
+      if(inR(cr,R.from,R.to)) s.enq++;
+      if(inR(cd,R.from,R.to)){
+        if(e.stage==='Won') s.won++;
+        else if(e.stage==='Booked') s.booked++;
+        else if(e.stage==='Lost') s.lost++;
+      }
+      if(e.counter) s.counters[e.counter]=(s.counters[e.counter]||0)+1;
+    });
+    var minEnq=Number(prefs.champMin||5);
+    function rank(cat){
+      var list=Object.keys(acc[cat]).map(function(k){
+        var s=acc[cat][k];
+        s.conv = s.enq ? (s.won/s.enq*100) : 0;
+        s.cat  = cat;
+        return s;
+      }).filter(function(s){ return s.enq>0 || s.won>0 || s.booked>0; });
+      var by=prefs.champBy||'won';
+      list.sort(function(a,b){
+        if(by==='conv'){
+          // a 1-enquiry, 1-sale DSE is not the champion — hold them below the bar
+          var ae=a.enq>=minEnq?1:0, be=b.enq>=minEnq?1:0;
+          if(ae!==be) return be-ae;
+          if(b.conv!==a.conv) return b.conv-a.conv;
+          return b.won-a.won;
+        }
+        if(by==='booked'){ if(b.booked!==a.booked) return b.booked-a.booked; return b.won-a.won; }
+        if(b.won!==a.won) return b.won-a.won;
+        return b.conv-a.conv;
+      });
+      return list;
+    }
+    return {ICE:rank('ICE'), VIDA:rank('VIDA'), min:minEnq, by:(prefs.champBy||'won'), R:R};
+  }
+
+  function champBlock(){
+    var C=champData();
+    var MEDAL=['&#129351;','&#129352;','&#129353;'];
+    var LABEL={won:'Retail (units sold)',conv:'Conversion %',booked:'Bookings'};
+    function table(cat,list,accent){
+      var top=list.slice(0,3);
+      var h='<div class="card" style="border-top:3px solid '+accent+'">'
+        +'<h3 style="margin:0 0 2px">'+(cat==='VIDA'?'&#9889; VIDA':'&#128663; ICE')+' champion</h3>'
+        +'<p class="help-text" style="margin:0 0 10px">Top 3 across every counter &middot; ranked by '+LABEL[C.by]+'</p>';
+      if(!top.length){ return h+'<p class="help-text">No '+cat+' activity in this period.</p></div>'; }
+      h+='<div style="overflow-x:auto"><table class="table"><thead><tr>'
+        +'<th style="width:34px"></th><th>DSE</th>'
+        +'<th style="text-align:right">Enquiries<br><span style="font-weight:400;color:var(--muted)">attended</span></th>'
+        +'<th style="text-align:right">Bookings</th>'
+        +'<th style="text-align:right">Retail</th>'
+        +'<th style="text-align:right">Conversion</th></tr></thead><tbody>';
+      top.forEach(function(s,i){
+        var thin = (C.by==='conv' && s.enq<C.min);
+        var cv   = s.enq?Math.round(s.conv):0;
+        var cc   = cv>=40?'#2bd47d':cv>=20?'#ffb02e':'var(--text)';
+        h+='<tr'+(i===0?' style="background:rgba(43,212,125,0.06)"':'')+'>'
+          +'<td style="font-size:19px">'+MEDAL[i]+'</td>'
+          +'<td style="font-weight:700">'+esc(s.name)
+            +'<div class="help-text">'+esc(Object.keys(s.counters).sort(function(a,b){return s.counters[b]-s.counters[a];}).slice(0,2).join(', ')||'&mdash;')+'</div></td>'
+          +'<td style="text-align:right;font-weight:600">'+s.enq+'</td>'
+          +'<td style="text-align:right;font-weight:600;color:#a05bff">'+s.booked+'</td>'
+          +'<td style="text-align:right;font-weight:800;font-size:15px">'+s.won+'</td>'
+          +'<td style="text-align:right;font-weight:700;color:'+cc+'">'+cv+'%'
+            +(thin?'<div class="help-text" style="color:var(--warn,#ffb02e)">below '+C.min+' enq</div>':'')+'</td></tr>';
+      });
+      h+='</tbody></table></div>';
+      if(list.length>3){
+        var nx=list[3];
+        h+='<p class="help-text" style="margin-top:8px">Next: '+esc(nx.name)+' &mdash; '
+          +nx.won+' retail, '+nx.booked+' bookings, '+(nx.enq?Math.round(nx.conv):0)+'% conversion.</p>';
+      }
+      return h+'</div>';
+    }
+    var h='<div class="card" style="margin-top:14px;padding-bottom:6px">'
+      +'<h3 style="margin:0 0 4px">&#127942; DSE Champion</h3>'
+      +'<p class="help-text">Best performer in each fuel type, all counters combined &mdash; for the extra incentive. '
+      +'Enquiries are those created in the period; bookings and retail are those closed in it.</p>'
+      +'<div class="filters" style="margin:10px 0 0">'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Rank by'
+      +'<select class="filter-select" onchange="dseSet(\'champBy\',this.value)">'
+      +['won','conv','booked'].map(function(k){ return '<option value="'+k+'"'+(C.by===k?' selected':'')+'>'+LABEL[k]+'</option>'; }).join('')
+      +'</select></label>'
+      + (C.by==='conv'?('<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Min enquiries'
+          +'<input type="number" min="1" step="1" value="'+C.min+'" onchange="dseSet(\'champMin\',this.value)" '
+          +'style="width:64px;background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:5px 7px;border-radius:7px"/></label>'):'')
+      +'<button class="btn btn-sm" onclick="dseChampExport()" style="margin-left:auto">&#11015;&#65039; Export champions</button>'
+      +'</div></div>';
+    h+='<div class="grid grid-2" style="margin-top:14px">'
+      + table('ICE', C.ICE, '#5b9eff')
+      + table('VIDA', C.VIDA, '#a05bff')
+      +'</div>';
+    return h;
+  }
+
+  window.dseChampExport=function(){
+    var C=champData();
+    var out=[['Category','Rank','DSE','Counters','Enquiries attended','Bookings','Retail','Conversion %','Period']];
+    ['ICE','VIDA'].forEach(function(cat){
+      C[cat].slice(0,3).forEach(function(s,i){
+        out.push([cat,i+1,s.name,Object.keys(s.counters).join(' / '),s.enq,s.booked,s.won,
+                  (s.enq?Math.round(s.conv):0)+'%',C.R.from+' to '+C.R.to]);
+      });
+    });
+    dl('dse_champions',out);
+  };
+
   function render(){
     var root=document.getElementById('scorecard-root'); if(!root) return;
     var B=build(), R=B.R, rows=B.rows;
@@ -2222,6 +2345,8 @@ document.addEventListener('DOMContentLoaded', initApp);
     h+=kpi(avgSp!=null?avgSp+' d':'&mdash;','Avg speed to first contact',avgSp==null?'':(avgSp<=1?'#2bd47d':avgSp<=3?'#ffb02e':'#ff5c5c'),'trailing '+FUNNEL_DAYS+' days');
     h+=kpi(tStale,'Untouched &gt;7 days',tStale?'#ff5c5c':'#2bd47d','of '+tActive+' live enquiries');
     h+='</div>';
+
+    h+=champBlock();
 
     if(prefs.counter && prefs.cmode!=='home'){
       var vis=rows.filter(function(x){ return x.visiting; });
