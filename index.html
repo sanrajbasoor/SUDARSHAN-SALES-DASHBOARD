@@ -6395,7 +6395,7 @@ document.addEventListener('DOMContentLoaded', initApp);
 (function(){
   "use strict";
   var KEY='hero-vida-bk-v1';
-  var st={filter:'',counter:'',sort:'n'};
+  var st={filter:'',counter:'',sort:'n',grp:'colour'};
   try{ var s=localStorage.getItem(KEY); if(s){ var o=JSON.parse(s); for(var k in o) st[k]=o[k]; } }catch(e){}
   function save(){ try{ localStorage.setItem(KEY,JSON.stringify(st)); }catch(e){} }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
@@ -6414,9 +6414,14 @@ document.addEventListener('DOMContentLoaded', initApp);
     return EVRE.test(m) || EVRE.test(v);
   }
   function mk(s){ return String(s==null?'':s).toUpperCase().replace(/[^A-Z0-9]/g,''); }
-  function exactName(e){
+  function titleCase(s){ s=String(s==null?'':s).trim();
+    return s?s.toLowerCase().replace(/\b[a-z]/g,function(c){return c.toUpperCase();}):''; }
+  function colourOf(e){ return titleCase(e&&(e.colour||e.color||e.variant)||''); }
+  // The register keeps the exact product in MODEL and the colour in its own column.
+  // Only append the variant field when it says something the model and colour don't.
+  function exactName(e,colour){
     var m=String(e.model==null?'':e.model).trim(), v=String(e.variant==null?'':e.variant).trim();
-    if(v && mk(v) && mk(m).indexOf(mk(v))<0) return m+' · '+v;
+    if(v && mk(v) && mk(m).indexOf(mk(v))<0 && mk(v)!==mk(colour||'')) return m+' \u00B7 '+v;
     return m||'(blank)';
   }
   function allEnq(){
@@ -6429,14 +6434,19 @@ document.addEventListener('DOMContentLoaded', initApp);
     allEnq().forEach(function(e){
       if(!e || e.stage!=='Booked' || !isVida(e)) return;
       var due=e.deliveryDate||'', late=!!(due&&due<t), dleft=due?days(t,due):null;
-      rows.push({id:e.id||'',cust:e.customer||'',phone:e.phone||'',variant:exactName(e),
+      var col=colourOf(e), vn=exactName(e,col);
+      rows.push({id:e.id||'',cust:e.customer||'',phone:e.phone||'',variant:vn,colour:col,
+        sku:col?vn+' \u00B7 '+col:vn,
         counter:e.counter||'(unassigned)',rep:e.rep||'',amt:parseFloat(e.bookingAmt)||0,
         due:due,late:late,dleft:dleft,age:days(e.createdAt,t),
         fin:e.financeRequired||'',created:e.createdAt||''});
     });
-    var byV={}, counters=[];
+    var byV={}, counters=[], anyColour=false;
+    rows.forEach(function(r){ if(r.colour) anyColour=true; });
+    var useCol=(st.grp!=='variant' && anyColour);
     rows.forEach(function(r){
-      var g=byV[r.variant]||(byV[r.variant]={name:r.variant,n:0,late:0,soon:0,amt:0,ctr:{},oldest:null});
+      var key=useCol?r.sku:r.variant;
+      var g=byV[key]||(byV[key]={name:key,variant:r.variant,colour:r.colour,n:0,late:0,soon:0,amt:0,ctr:{},oldest:null});
       g.n++; g.amt+=r.amt;
       if(r.late) g.late++; else if(r.dleft!==null && r.dleft<=7) g.soon++;
       g.ctr[r.counter]=(g.ctr[r.counter]||0)+1;
@@ -6446,7 +6456,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     counters.sort();
     var list=Object.keys(byV).map(function(k){ return byV[k]; });
     list.sort(function(a,b){ return st.sort==='name'?a.name.localeCompare(b.name):(b.n-a.n||a.name.localeCompare(b.name)); });
-    return {rows:rows,variants:list,counters:counters,
+    return {rows:rows,variants:list,counters:counters,anyColour:anyColour,useCol:useCol,
       total:rows.length,
       late:rows.filter(function(r){return r.late;}).length,
       soon:rows.filter(function(r){return !r.late&&r.dleft!==null&&r.dleft<=7;}).length,
@@ -6509,6 +6519,10 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'<select class="filter-select" id="vb-counter"><option value="">All counters</option>'
       + D.counters.map(function(c){ return '<option value="'+esc(c)+'"'+(st.counter===c?' selected':'')+'>'+esc(c)+'</option>'; }).join('')
       +'</select>'
+      +'<span class="help-text">Group</span>'
+      +'<select class="filter-select" id="vb-grp">'
+      +'<option value="colour"'+(st.grp!=='variant'?' selected':'')+'>Variant + colour (SKU)</option>'
+      +'<option value="variant"'+(st.grp==='variant'?' selected':'')+'>Variant only</option></select>'
       +'<span class="help-text">Sort</span>'
       +'<select class="filter-select" id="vb-sort">'
       +'<option value="n"'+(st.sort!=='name'?' selected':'')+'>Most booked first</option>'
@@ -6516,7 +6530,7 @@ document.addEventListener('DOMContentLoaded', initApp);
       +((st.filter||st.counter)?'<button class="btn" id="vb-clear">Clear filters</button>':'')
       +'<span style="flex:1"></span><button class="btn" id="vb-csv">&#11015;&#65039; Export VIDA bookings</button></div>';
 
-    h+='<div style="overflow-x:auto"><table class="table"><thead><tr><th>Variant, as booked</th>'
+    h+='<div style="overflow-x:auto"><table class="table"><thead><tr><th>'+(D.useCol?'Variant + colour, as booked':'Variant, as booked')+'</th>'
       + D.counters.map(function(c){ return '<th style="text-align:right">'+esc(c)+'</th>'; }).join('')
       +'<th style="text-align:right">Bookings</th><th style="text-align:right">Overdue</th>'
       +'<th style="text-align:right">Due &le;7d</th><th style="text-align:right">Oldest</th>'
@@ -6548,7 +6562,7 @@ document.addEventListener('DOMContentLoaded', initApp);
 
     /* line-level list, dispatch order */
     var list=D.rows.filter(function(r){
-      if(st.filter && r.variant!==st.filter) return false;
+      if(st.filter && (D.useCol?r.sku:r.variant)!==st.filter) return false;
       if(st.counter && r.counter!==st.counter) return false;
       return true;
     }).sort(function(a,b){
@@ -6558,7 +6572,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     h+='<div class="card" style="margin-top:14px"><h3>Booking list &mdash; dispatch order</h3>'
       +'<p class="help-text">Sorted by delivery date, earliest first. '+nf(list.length)+' booking(s) shown'
       +((st.filter||st.counter)?' after filters':'')+'.</p>'
-      +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Delivery</th><th>Variant</th><th>Customer</th>'
+      +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Delivery</th><th>Variant</th><th>Colour</th><th>Customer</th>'
       +'<th>Counter</th><th>DSE</th><th>Finance</th><th style="text-align:right">Booking amt</th><th style="text-align:right">Booked</th></tr></thead><tbody>';
     list.forEach(function(r){
       var lbl, col;
@@ -6569,6 +6583,7 @@ document.addEventListener('DOMContentLoaded', initApp);
       else { lbl='in '+r.dleft+'d'; col='var(--success,#2bd47d)'; }
       h+='<tr><td style="font-weight:700;color:'+col+'">'+lbl+'<div class="help-text">'+esc(r.due||'')+'</div></td>'
         +'<td style="font-weight:600">'+esc(r.variant)+'</td>'
+        +'<td>'+(r.colour?esc(r.colour):'<span class="help-text">&mdash;</span>')+'</td>'
         +'<td>'+esc(r.cust)+(r.phone?'<div class="help-text">'+esc(r.phone)+'</div>':'')+'</td>'
         +'<td style="color:var(--muted)">'+esc(r.counter)+'</td>'
         +'<td style="color:var(--muted)">'+esc(r.rep)+'</td>'
@@ -6583,11 +6598,12 @@ document.addEventListener('DOMContentLoaded', initApp);
     if(g('vb-filter')) g('vb-filter').onchange=function(){ st.filter=this.value; save(); render(); };
     if(g('vb-counter')) g('vb-counter').onchange=function(){ st.counter=this.value; save(); render(); };
     if(g('vb-sort')) g('vb-sort').onchange=function(){ st.sort=this.value; save(); render(); };
+    if(g('vb-grp')) g('vb-grp').onchange=function(){ st.grp=this.value; st.filter=''; save(); render(); };
     if(g('vb-clear')) g('vb-clear').onclick=function(){ st.filter=''; st.counter=''; save(); render(); };
     if(g('vb-csv')) g('vb-csv').onclick=function(){
-      var rows=[['Enquiry ID','Variant (as booked)','Customer','Phone','Counter','DSE','Finance','Booking amount','Delivery date','Status','Booked days ago']];
+      var rows=[['Enquiry ID','Variant (as booked)','Colour','Customer','Phone','Counter','DSE','Finance','Booking amount','Delivery date','Status','Booked days ago']];
       list.forEach(function(r){
-        rows.push([r.id,r.variant,r.cust,r.phone,r.counter,r.rep,r.fin,r.amt,r.due,
+        rows.push([r.id,r.variant,r.colour,r.cust,r.phone,r.counter,r.rep,r.fin,r.amt,r.due,
           (!r.due?'no date':r.late?'overdue':(r.dleft<=7?'due soon':'scheduled')),r.age]);
       });
       var body=rows.map(function(x){ return x.map(function(v){ v=String(v==null?'':v);
