@@ -2135,6 +2135,371 @@ document.addEventListener('DOMContentLoaded', initApp);
 })();
 </script>
 
+
+<!-- ===== FESTIVAL 100 (additive, self-contained) ===== -->
+<script>
+/* ===== FESTIVAL 100 =====
+   Last year's F100 was lost to stock being in the wrong place at the wrong
+   time. This tab turns a headline target into the one thing that fixes that:
+   how many of each SKU, in which colour, at which counter.
+
+   LY retail comes from your F100 sheet (Sep-Dec 25, by phase, by counter).
+   The SKU and colour mix comes from the Order Planner's festive Sep-Nov 25
+   history, which is the same festival read at SKU level. That history is
+   dealership-wide, not per counter, so each counter's target is split using
+   the dealership's festive mix - stated plainly on the page rather than
+   presented as if we had per-counter SKU history, which we do not. */
+(function(){
+  "use strict";
+  var F100 = {"rows":[{"phase":"Phase 1","name":"Pre -Ganesh Chaturthi Ly 4 days & TY 13 Days (1 - 13 Sep26)","Napier Town":{"ly":7,"ty":20},"MML (ICE)":{"ly":11,"ty":17},"DN":{"ly":3,"ty":14},"Adhartal":{"ly":0,"ty":5},"Other":{"ly":12,"ty":25},"_counter":{"ly":33,"ty":81},"_network":{"ly":22,"ty":25},"_total":{"ly":55,"ty":106}},{"phase":"Phase 1","name":"Ganesh Chaturthi - Ganesh Visarjan Ly 11 Days & TY 12 Days (14-25 Sep26)","Napier Town":{"ly":25,"ty":40},"MML (ICE)":{"ly":31,"ty":40},"DN":{"ly":19,"ty":26},"Adhartal":{"ly":2,"ty":5},"Other":{"ly":10,"ty":15},"_counter":{"ly":87,"ty":126},"_network":{"ly":60,"ty":70},"_total":{"ly":147,"ty":196}},{"phase":"Phase 1","name":"Post Ganesh Chaturthi to Pre Navratri Ly 15 days & TY 15 Days (26Sep - 10 oct26)","Napier Town":{"ly":0,"ty":10},"MML (ICE)":{"ly":9,"ty":12},"DN":{"ly":7,"ty":10},"Adhartal":{"ly":0,"ty":2},"Other":{"ly":13,"ty":15},"_counter":{"ly":29,"ty":49},"_network":{"ly":30,"ty":35},"_total":{"ly":59,"ty":84}},{"phase":"Phase 2","name":"Navratri - Dashera LY 10 Days & TY 11 Days (11-21 oct26)","Napier Town":{"ly":98,"ty":120},"MML (ICE)":{"ly":82,"ty":90},"DN":{"ly":64,"ty":70},"Adhartal":{"ly":7,"ty":10},"Other":{"ly":61,"ty":65},"_counter":{"ly":312,"ty":355},"_network":{"ly":141,"ty":155},"_total":{"ly":453,"ty":510}},{"phase":"Phase 2","name":"Pre Dhanteras Ly 16 Days & TY 15 Days (22 oct - 5 Nov 26)","Napier Town":{"ly":56,"ty":65},"MML (ICE)":{"ly":50,"ty":60},"DN":{"ly":34,"ty":40},"Adhartal":{"ly":6,"ty":6},"Other":{"ly":30,"ty":30},"_counter":{"ly":176,"ty":201},"_network":{"ly":168,"ty":180},"_total":{"ly":344,"ty":381}},{"phase":"Phase 2","name":"Dhanteras -(1 day) (6 Nov26)","Napier Town":{"ly":117,"ty":130},"MML (ICE)":{"ly":79,"ty":90},"DN":{"ly":66,"ty":70},"Adhartal":{"ly":5,"ty":10},"Other":{"ly":72,"ty":80},"_counter":{"ly":339,"ty":380},"_network":{"ly":346,"ty":380},"_total":{"ly":685,"ty":760}},{"phase":"Phase 2","name":"Choti Diwali (1 day) (7 Nov 26)","Napier Town":{"ly":39,"ty":45},"MML (ICE)":{"ly":17,"ty":20},"DN":{"ly":24,"ty":30},"Adhartal":{"ly":3,"ty":5},"Other":{"ly":52,"ty":60},"_counter":{"ly":135,"ty":160},"_network":{"ly":144,"ty":160},"_total":{"ly":279,"ty":320}},{"phase":"Phase 2","name":"Diwali (1 day) ( 8 Nov 26)","Napier Town":{"ly":40,"ty":50},"MML (ICE)":{"ly":29,"ty":30},"DN":{"ly":26,"ty":30},"Adhartal":{"ly":2,"ty":5},"Other":{"ly":52,"ty":60},"_counter":{"ly":149,"ty":175},"_network":{"ly":151,"ty":160},"_total":{"ly":300,"ty":335}},{"phase":"Phase 2","name":"Post Diwali ( 3 days) ( 9-11 Nov 26)","Napier Town":{"ly":12,"ty":12},"MML (ICE)":{"ly":15,"ty":15},"DN":{"ly":18,"ty":20},"Adhartal":{"ly":1,"ty":2},"Other":{"ly":56,"ty":60},"_counter":{"ly":102,"ty":109},"_network":{"ly":54,"ty":60},"_total":{"ly":156,"ty":169}},{"phase":"Phase 3","name":"TY (12 nov - 9 Dec 26) LY (24 Oct - 30 Nov 25)","Napier Town":{"ly":166,"ty":90},"MML (ICE)":{"ly":98,"ty":70},"DN":{"ly":90,"ty":60},"Adhartal":{"ly":9,"ty":15},"Other":{"ly":102,"ty":70},"_counter":{"ly":465,"ty":305},"_network":{"ly":350,"ty":320},"_total":{"ly":815,"ty":625}}],"total":{"Napier Town":{"ly":560,"ty":582},"MML (ICE)":{"ly":421,"ty":444},"DN":{"ly":351,"ty":370},"Adhartal":{"ly":35,"ty":65},"Other":{"ly":460,"ty":480},"_counter":{"ly":1827,"ty":1941},"_network":{"ly":1466,"ty":1545},"_total":{"ly":3293,"ty":3486}}};
+  var COUNTERS = ['Napier Town','MML (ICE)','DN','Adhartal','Other'];
+  // Your stated LY contribution. NT 41 / MML 31 / DN 26 / AT 3 sums to 101, so
+  // it is normalised. "Other" is not in that list, so it keeps its own LY share.
+  var STATED = { 'Napier Town':41, 'MML (ICE)':31, 'DN':26, 'Adhartal':3 };
+  var SEGLBL = { 'Entry':'Entry', '100cc':'Deluxe', '125cc':'125cc', 'Scooter':'Scooter', 'Premium':'Premium' };
+  var SEGORD = ['Entry','100cc','125cc','Scooter','Premium'];
+  var KEY='hero-f100-v1';
+
+  var LYC={}, LYCTR=0;
+  COUNTERS.forEach(function(c){ LYC[c]=(F100.total[c]||{}).ly||0; LYCTR+=LYC[c]; });
+  var LYNET=(F100.total._network||{}).ly||0, LYTOT=(F100.total._total||{}).ly||0;
+
+  var st={ total:3800, netPct: LYTOT? Math.round(LYNET/LYTOT*1000)/10 : 44.5,
+           ov:{}, segov:{}, counter:'', segment:'', model:'', minq:1, view:'plan' };
+  try{ var sv=localStorage.getItem(KEY); if(sv){ var o=JSON.parse(sv); for(var k in o) st[k]=o[k]; } }catch(e){}
+  function save(){ try{ localStorage.setItem(KEY,JSON.stringify(st)); }catch(e){} }
+  function esc(x){ return String(x==null?'':x).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function nf(n){ return (Number(n)||0).toLocaleString('en-IN'); }
+  function pc(n,d){ return d? Math.round(n/d*1000)/10 : 0; }
+  function lr(total,w){
+    var keys=Object.keys(w), sw=0, out={}, raw={}, used=0;
+    keys.forEach(function(k){ sw+=w[k]; });
+    if(sw<=0||total<=0){ keys.forEach(function(k){ out[k]=0; }); return out; }
+    keys.forEach(function(k){ raw[k]=total*w[k]/sw; out[k]=Math.floor(raw[k]); used+=out[k]; });
+    var rem=total-used;
+    keys.sort(function(a,b){ return (raw[b]-out[b])-(raw[a]-out[a]); });
+    for(var i=0; rem>0; i++, rem--) out[keys[i%keys.length]]++;
+    return out;
+  }
+
+  /* ---------- LY festive SKU history, borrowed from the Order Planner ---------- */
+  function festiveRecords(){
+    var M=null; try{ M=window.__ICE_MIX__; }catch(e){}
+    if(!M) return [];
+    return M.r.map(function(a){
+      return { period:M.p[a[0]], channel:M.ch[a[1]], segment:M.s[a[2]], model:M.m[a[3]],
+               variant:M.v[a[4]], colour:M.c[a[5]][1], sku:M.v[a[4]]+M.c[a[5]][0], units:a[6] };
+    }).filter(function(r){ return r.period==='festive' && r.channel==='Counter'; });
+  }
+  function segTree(){
+    var t={};
+    festiveRecords().forEach(function(r){
+      var sg=t[r.segment]||(t[r.segment]={u:0,models:{}}); sg.u+=r.units;
+      var md=sg.models[r.model]||(sg.models[r.model]={u:0,skus:{}}); md.u+=r.units;
+      var sk=md.skus[r.sku]||(md.skus[r.sku]={u:0,variant:r.variant,colour:r.colour}); sk.u+=r.units;
+    });
+    return t;
+  }
+
+  /* ---------- the plan ---------- */
+  function counterTargets(){
+    var ctrTotal = Math.round(st.total * (1 - st.netPct/100));
+    var otherLYshare = LYCTR ? LYC['Other']/LYCTR : 0;
+    var other = Math.round(ctrTotal * otherLYshare);
+    var rest = Math.max(0, ctrTotal - other);
+    var w={}; Object.keys(STATED).forEach(function(c){ w[c]=STATED[c]; });
+    var base = lr(rest, w); base['Other']=other;
+    // any counter the user has typed a number into wins; the rest re-share
+    var fixed={}, fixedQty=0;
+    COUNTERS.forEach(function(c){ if(st.ov[c]!=null && st.ov[c]!==''){ fixed[c]=Math.max(0,parseInt(st.ov[c])||0); fixedQty+=fixed[c]; } });
+    if(Object.keys(fixed).length){
+      var freeW={}; COUNTERS.forEach(function(c){ if(!(c in fixed)) freeW[c]=Math.max(1,base[c]||1); });
+      var free=lr(Math.max(0,ctrTotal-fixedQty), freeW);
+      COUNTERS.forEach(function(c){ base[c]= (c in fixed)? fixed[c] : (free[c]||0); });
+    }
+    return { ctrTotal:ctrTotal, network: st.total-ctrTotal, byCounter:base };
+  }
+  function planFor(qty){
+    var T=segTree(), sw={};
+    Object.keys(T).forEach(function(sg){ sw[sg]=T[sg].u; });
+    // a segment percentage typed by the user overrides the LY mix
+    var useW={}, anyOv=false;
+    Object.keys(sw).forEach(function(sg){
+      if(st.segov[sg]!=null && st.segov[sg]!==''){ useW[sg]=Math.max(0,parseFloat(st.segov[sg])||0); anyOv=true; }
+      else useW[sg]=sw[sg];
+    });
+    if(anyOv){ var tot=0; Object.keys(useW).forEach(function(k){ tot+=useW[k]; }); if(tot<=0) useW=sw; }
+    var segQty=lr(qty,useW), out=[];
+    SEGORD.concat(Object.keys(T).filter(function(x){ return SEGORD.indexOf(x)<0; })).forEach(function(sg){
+      if(!T[sg]) return;
+      var q=segQty[sg]||0, mw={};
+      Object.keys(T[sg].models).forEach(function(m){ mw[m]=T[sg].models[m].u; });
+      var mq=lr(q,mw), models=[];
+      Object.keys(T[sg].models).sort(function(a,b){ return T[sg].models[b].u-T[sg].models[a].u; }).forEach(function(m){
+        var q2=mq[m]||0, kw={};
+        Object.keys(T[sg].models[m].skus).forEach(function(k){ kw[k]=T[sg].models[m].skus[k].u; });
+        var kq=lr(q2,kw);
+        if(st.minq>0){
+          var keep={}, any=false;
+          Object.keys(kw).forEach(function(k){ if((kq[k]||0)>=st.minq){ keep[k]=kw[k]; any=true; } });
+          if(any) kq=lr(q2,keep);
+        }
+        models.push({ model:m, qty:q2, lyUnits:T[sg].models[m].u,
+          skus:Object.keys(T[sg].models[m].skus).sort(function(a,b){ return T[sg].models[m].skus[b].u-T[sg].models[m].skus[a].u; })
+               .map(function(k){ var x=T[sg].models[m].skus[k];
+                 return { sku:k, variant:x.variant, colour:x.colour, ly:x.u, qty:kq[k]||0 }; })
+               .filter(function(x){ return x.qty>0; }) });
+      });
+      out.push({ seg:sg, label:SEGLBL[sg]||sg, qty:q, lyUnits:T[sg].u, models:models });
+    });
+    return out;
+  }
+
+  /* ---------- render ---------- */
+  function render(){
+    var root=document.getElementById('f100-root'); if(!root) return;
+    var CT=counterTargets(), growthAll = pc(st.total-LYTOT, LYTOT);
+    var h='<div class="card" style="border-left:4px solid #ffb02e">'
+      +'<h3>&#127881; Festival 100 &mdash; target, growth and stock by counter</h3>'
+      +'<p class="help-text">Last year\'s F100 did <b>'+nf(LYTOT)+'</b> units ('+nf(LYCTR)+' counter, '+nf(LYNET)+' network). '
+      +'Set this year\'s target and it is split counter by counter, segment by segment, and then down to the exact SKU and '
+      +'colour each counter needs &mdash; which is the gap that cost you retail last year. '
+      +'The SKU mix comes from the Sep&ndash;Nov 25 festive history in the Order Planner; that history is dealership-wide, '
+      +'not per counter, so each counter is split on the dealership pattern.</p>'
+      +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:14px 0">'
+      +'<div><label class="help-text">F100 target (total)</label>'
+      +'<input type="number" id="f1-total" value="'+st.total+'" min="0" step="50" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:17px;font-weight:800"></div>'
+      +'<div><label class="help-text">Network share %</label>'
+      +'<input type="number" id="f1-net" value="'+st.netPct+'" min="0" max="100" step="0.5" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--text)"></div>'
+      +'<div><label class="help-text">Drop SKUs under (qty)</label>'
+      +'<input type="number" id="f1-minq" value="'+st.minq+'" min="0" step="1" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--text)"></div>'
+      +'</div>'
+      +'<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:6px">'
+      + kpi(nf(st.total), 'F100 target', '#ffb02e', (growthAll>=0?'+':'')+growthAll+'% vs LY '+nf(LYTOT))
+      + kpi(nf(CT.ctrTotal), 'Counter retail', '#2bd47d', 'LY '+nf(LYCTR)+' &middot; '+(pc(CT.ctrTotal-LYCTR,LYCTR)>=0?'+':'')+pc(CT.ctrTotal-LYCTR,LYCTR)+'%')
+      + kpi(nf(CT.network), 'Network', '#5b9eff', 'LY '+nf(LYNET))
+      +'</div>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:12px 0">'
+      +'<button class="btn" id="f1-csv">&#11015;&#65039; Export counter order sheets</button>'
+      +'<button class="btn" id="f1-csv-summary">&#11015;&#65039; Export counter targets</button>'
+      +'<button class="btn" id="f1-reset">Reset to LY shares</button></div>';
+
+    /* counter table - the value editor */
+    h+='<h3 style="margin-top:14px">Counter targets</h3>'
+      +'<p class="help-text">Type over any target and the others re-share what is left, so the counter total always holds.</p>'
+      +'<div style="overflow-x:auto"><table class="table"><thead><tr>'
+      +'<th>Counter</th><th style="text-align:right">LY F100</th><th style="text-align:right">LY share</th>'
+      +'<th style="text-align:right">TY target</th><th style="text-align:right">Growth</th>'
+      +'<th style="text-align:right">Per day (100d)</th></tr></thead><tbody>';
+    COUNTERS.forEach(function(c){
+      var ly=LYC[c]||0, ty=CT.byCounter[c]||0, g=pc(ty-ly,ly);
+      var col = g>=20?'#2bd47d': g>=0?'#ffb02e':'#ff5c5c';
+      h+='<tr><td><strong>'+esc(c)+'</strong></td>'
+        +'<td style="text-align:right">'+nf(ly)+'</td>'
+        +'<td style="text-align:right;color:var(--muted)">'+pc(ly,LYCTR)+'%</td>'
+        +'<td style="text-align:right"><input type="number" min="0" step="1" value="'+ty+'" data-f1-ctr="'+esc(c)+'" '
+        +'style="width:92px;padding:5px 7px;text-align:right;border-radius:6px;border:1px solid '+((st.ov[c]!=null&&st.ov[c]!=='')?'#ffb02e':'var(--line)')+';background:var(--panel-2);color:var(--text);font-weight:700"></td>'
+        +'<td style="text-align:right;color:'+col+';font-weight:700">'+(g>=0?'+':'')+g+'%</td>'
+        +'<td style="text-align:right;color:var(--muted)">'+(ty/100).toFixed(1)+'</td></tr>';
+    });
+    h+='<tr style="border-top:2px solid var(--line);font-weight:700"><td>COUNTER TOTAL</td>'
+      +'<td style="text-align:right">'+nf(LYCTR)+'</td><td style="text-align:right">100%</td>'
+      +'<td style="text-align:right">'+nf(CT.ctrTotal)+'</td>'
+      +'<td style="text-align:right">'+(pc(CT.ctrTotal-LYCTR,LYCTR)>=0?'+':'')+pc(CT.ctrTotal-LYCTR,LYCTR)+'%</td>'
+      +'<td style="text-align:right">'+(CT.ctrTotal/100).toFixed(1)+'</td></tr>'
+      +'</tbody></table></div>';
+
+    /* segment mix */
+    var segAll=planFor(CT.ctrTotal);
+    h+='<h3 style="margin-top:22px">Segment mix</h3>'
+      +'<p class="help-text">From last festive season. Type a weight to override it &mdash; the numbers are relative, so 40/30/20/10 works as well as percentages.</p>'
+      +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Segment</th>'
+      +'<th style="text-align:right">LY festive units</th><th style="text-align:right">LY share</th>'
+      +'<th style="text-align:right">Weight</th><th style="text-align:right">TY units</th></tr></thead><tbody>';
+    var lyseg=segAll.reduce(function(a,x){ return a+x.lyUnits; },0);
+    segAll.forEach(function(sg){
+      h+='<tr><td><strong>'+esc(sg.label)+'</strong></td>'
+        +'<td style="text-align:right">'+nf(sg.lyUnits)+'</td>'
+        +'<td style="text-align:right;color:var(--muted)">'+pc(sg.lyUnits,lyseg)+'%</td>'
+        +'<td style="text-align:right"><input type="number" min="0" step="0.5" value="'+(st.segov[sg.seg]!=null&&st.segov[sg.seg]!==''?st.segov[sg.seg]:pc(sg.lyUnits,lyseg))+'" data-f1-seg="'+esc(sg.seg)+'" '
+        +'style="width:76px;padding:5px 7px;text-align:right;border-radius:6px;border:1px solid var(--line);background:var(--panel-2);color:var(--text)"></td>'
+        +'<td style="text-align:right;font-weight:700">'+nf(sg.qty)+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+
+    /* the SKU sheet - the point of the tab */
+    var list = st.counter ? [st.counter] : COUNTERS;
+    // Segments and models on offer come from the plan itself, so a filter can
+    // never point at something with nothing behind it.
+    var segOpts = segAll.map(function(x){ return { v:x.seg, l:x.label }; });
+    var modelOpts = [];
+    segAll.forEach(function(sg){
+      if(st.segment && sg.seg!==st.segment) return;
+      sg.models.forEach(function(m){ if(modelOpts.indexOf(m.model)<0 && m.qty>0) modelOpts.push(m.model); });
+    });
+    modelOpts.sort();
+    if(st.model && modelOpts.indexOf(st.model)<0) st.model='';
+
+    h+='<h3 style="margin-top:22px">Stock needed &mdash; by counter, segment, model, colour</h3>'
+      +'<p class="help-text">This is what goes to each counter manager. Every line is a SKU with its colour and the '
+      +'quantity that counter should hold for the 100 days. The filters below narrow both what you see and what the '
+      +'export contains, so a manager gets exactly their own sheet.</p>'
+      +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0 4px">'
+      +'<select class="filter-select" id="f1-counter"><option value="">All counters</option>'
+      + COUNTERS.map(function(c){ return '<option value="'+esc(c)+'"'+(st.counter===c?' selected':'')+'>'+esc(c)+'</option>'; }).join('')
+      +'</select>'
+      +'<select class="filter-select" id="f1-seg"><option value="">All segments</option>'
+      + segOpts.map(function(o){ return '<option value="'+esc(o.v)+'"'+(st.segment===o.v?' selected':'')+'>'+esc(o.l)+'</option>'; }).join('')
+      +'</select>'
+      +'<select class="filter-select" id="f1-model"><option value="">All models</option>'
+      + modelOpts.map(function(m){ return '<option value="'+esc(m)+'"'+(st.model===m?' selected':'')+'>'+esc(m)+'</option>'; }).join('')
+      +'</select>'
+      + ((st.counter||st.segment||st.model) ? '<button class="btn" id="f1-clear">Clear</button>' : '')
+      +'<button class="btn btn-primary" id="f1-csv2" title="Download exactly the lines shown below">&#11015;&#65039; Export this sheet</button>'
+      +'<span style="flex:1"></span><span class="help-text" id="f1-subtotal"></span></div>';
+    var shownTotal=0, shownLines=0;
+    list.forEach(function(c){
+      var q=CT.byCounter[c]||0; if(!q) return;
+      var P=planFor(q).filter(function(sg){ return !st.segment || sg.seg===st.segment; })
+             .map(function(sg){ return { seg:sg.seg, label:sg.label, qty:sg.qty, lyUnits:sg.lyUnits,
+                    models: sg.models.filter(function(m){ return !st.model || m.model===st.model; }) }; })
+             .filter(function(sg){ return sg.models.length; });
+      if(!P.length) return;
+      h+='<div style="margin-top:14px;padding:10px 12px;border-radius:8px;background:var(--panel-2)">'
+        +'<b style="font-size:15px">'+esc(c)+'</b> &mdash; target <b style="color:#ffb02e">'+nf(q)+'</b> units'
+        +' <span class="help-text">(LY '+nf(LYC[c]||0)+', '+(pc(q-(LYC[c]||0),LYC[c]||0)>=0?'+':'')+pc(q-(LYC[c]||0),LYC[c]||0)+'%)</span></div>'
+        +'<div style="overflow-x:auto"><table class="table"><thead><tr>'
+        +'<th>Segment</th><th>Model</th><th>Variant</th><th>Colour</th><th>SKU</th>'
+        +'<th style="text-align:right">LY</th><th style="text-align:right">Need</th></tr></thead><tbody>';
+      var n=0;
+      P.forEach(function(sg){ sg.models.forEach(function(m){ m.skus.forEach(function(k){
+        n++; shownLines++; shownTotal+=k.qty;
+        h+='<tr><td>'+esc(sg.label)+'</td><td>'+esc(m.model)+'</td>'
+          +'<td style="color:var(--muted);font-size:11px">'+esc(k.variant)+'</td>'
+          +'<td><strong>'+esc(k.colour)+'</strong></td>'
+          +'<td style="font-family:monospace;font-size:11px;color:var(--muted)">'+esc(k.sku)+'</td>'
+          +'<td style="text-align:right;color:var(--muted)">'+nf(k.ly)+'</td>'
+          +'<td style="text-align:right;font-weight:800;color:#ffb02e">'+nf(k.qty)+'</td></tr>';
+      }); }); });
+      if(!n) h+='<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:16px">Nothing above the drop threshold.</td></tr>';
+      h+='</tbody></table></div>';
+    });
+    if(!shownLines) h+='<p class="help-text" style="padding:14px;text-align:center">Nothing matches those filters.</p>';
+
+    /* phase view - when the volume lands */
+    h+='<h3 style="margin-top:22px">Phase by phase</h3>'
+      +'<p class="help-text">Last year\'s F100 by festival phase, so stock arrives before the days that actually sell.</p>'
+      +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Phase</th><th>Days</th>'
+      + COUNTERS.map(function(c){ return '<th style="text-align:right">'+esc(c)+'</th>'; }).join('')
+      +'<th style="text-align:right">Counter</th><th style="text-align:right">Network</th><th style="text-align:right">Total</th></tr></thead><tbody>';
+    F100.rows.forEach(function(r){
+      h+='<tr><td style="color:var(--muted);font-size:11px">'+esc(r.phase)+'</td><td style="font-size:11px">'+esc(r.name)+'</td>'
+        + COUNTERS.map(function(c){ return '<td style="text-align:right">'+nf((r[c]||{}).ly||0)+'</td>'; }).join('')
+        +'<td style="text-align:right;font-weight:700">'+nf((r._counter||{}).ly||0)+'</td>'
+        +'<td style="text-align:right">'+nf((r._network||{}).ly||0)+'</td>'
+        +'<td style="text-align:right;font-weight:700">'+nf((r._total||{}).ly||0)+'</td></tr>';
+    });
+    h+='</tbody></table></div></div>';
+
+    root.innerHTML=h;
+    var sub=document.getElementById('f1-subtotal');
+    if(sub) sub.innerHTML = shownLines
+      ? 'Showing <b>'+nf(shownLines)+'</b> SKU line(s), <b style="color:#ffb02e">'+nf(shownTotal)+'</b> units'
+      : '';
+    wire(CT);
+  }
+  function kpi(v,l,c,sub){
+    return '<div style="flex:1;min-width:150px;padding:12px 14px;border-radius:10px;background:var(--panel-2);border-left:3px solid '+c+'">'
+      +'<div style="font-size:22px;font-weight:800;color:'+c+'">'+v+'</div>'
+      +'<div style="font-size:11px;color:var(--muted);margin-top:2px">'+l+'</div>'
+      +'<div style="font-size:10px;color:var(--muted);margin-top:3px">'+sub+'</div></div>';
+  }
+
+  function csvDownload(name, header, rows){
+    var esc2=function(v){ return '"'+String(v==null?'':v).replace(/"/g,'""')+'"'; };
+    var body=[header.map(esc2).join(',')].concat(rows.map(function(r){ return r.map(esc2).join(','); })).join('\n');
+    var blob=new Blob(['﻿'+body],{type:'text/csv;charset=utf-8;'});
+    var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); },2000);
+  }
+  function wire(CT){
+    function g(id){ return document.getElementById(id); }
+    if(g('f1-total')) g('f1-total').onchange=function(){ st.total=Math.max(0,parseInt(this.value)||0); st.ov={}; save(); render(); };
+    if(g('f1-net')) g('f1-net').onchange=function(){ st.netPct=Math.min(100,Math.max(0,parseFloat(this.value)||0)); st.ov={}; save(); render(); };
+    if(g('f1-minq')) g('f1-minq').onchange=function(){ st.minq=Math.max(0,parseInt(this.value)||0); save(); render(); };
+    if(g('f1-counter')) g('f1-counter').onchange=function(){ st.counter=this.value; save(); render(); };
+    if(g('f1-seg')) g('f1-seg').onchange=function(){ st.segment=this.value; st.model=''; save(); render(); };
+    if(g('f1-model')) g('f1-model').onchange=function(){ st.model=this.value; save(); render(); };
+    if(g('f1-clear')) g('f1-clear').onclick=function(){ st.counter=''; st.segment=''; st.model=''; save(); render(); };
+    if(g('f1-reset')) g('f1-reset').onclick=function(){ st.ov={}; st.segov={}; save(); render(); };
+    Array.prototype.forEach.call(document.querySelectorAll('[data-f1-ctr]'),function(el){
+      el.onchange=function(){ st.ov[this.getAttribute('data-f1-ctr')]=Math.max(0,parseInt(this.value)||0); save(); render(); };
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-f1-seg]'),function(el){
+      el.onchange=function(){ st.segov[this.getAttribute('data-f1-seg')]=Math.max(0,parseFloat(this.value)||0); save(); render(); };
+    });
+    function exportStockSheet(){
+      var rows=[];
+      (st.counter?[st.counter]:COUNTERS).forEach(function(c){
+        var q=CT.byCounter[c]||0; if(!q) return;
+        planFor(q).forEach(function(sg){
+          if(st.segment && sg.seg!==st.segment) return;
+          sg.models.forEach(function(m){
+            if(st.model && m.model!==st.model) return;
+            m.skus.forEach(function(k){
+              rows.push([c, sg.label, m.model, k.variant, k.colour, k.sku, k.ly, k.qty]);
+            });
+          });
+        });
+      });
+      var tag=[st.counter||'all-counters', st.segment, st.model].filter(Boolean).join('-').replace(/[^A-Za-z0-9]+/g,'-');
+      if(!rows.length){ try{ showToast('Nothing to export for those filters.'); }catch(e){} return; }
+      csvDownload('festival100_stock_'+tag+'_'+new Date().toISOString().slice(0,10)+'.csv',
+        ['Counter','Segment','Model','Variant','Colour','SKU','LY festive units','Stock needed'], rows);
+      try{ showToast('Exported '+rows.length+' line(s)'+(tag!=='all-counters'?' - '+tag.replace(/-/g,' '):'')+'.'); }catch(e){}
+    }
+    if(g('f1-csv'))  g('f1-csv').onclick  = exportStockSheet;
+    if(g('f1-csv2')) g('f1-csv2').onclick = exportStockSheet;
+    if(g('f1-csv-summary')) g('f1-csv-summary').onclick=function(){
+      var rows=COUNTERS.map(function(c){
+        var ly=LYC[c]||0, ty=CT.byCounter[c]||0;
+        return [c, ly, pc(ly,LYCTR)+'%', ty, (pc(ty-ly,ly)>=0?'+':'')+pc(ty-ly,ly)+'%', (ty/100).toFixed(1)];
+      });
+      rows.push(['COUNTER TOTAL', LYCTR, '100%', CT.ctrTotal, (pc(CT.ctrTotal-LYCTR,LYCTR)>=0?'+':'')+pc(CT.ctrTotal-LYCTR,LYCTR)+'%', (CT.ctrTotal/100).toFixed(1)]);
+      rows.push(['NETWORK', LYNET, '', CT.network, '', '']);
+      rows.push(['GRAND TOTAL', LYTOT, '', st.total, (pc(st.total-LYTOT,LYTOT)>=0?'+':'')+pc(st.total-LYTOT,LYTOT)+'%', '']);
+      csvDownload('festival100_targets_'+new Date().toISOString().slice(0,10)+'.csv',
+        ['Counter','LY F100','LY share','TY target','Growth','Per day (100 days)'], rows);
+    };
+  }
+
+  /* ---------- nav + view ---------- */
+  function ensure(){
+    if(document.getElementById('view-f100')) return true;
+    var nav=document.getElementById('nav'); if(!nav) return false;
+    var btn=document.createElement('button');
+    btn.className='nav-item'; btn.setAttribute('data-view','f100');
+    btn.innerHTML='<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+      +'<path d="M12 2l2.4 7.4H22l-6 4.4 2.3 7.2-6.3-4.6L5.7 21 8 13.8 2 9.4h7.6z"/></svg>Festival 100';
+    btn.onclick=function(){ window.setView('f100'); };
+    var setup=nav.querySelector('.nav-section');
+    if(setup) nav.insertBefore(btn,setup); else nav.appendChild(btn);
+    var views=document.querySelectorAll('.view');
+    var sec=document.createElement('section'); sec.className='view'; sec.id='view-f100';
+    sec.innerHTML='<div id="f100-root"></div>';
+    if(views.length) views[views.length-1].parentNode.appendChild(sec); else document.body.appendChild(sec);
+    return true;
+  }
+  var prev=window.setView;
+  window.setView=function(n){
+    var r=prev.apply(this,arguments);
+    if(n==='f100'){ setTimeout(function(){ if(ensure()) render(); },60); }
+    return r;
+  };
+  document.addEventListener('DOMContentLoaded',function(){ setTimeout(ensure,1000); });
+})();
+</script>
+
 </body> in index.html ===== -->
 <!-- Makes the dashboard pull the latest server feed on every open AND every 5 minutes, with no button click. -->
 <script>
@@ -6587,6 +6952,9 @@ document.addEventListener('DOMContentLoaded', initApp);
     return (n<0?'-':'')+'\u20B9'+rest+l3; }
 
   /* ---------- decode the historical mix ---------- */
+  // Shared with the Festival 100 tab, which needs the same LY festive SKU
+  // history. Exposed rather than duplicated - one copy, one source of truth.
+  try{ window.__ICE_MIX__ = MIX; }catch(e){}
   var REC=MIX.r.map(function(a){
     return {period:MIX.p[a[0]],channel:MIX.ch[a[1]],segment:MIX.s[a[2]],model:MIX.m[a[3]],
             variant:MIX.v[a[4]],color:MIX.c[a[5]][1],sku:MIX.v[a[4]]+MIX.c[a[5]][0],units:a[6]};
