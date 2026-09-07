@@ -1188,7 +1188,26 @@ function renderDseSummary(list) {
   box.innerHTML = h + '</tbody></table></div></div>';
 }
 
+// The source and DSE lists are built from the DATA, not from a fixed catalogue -
+// that is what stopped the filter offering choices that match nothing. The catch
+// is timing: initApp() builds them before loadFromScript() has fetched anything,
+// so on a cold load they were built from an empty list and never rebuilt. Rather
+// than depend on every data-loading path remembering to refresh, rebuild here
+// whenever what is on offer no longer matches what is in the data. populateSelect
+// keeps the current selection, so this is invisible unless something changed.
+function syncDataDrivenFilters() {
+  const sel = document.getElementById('f-source');
+  if (sel) {
+    const want = sourceFilterOptions().join('|');
+    const have = Array.from(sel.options).map(o => o.value).filter(Boolean).join('|');
+    if (want !== have) populateSelect('f-source', sourceFilterOptions(), true, 'All sources');
+  }
+  const rep = document.getElementById('f-rep');
+  if (rep && rep.options.length <= 1 && (enquiries || []).length) fillRepFilter();
+}
+
 function renderTable() {
+  syncDataDrivenFilters();
   const s=document.getElementById('f-search')?.value.toLowerCase()||'';
   const stg=document.getElementById('f-stage')?.value||'';
   const sts=document.getElementById('f-status')?.value||'';
