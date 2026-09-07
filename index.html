@@ -1798,7 +1798,344 @@ document.addEventListener('DOMContentLoaded', initApp);
   });
 })();
 </script>
-<!-- ===== Auto-refresh from Google Sheets — paste this whole block just ABOVE </body> in index.html ===== -->
+<!-- ===== Auto-refresh from Google Sheets — paste this whole block just ABOVE 
+<!-- ===== VIDA ORDER PLANNER (additive, self-contained) ===== -->
+<script>
+/* ===== VIDA ORDER PLANNER =====
+   The ICE planner runs off a baked-in ICE-only history and explicitly excludes
+   VIDA from its maths. This is the VIDA half, built from 1,560 real DMS
+   invoices (Apr-Aug 26): model -> variant -> colour -> SKU, per counter.
+   VIDA has no network channel - every one of those 1,560 units was a counter
+   sale - so there is no Counter/Network split here, unlike ICE. */
+(function(){
+  "use strict";
+  var VMIX = {"mo":["2026-04","2026-05","2026-06","2026-07","2026-08","2026-09"],"m":["VIDA VX2 GO","VIDA VX2 GO 2.2 RQ","VIDA VX2 GO 3.4","VIDA VX2 GO FB","VIDA VX2 PLUS","VIDA VX2 PLUS 4.4 RQ"],"v":["V3GOBSEFCEL","V3GODRARCEL","V3GODRCRCEL","V3GOJRCRCEL","V3PLDSARCEL","V3PLJSCRCEL"],"c":["ATO","KKB","MGM","MIW","MNB","PEB","PER"],"s":["V3GOBSEFCELMGM","V3GOBSEFCELMIW","V3GOBSEFCELMNB","V3GOBSEFCELPEB","V3GODRARCELMGM","V3GODRARCELMIW","V3GODRARCELMNB","V3GODRARCELPEB","V3GODRARCELPER","V3GODRCRCELMGM","V3GODRCRCELMIW","V3GODRCRCELMNB","V3GODRCRCELPEB","V3GOJRCRCELMGM","V3GOJRCRCELMIW","V3GOJRCRCELPEB","V3PLDSARCELATO","V3PLDSARCELKKB","V3PLDSARCELMGM","V3PLDSARCELMIW","V3PLDSARCELMNB","V3PLDSARCELPEB","V3PLDSARCELPER","V3PLJSCRCELMGM","V3PLJSCRCELMIW","V3PLJSCRCELPEB","V3PLJSCRCELPER"],"r":[[0,0,2,3,10,1],[0,0,2,4,11,1],[0,2,1,2,4,66],[0,2,1,3,5,33],[0,2,1,4,6,12],[0,2,1,5,7,48],[0,4,4,0,16,1],[0,4,4,1,17,5],[0,4,4,2,18,35],[0,4,4,3,19,20],[0,4,4,4,20,3],[0,4,4,5,21,35],[1,0,2,2,9,2],[1,0,2,4,11,1],[1,2,1,2,4,94],[1,2,1,3,5,49],[1,2,1,4,6,20],[1,2,1,5,7,62],[1,2,1,6,8,7],[1,4,4,2,18,42],[1,4,4,3,19,23],[1,4,4,4,20,10],[1,4,4,5,21,15],[2,0,2,3,10,1],[2,2,1,2,4,68],[2,2,1,3,5,50],[2,2,1,4,6,10],[2,2,1,5,7,57],[2,4,4,2,18,45],[2,4,4,3,19,20],[2,4,4,5,21,30],[2,4,4,6,22,3],[3,0,2,2,9,5],[3,0,2,3,10,5],[3,0,2,5,12,4],[3,1,3,2,13,2],[3,2,1,2,4,63],[3,2,1,3,5,74],[3,2,1,4,6,24],[3,2,1,5,7,60],[3,2,1,6,8,3],[3,4,4,1,17,5],[3,4,4,2,18,44],[3,4,4,3,19,16],[3,4,4,4,20,6],[3,4,4,5,21,38],[3,4,4,6,22,2],[3,5,5,2,23,1],[3,5,5,5,25,5],[4,0,2,2,9,13],[4,0,2,3,10,4],[4,0,2,5,12,6],[4,1,3,2,13,3],[4,1,3,3,14,2],[4,2,1,2,4,38],[4,2,1,3,5,42],[4,2,1,5,7,64],[4,2,1,6,8,2],[4,3,0,2,0,48],[4,3,0,3,1,10],[4,3,0,4,2,7],[4,3,0,5,3,28],[4,4,4,2,18,35],[4,4,4,3,19,14],[4,4,4,4,20,4],[4,4,4,5,21,13],[4,4,4,6,22,6],[4,5,5,2,23,1],[4,5,5,3,24,4],[4,5,5,5,25,1],[4,5,5,6,26,2],[5,0,2,2,9,1],[5,0,2,3,10,1],[5,0,2,5,12,1],[5,1,3,3,14,1],[5,1,3,5,15,1],[5,2,1,2,4,17],[5,2,1,3,5,7],[5,2,1,4,6,1],[5,2,1,5,7,7],[5,3,0,2,0,4],[5,3,0,4,2,1],[5,3,0,5,3,7],[5,4,4,2,18,2],[5,4,4,3,19,1],[5,4,4,5,21,3]]};
+  // Colour codes as the dealership reads them. Confirmed by you: MNB blue,
+  // MGM grey, MIW white, and PEB is the black one (you wrote PNB - there is no
+  // PNB in the data, PEB is the only black). PER / KKB / ATO are in the history
+  // but unnamed, so they show as their code rather than a guess.
+  var COLOUR_NAMES = { 'PEB':'Black', 'MNB':'Blue', 'MGM':'Grey', 'MIW':'White' };
+  function colourName(code){
+    var c=String(code||'').trim().toUpperCase();
+    return COLOUR_NAMES[c] ? COLOUR_NAMES[c]+' ('+c+')' : c;
+  }
+  var KEY='hero-vidaplan-v1';
+  var st={ total:400, period:'all', minq:1, model:'', counter:'', ov:{} };
+  try{ var sv=localStorage.getItem(KEY); if(sv){ var o=JSON.parse(sv); for(var k in o) if(k!=='ov') st[k]=o[k]; } }catch(e){}
+  function save(){ try{ var c={}; for(var k in st) if(k!=='ov') c[k]=st[k]; localStorage.setItem(KEY,JSON.stringify(c)); }catch(e){} }
+  function esc(x){ return String(x==null?'':x).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function nf(n){ return (Number(n)||0).toLocaleString('en-IN'); }
+
+  // The baked-in mix is only a fallback. The real source is the dashboard's own
+  // data: since retail comes from the DMS, every VIDA sale already carries model,
+  // variant, colour, SKU, counter and invoice date. Reading it live means the
+  // plan widens on its own as you append more months of history to the DMS sheet
+  // - no rebuild, no new file from me.
+  var SEED = VMIX.r.map(function(a){
+    return { month:VMIX.mo[a[0]], counter:'(all)', model:VMIX.m[a[1]],
+             variant:VMIX.v[a[2]], colour:VMIX.c[a[3]], sku:VMIX.s[a[4]], units:a[5] };
+  });
+  function isVidaModel(m){
+    var t=String(m||'').toUpperCase();
+    if(/VIDA|VX2|EVOOTER|^V[12]\b/.test(t)) return true;
+    try{ if(typeof segmentOf==='function' && segmentOf(m)==='VIDA') return true; }catch(e){}
+    return false;
+  }
+  function liveRecords(){
+    var out=[], seen=0;
+    // `enquiries` is declared with let, so it is NOT on window - reference the
+    // bare identifier and guard, or this silently reads nothing and quietly
+    // falls back to the built-in history.
+    var src=[];
+    try{ src = (typeof enquiries!=='undefined' && enquiries) ? enquiries : []; }catch(e){ src=[]; }
+    src.forEach(function(e){
+      if(!e || e.stage!=='Won') return;
+      if(!isVidaModel(e.model)) return;
+      var d=String(e.soldAt||e.createdAt||'');
+      if(!/^\d{4}-\d{2}/.test(d)) return;
+      seen++;
+      var sku=String(e.sku||'').trim();
+      var colour=String(e.colour||'').trim();
+      // a sale with no SKU cannot be planned colour-wise, so it is counted at
+      // model level only and reported as such rather than quietly dropped
+      out.push({ month:d.slice(0,7), counter:String(e.counter||'').trim()||'(unknown)',
+                 model:String(e.model||'').trim().toUpperCase(),
+                 variant:String(e.variant||'').trim().toUpperCase(),
+                 colour:colour.toUpperCase()||'(no colour)',
+                 sku:sku.toUpperCase()||'(no sku)', units:1 });
+    });
+    return out;
+  }
+  var LIVE=[], REC=[], USING='seed', MONTHS=[];
+  function refreshSource(){
+    LIVE = liveRecords();
+    // use the live data once there is enough of it to plan from
+    if(LIVE.length >= 100){ REC = LIVE; USING='live'; }
+    else { REC = SEED; USING='seed'; }
+    MONTHS = [];
+    var mset={}; REC.forEach(function(r){ mset[r.month]=1; });
+    MONTHS = Object.keys(mset).sort();
+    PLBL = { all:'All months ('+(MONTHS[0]||'')+' to '+(MONTHS[MONTHS.length-1]||'')+')',
+             last6:'Last 6 months', last3:'Last 3 months',
+             last1:'Latest month ('+(MONTHS[MONTHS.length-1]||'')+')' };
+    if(!PLBL[st.period]) st.period='all';
+  }
+  function periodMonths(p){
+    if(p==='last6') return MONTHS.slice(-6);
+    if(p==='last3') return MONTHS.slice(-3);
+    if(p==='last1') return MONTHS.slice(-1);
+    return MONTHS.slice();
+  }
+  var PLBL={};
+
+  function base(){
+    var mset={}, want=periodMonths(st.period);
+    REC.forEach(function(r){
+      if(want.indexOf(r.month)<0) return;
+      if(st.counter && r.counter!==st.counter) return;
+      var m=mset[r.model]||(mset[r.model]={u:0,skus:{}});
+      m.u+=r.units;
+      var k=r.sku;
+      var sk=m.skus[k]||(m.skus[k]={u:0,variant:r.variant,colour:r.colour,sku:k});
+      sk.u+=r.units;
+    });
+    return mset;
+  }
+  // largest remainder, so the parts always add back to the whole
+  function lr(total,w){
+    var keys=Object.keys(w), sw=0, out={}, raw={}, used=0;
+    keys.forEach(function(k){ sw+=w[k]; });
+    if(sw<=0||total<=0){ keys.forEach(function(k){ out[k]=0; }); return out; }
+    keys.forEach(function(k){ raw[k]=total*w[k]/sw; out[k]=Math.floor(raw[k]); used+=out[k]; });
+    var rem=total-used;
+    keys.sort(function(a,b){ return (raw[b]-out[b])-(raw[a]-out[a]); });
+    for(var i=0; rem>0; i++, rem--) out[keys[i%keys.length]]++;
+    return out;
+  }
+
+  function plan(){
+    var B=base(), mw={}, hist=0;
+    Object.keys(B).forEach(function(m){ mw[m]=B[m].u; hist+=B[m].u; });
+    // a manual override on a model is honoured; the rest share what is left
+    var fixed={}, fixedQty=0;
+    Object.keys(st.ov).forEach(function(m){
+      if(B[m] && st.ov[m]!=null && st.ov[m]!=='') { fixed[m]=Math.max(0,parseInt(st.ov[m])||0); fixedQty+=fixed[m]; }
+    });
+    var freeW={}; Object.keys(mw).forEach(function(m){ if(!(m in fixed)) freeW[m]=mw[m]; });
+    var freeQty=Math.max(0, st.total-fixedQty);
+    var alloc=lr(freeQty, freeW);
+    Object.keys(fixed).forEach(function(m){ alloc[m]=fixed[m]; });
+
+    var rows=[];
+    Object.keys(B).sort(function(a,b){ return B[b].u-B[a].u; }).forEach(function(m){
+      var qty=alloc[m]||0, sw={};
+      Object.keys(B[m].skus).forEach(function(k){ sw[k]=B[m].skus[k].u; });
+      // Slow movers are DROPPED from the allocation, not merely hidden. If they
+      // were only hidden they would still eat their share and the printed order
+      // sheet would come up short of the model quantity. Their share is handed
+      // back to the colours you actually want, and the sheet always adds up.
+      var sa=lr(qty,sw);
+      if(st.minq>0){
+        var keep={}, dropped=0, keptAny=false;
+        Object.keys(sw).forEach(function(k){
+          if((sa[k]||0) >= st.minq){ keep[k]=sw[k]; keptAny=true; } else dropped+=(sa[k]||0);
+        });
+        if(keptAny && dropped>0) sa=lr(qty,keep);
+        else if(keptAny) sa=lr(qty,keep);
+      }
+      rows.push({ model:m, hist:B[m].u, share: hist? B[m].u/hist*100 : 0, qty:qty,
+                  fixed:(m in fixed),
+                  skus:Object.keys(B[m].skus).sort(function(a,b){ return B[m].skus[b].u-B[m].skus[a].u; })
+                        .map(function(k){ var x=B[m].skus[k]; return { sku:k, variant:x.variant, colour:x.colour,
+                              hist:x.u, qty:sa[k]||0 }; })
+                        .filter(function(x){ return x.qty>0; }) });
+    });
+    return { rows:rows, hist:hist, total:rows.reduce(function(a,r){ return a+r.qty; },0) };
+  }
+
+  function render(){
+    var root=document.getElementById('vidaplan-root'); if(!root) return;
+    refreshSource();
+    var P=plan();
+    var units=REC.reduce(function(a,r){ return a+r.units; },0);
+    var noSku=REC.filter(function(r){ return r.sku==='(NO SKU)'||r.sku==='(no sku)'; })
+                 .reduce(function(a,r){ return a+r.units; },0);
+    var h='<div class="card" style="border-left:4px solid #a05bff">'
+      + '<h3>&#9889; VIDA order plan</h3>'
+      + '<p class="help-text">Built from <b>'+nf(units)+'</b> VIDA invoices ('
+      + (MONTHS[0]||'?')+' to '+(MONTHS[MONTHS.length-1]||'?')+'), '
+      + (USING==='live'
+          ? 'read <b>live from your own retail data</b> &mdash; append more months to the DMS sheet and this widens on its own.'
+          : '<b>from the built-in Apr&ndash;Aug 26 history</b>, because the dashboard is not yet carrying enough dated VIDA sales with SKUs.')
+      + ' VIDA has no network channel &mdash; every unit is a counter sale &mdash; so unlike the ICE plan there is no counter/network split. '
+      + 'Enter the quantity you intend to order and it is split by model, then by colour, in the proportions you actually sell.'
+      + (noSku ? ' <b style="color:#ffb02e">'+nf(noSku)+'</b> sale(s) have no SKU recorded, so they shape the model split but not the colour split.' : '')
+      + '</p>'
+      + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:14px 0">'
+      + '<div><label class="help-text">VIDA units to order</label>'
+      + '<input type="number" id="vp-total" value="'+st.total+'" min="0" step="10" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:17px;font-weight:800"></div>'
+      + '<div><label class="help-text">Demand basis</label><select class="filter-select" id="vp-period" style="width:100%;padding:10px">'
+      + Object.keys(PLBL).map(function(k){ return '<option value="'+k+'"'+(st.period===k?' selected':'')+'>'+esc(PLBL[k])+'</option>'; }).join('')
+      + '</select></div>'
+      + '<div><label class="help-text">Counter</label><select class="filter-select" id="vp-counter" style="width:100%;padding:10px">'
+      + '<option value="">All counters</option>'
+      + (function(){ var cs={}; REC.forEach(function(r){ cs[r.counter]=1; });
+          return Object.keys(cs).sort().map(function(c){ return '<option value="'+esc(c)+'"'+(st.counter===c?' selected':'')+'>'+esc(c)+'</option>'; }).join(''); })()
+      + '</select></div>'
+      + '<div><label class="help-text">Drop colours under (qty)</label>'
+      + '<input type="number" id="vp-minq" value="'+st.minq+'" min="0" step="1" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--text)"></div>'
+      + '</div>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'
+      + '<button class="btn" id="vp-csv">&#11015;&#65039; Export VIDA order sheet</button>'
+      + '<button class="btn" id="vp-reset">Reset model overrides</button>'
+      + '<span style="flex:1"></span>'
+      + '<span class="help-text">Planned total: <b style="color:#a05bff">'+nf(P.total)+'</b> units</span></div>';
+
+    h+='<div style="overflow-x:auto"><table class="table"><thead><tr>'
+      +'<th>Model</th><th style="text-align:right">Sold (basis)</th><th style="text-align:right">Share</th>'
+      +'<th style="text-align:right">Order qty</th></tr></thead><tbody>';
+    P.rows.forEach(function(r){
+      h+='<tr><td><strong>'+esc(r.model)+'</strong></td>'
+        +'<td style="text-align:right">'+nf(r.hist)+'</td>'
+        +'<td style="text-align:right">'+r.share.toFixed(1)+'%</td>'
+        +'<td style="text-align:right"><input type="number" min="0" step="1" value="'+r.qty+'" data-vp-model="'+esc(r.model)+'" '
+        +'style="width:88px;padding:5px 7px;text-align:right;border-radius:6px;border:1px solid '+(r.fixed?'#a05bff':'var(--line)')+';background:var(--panel-2);color:var(--text);font-weight:700"></td></tr>';
+    });
+    h+='</tbody></table></div>';
+
+    h+='<h3 style="margin-top:22px">Colour-wise order sheet</h3>'
+      +'<p class="help-text">This is the sheet to order from &mdash; every SKU, its colour, and how many to take. '
+      +'Colours falling under the drop threshold are removed and their share is redistributed to the rest, '
+      +'so these quantities always add back to the model totals above.</p>'
+      +'<div style="overflow-x:auto"><table class="table"><thead><tr>'
+      +'<th>Model</th><th>Variant</th><th>Colour</th><th>SKU</th>'
+      +'<th style="text-align:right">Sold</th><th style="text-align:right">Order</th></tr></thead><tbody>';
+    var shown=0;
+    P.rows.forEach(function(r){
+      if(st.model && r.model!==st.model) return;
+      r.skus.forEach(function(k){
+        shown++;
+        h+='<tr><td>'+esc(r.model)+'</td><td style="color:var(--muted)">'+esc(k.variant)+'</td>'
+          +'<td><span style="font-weight:700">'+esc(colourName(k.colour))+'</span></td>'
+          +'<td style="font-family:monospace;font-size:11px;color:var(--muted)">'+esc(k.sku)+'</td>'
+          +'<td style="text-align:right;color:var(--muted)">'+nf(k.hist)+'</td>'
+          +'<td style="text-align:right;font-weight:800;color:#a05bff">'+nf(k.qty)+'</td></tr>';
+      });
+    });
+    if(!shown) h+='<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px">Nothing to show &mdash; lower the drop threshold.</td></tr>';
+    h+='</tbody></table></div>';
+
+    /* ---------- trend: is demand moving? ---------- */
+    var byMonth={}, mods={};
+    REC.forEach(function(r){
+      if(st.counter && r.counter!==st.counter) return;
+      (byMonth[r.month]=byMonth[r.month]||{})[r.model]=((byMonth[r.month]||{})[r.model]||0)+r.units;
+      mods[r.model]=(mods[r.model]||0)+r.units;
+    });
+    var modOrder=Object.keys(mods).sort(function(a,b){ return mods[b]-mods[a]; });
+    var mlist=Object.keys(byMonth).sort();
+    if(mlist.length>1){
+      h+='<h3 style="margin-top:22px">Trend &mdash; units by model, month by month</h3>'
+        +'<p class="help-text">The order split above uses your chosen basis period. This shows whether that '
+        +'mix is steady or moving, so you can tell a real shift from a one-month blip.</p>'
+        +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Model</th>'
+        + mlist.map(function(m){ return '<th style="text-align:right">'+esc(m)+'</th>'; }).join('')
+        + '<th style="text-align:right">Total</th><th style="text-align:right">Latest vs first</th></tr></thead><tbody>';
+      modOrder.forEach(function(mo){
+        var first=(byMonth[mlist[0]]||{})[mo]||0, last=(byMonth[mlist[mlist.length-1]]||{})[mo]||0;
+        var dir = last>first ? '#2bd47d' : last<first ? '#ff5c5c' : 'var(--muted)';
+        var arrow = last>first ? '&#9650;' : last<first ? '&#9660;' : '&mdash;';
+        h+='<tr><td><strong>'+esc(mo)+'</strong></td>'
+          + mlist.map(function(m){ var v=(byMonth[m]||{})[mo]||0;
+              return '<td style="text-align:right'+(v?'':';color:var(--muted)')+'">'+nf(v)+'</td>'; }).join('')
+          + '<td style="text-align:right;font-weight:700">'+nf(mods[mo])+'</td>'
+          + '<td style="text-align:right;color:'+dir+';font-weight:700">'+arrow+' '+nf(first)+'&rarr;'+nf(last)+'</td></tr>';
+      });
+      h+='</tbody></table></div>';
+    }
+
+    /* ---------- colour preference, per model ---------- */
+    var cby={}, ctot={};
+    REC.forEach(function(r){
+      if(st.counter && r.counter!==st.counter) return;
+      (cby[r.model]=cby[r.model]||{})[r.colour]=((cby[r.model]||{})[r.colour]||0)+r.units;
+      ctot[r.colour]=(ctot[r.colour]||0)+r.units;
+    });
+    var colOrder=Object.keys(ctot).sort(function(a,b){ return ctot[b]-ctot[a]; });
+    var grand=colOrder.reduce(function(a,c){ return a+ctot[c]; },0);
+    if(colOrder.length){
+      h+='<h3 style="margin-top:22px">Colour preference</h3>'
+        +'<p class="help-text">Share of units by colour, per model. This is what decides the colour split in the '
+        +'order sheet above &mdash; a colour that sells 35% of a model gets 35% of that model\'s order.</p>'
+        +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Model</th>'
+        + colOrder.map(function(c){ return '<th style="text-align:right">'+esc(colourName(c))+'</th>'; }).join('')
+        + '<th style="text-align:right">Units</th></tr></thead><tbody>';
+      modOrder.forEach(function(mo){
+        var tot=mods[mo]||0;
+        h+='<tr><td><strong>'+esc(mo)+'</strong></td>'
+          + colOrder.map(function(c){
+              var v=(cby[mo]||{})[c]||0, pc=tot?Math.round(v/tot*100):0;
+              var strength = pc>=30 ? '#2bd47d' : pc>=15 ? '#ffb02e' : pc>0 ? 'var(--muted)' : 'var(--line)';
+              return '<td style="text-align:right;color:'+strength+(pc>=30?';font-weight:700':'')+'">'
+                     + (v ? nf(v)+'<br><span style="font-size:10px">'+pc+'%</span>' : '&mdash;')+'</td>';
+            }).join('')
+          + '<td style="text-align:right;font-weight:700">'+nf(tot)+'</td></tr>';
+      });
+      h+='<tr style="border-top:2px solid var(--line);font-weight:700"><td>ALL MODELS</td>'
+        + colOrder.map(function(c){ var pc=grand?Math.round(ctot[c]/grand*100):0;
+            return '<td style="text-align:right">'+nf(ctot[c])+'<br><span style="font-size:10px">'+pc+'%</span></td>'; }).join('')
+        + '<td style="text-align:right">'+nf(grand)+'</td></tr>';
+      h+='</tbody></table></div>';
+      var unnamed=colOrder.filter(function(c){ return !COLOUR_NAMES[c]; });
+      if(unnamed.length) h+='<p class="help-text" style="margin-top:8px">'
+        +'<b>'+unnamed.join(', ')+'</b> '+(unnamed.length===1?'is a colour code I':'are colour codes I')
+        +' have no name for, so '+(unnamed.length===1?'it is':'they are')+' shown as the code. Tell me what '
+        +(unnamed.length===1?'it is':'they are')+' and I will label '+(unnamed.length===1?'it':'them')+'.</p>';
+    }
+    h+='</div>';
+    root.innerHTML=h;
+    wire(P);
+  }
+
+  function wire(P){
+    function g(id){ return document.getElementById(id); }
+    if(g('vp-total')) g('vp-total').onchange=function(){ st.total=Math.max(0,parseInt(this.value)||0); st.ov={}; save(); render(); };
+    if(g('vp-period')) g('vp-period').onchange=function(){ st.period=this.value; st.ov={}; save(); render(); };
+    if(g('vp-counter')) g('vp-counter').onchange=function(){ st.counter=this.value; st.ov={}; save(); render(); };
+    if(g('vp-minq')) g('vp-minq').onchange=function(){ st.minq=Math.max(0,parseInt(this.value)||0); save(); render(); };
+    if(g('vp-reset')) g('vp-reset').onclick=function(){ st.ov={}; render(); };
+    Array.prototype.forEach.call(document.querySelectorAll('[data-vp-model]'),function(el){
+      el.onchange=function(){ st.ov[this.getAttribute('data-vp-model')]=Math.max(0,parseInt(this.value)||0); render(); };
+    });
+    if(g('vp-csv')) g('vp-csv').onclick=function(){
+      var rows=[['Model','Variant','Colour','SKU','Sold (basis)','Order qty']];
+      P.rows.forEach(function(r){ r.skus.forEach(function(k){
+        rows.push([r.model,k.variant,colourName(k.colour),k.sku,k.hist,k.qty]); }); });
+      var csv=rows.map(function(r){ return r.map(function(v){ return '"'+String(v==null?'':v).replace(/"/g,'""')+'"'; }).join(','); }).join('\n');
+      var blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'});
+      var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+      a.download='vida_order_sheet_'+(st.counter||'all')+'_'+new Date().toISOString().slice(0,10)+'.csv';
+      a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); },2000);
+    };
+  }
+
+  function ensureHost(){
+    var view=document.getElementById('view-orderplan'); if(!view) return false;
+    if(document.getElementById('vidaplan-root')) return true;
+    var d=document.createElement('div'); d.id='vidaplan-root'; d.style.marginTop='18px';
+    view.appendChild(d); return true;
+  }
+  var prev=window.setView;
+  window.setView=function(n){
+    var r=prev.apply(this,arguments);
+    if(n==='orderplan'){ setTimeout(function(){ if(ensureHost()) render(); },60); }
+    return r;
+  };
+  document.addEventListener('DOMContentLoaded',function(){ setTimeout(function(){ if(ensureHost()) render(); },900); });
+})();
+</script>
+
+</body> in index.html ===== -->
 <!-- Makes the dashboard pull the latest server feed on every open AND every 5 minutes, with no button click. -->
 <script>
 (function(){
