@@ -154,9 +154,10 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
       <div class="filters">
         <input class="filter-input" id="f-search" placeholder="Search customer / phone / email..." oninput="renderTable()"/>
         <select class="filter-select" id="f-stage" onchange="renderTable()"><option value="">All stages</option></select>
+        <select class="filter-select" id="f-status" onchange="renderTable()"><option value="">Any status</option><option value="open">Open only</option><option value="live">Open + Booked</option><option value="closed">Closed (Won/Lost)</option></select>
         <select class="filter-select" id="f-source" onchange="renderTable()"><option value="">All sources</option></select>
         <select class="filter-select" id="f-rep" onchange="renderTable()"><option value="">All reps</option></select>
-        <select class="filter-select" id="f-counter" onchange="renderTable()"><option value="">All counters</option></select>
+        <select class="filter-select" id="f-counter" onchange="fillRepFilter();renderTable()"><option value="">All counters</option></select>
         <select class="filter-select" id="f-segment" onchange="renderTable()"><option value="">All segments</option></select>
         <select class="filter-select" id="f-finance" onchange="renderTable()"><option value="">Finance: any</option><option value="Yes">Yes</option><option value="No">No</option></select>
         <select class="filter-select" id="f-financier" onchange="renderTable()"><option value="">All financiers</option></select>
@@ -182,6 +183,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
           <tbody id="enquiry-tbody"></tbody>
         </table>
       </div>
+      <div id="dse-summary" style="margin-top:14px"></div>
     </section>
     <section class="view" id="view-counters">
       <div class="filters" style="margin-bottom:14px;">
@@ -508,7 +510,76 @@ const CONFIG_KEY = 'hero-sales-config-v1';
 const DEFAULT_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzaw2WYGa5WHLNPH7PMSuXqnZkV5phKO1e01PPZda8YBsmgFHDJmcNetjV7_D8hc_-d/exec';
 
 const SOURCES = ['Walk-in','Website','Phone Call','WhatsApp','Facebook/Meta Ads','Google Ads','Referral','Auto Expo','Existing Customer'];
+// ── Source buckets ───────────────────────────────────────────
+// The registers and the DMS between them write ~30 different source strings
+// ("Walk-In", "Walk In", "Hero Sure Leads", "Cloud Telephony", "Digital Local"…).
+// Filtering on the raw text meant most options matched nothing: the dropdown
+// offered "Walk-in" from the built-in list while the data said "Walk In", so
+// picking it returned "No enquiries match your filters".
+// Every source now lands in one of four buckets. Order matters - the first
+// pattern that matches wins.
+const SOURCE_BUCKETS = [
+  { label: 'CSD',          re: /\bcsd\b|canteen/i },
+  { label: 'EXCHANGE',     re: /exchange|exch\b|\bex\b/i },
+  { label: 'CALL TRACKER', re: /call|telephon|cloud|sure\s*lead|digital|\bweb|online|facebook|meta|google|bikedekho|91wheels|justdial|whatsapp|\bbot\b|ctwa|inbound|e-?mail|\bsms\b|\bivr\b|lead|nurture|hyperlocal|\bcrm\b/i },
+  { label: 'WALK IN',      re: /walk|show\s*room|counter|field|activity|asli|refer|refrence|reference|campaign|impact|\brse\b|\bmbo\b|w\/s|existing|cross\s*sell|expo|scrap|financer|financier/i }
+];
+const SOURCE_OTHER = 'OTHER';
+function bucketSource(v) {
+  const t = String(v == null ? '' : v).trim();
+  if (!t) return SOURCE_OTHER;
+  for (let i = 0; i < SOURCE_BUCKETS.length; i++) {
+    if (SOURCE_BUCKETS[i].re.test(t)) return SOURCE_BUCKETS[i].label;
+  }
+  return SOURCE_OTHER;
+}
+// A filter must never offer a choice that matches nothing. Build the list from
+// what the data actually contains, and only show OTHER when something landed
+// there - that way nothing disappears silently.
+// The DSE list is long. Group it by the counter each person actually logs
+// enquiries at, and narrow it to one counter when a counter is selected -
+// picking a rep out of a flat list of everybody is unusable.
+function repsByCounter() {
+  const map = {};
+  (enquiries || []).forEach(e => {
+    const r = String(e && e.rep != null ? e.rep : '').trim();
+    if (!r || JUNK_VALUE.test(r)) return;
+    const c = String(e.counter || '').trim() || '(no counter)';
+    (map[c] = map[c] || new Set()).add(r);
+  });
+  return map;
+}
+function fillRepFilter() {
+  const sel = document.getElementById('f-rep'); if (!sel) return;
+  const keep = sel.value;
+  const chosenCounter = (document.getElementById('f-counter') || {}).value || '';
+  const byC = repsByCounter();
+  sel.innerHTML = '<option value="">All DSE</option>';
+  Object.keys(byC).sort().forEach(c => {
+    if (chosenCounter && c !== chosenCounter) return;
+    const names = Array.from(byC[c]).sort((a, b) => a.localeCompare(b));
+    if (!names.length) return;
+    const g = document.createElement('optgroup');
+    g.label = c + '  (' + names.length + ')';
+    names.forEach(n => { const o = document.createElement('option'); o.value = n; o.textContent = n; g.appendChild(o); });
+    sel.appendChild(g);
+  });
+  // keep the current pick if it is still on offer
+  sel.value = keep;
+  if (sel.value !== keep) sel.value = '';
+}
+
+function sourceFilterOptions() {
+  const present = new Set();
+  (enquiries || []).forEach(e => present.add(bucketSource(e.source)));
+  const out = SOURCE_BUCKETS.map(b => b.label).filter(l => present.has(l));
+  if (present.has(SOURCE_OTHER)) out.push(SOURCE_OTHER);
+  return out;
+}
 const STAGES = ['New','Contacted','Qualified','Test Drive','Negotiation','Booked','Won','Lost'];
+// Still being worked. Booked is deliberately NOT here - it is committed but not
+// invoiced, so it gets its own choice in the status filter.
+const OPEN_STAGES = ['New','Contacted','Qualified','Test Drive','Negotiation'];
 const ACTIVE_STAGES = ['New','Contacted','Qualified','Test Drive','Negotiation','Booked'];
 const BOOKED_STAGE = 'Booked';
 const STALE_DAYS = 7;
@@ -786,8 +857,8 @@ function unionData(field, base) {
   return Array.from(map.values()).sort((a,b)=>String(a).localeCompare(String(b)));
 }
 function refreshAllSelects() {
-  populateSelect('f-stage',STAGES,true,'All stages'); populateSelect('f-source',unionData('source',SOURCES),true,'All sources');
-  populateSelect('f-rep',unionData('rep',config.reps),true,'All reps'); populateSelect('f-counter',unionData('counter',config.counters),true,'All counters');
+  populateSelect('f-stage',STAGES,true,'All stages'); populateSelect('f-source',sourceFilterOptions(),true,'All sources');
+  fillRepFilter(); populateSelect('f-counter',unionData('counter',config.counters),true,'All counters');
   populateSelect('f-financier',unionData('financier',config.financiers),true,'All financiers');
   populateSelect('f-segment',segmentsInData(),true,'All segments');
   populateSelect('vm-leakage-counter',unionData('counter',config.counters),true,'All counters');
@@ -1039,9 +1110,72 @@ function drawChart(id, type, data, options) {
 }
 
 /* ====================== ENQUIRIES TABLE ====================== */
+// Per-DSE performance for whatever the filters are currently showing. It reads
+// the FILTERED list, so narrowing to a counter and a month gives you that
+// slice's DSE comparison rather than a fixed all-time table.
+function renderDseSummary(list) {
+  const box = document.getElementById('dse-summary'); if (!box) return;
+  if (!list || !list.length) { box.innerHTML = ''; return; }
+
+  const by = {};
+  list.forEach(e => {
+    const r = String(e.rep || '').trim() || '(unassigned)';
+    const s = by[r] || (by[r] = { rep: r, counters: {}, enq: 0, open: 0, booked: 0, won: 0, lost: 0 });
+    s.enq++;
+    if (e.counter) s.counters[e.counter] = 1;
+    if (OPEN_STAGES.includes(e.stage)) s.open++;
+    else if (e.stage === 'Booked') s.booked++;
+    else if (e.stage === 'Won') s.won++;
+    else if (e.stage === 'Lost') s.lost++;
+  });
+
+  const rows = Object.keys(by).map(k => by[k]).sort((a, b) => b.won - a.won || b.enq - a.enq);
+  const tot = rows.reduce((a, r) => ({
+    enq: a.enq + r.enq, open: a.open + r.open, booked: a.booked + r.booked,
+    won: a.won + r.won, lost: a.lost + r.lost
+  }), { enq: 0, open: 0, booked: 0, won: 0, lost: 0 });
+
+  const pct = (n, d) => d ? Math.round(n / d * 100) : 0;
+  const best = rows.length ? Math.max.apply(null, rows.map(r => pct(r.won, r.enq))) : 0;
+
+  let h = '<div class="card"><h3>DSE performance &mdash; current filter</h3>'
+    + '<p class="help-text">Every figure below reflects the filters above. '
+    + rows.length + ' DSE across ' + tot.enq + ' enquir' + (tot.enq === 1 ? 'y' : 'ies') + '.</p>'
+    + '<div style="overflow-x:auto"><table class="table"><thead><tr>'
+    + '<th>DSE</th><th>Counter</th><th style="text-align:right">Enquiries</th>'
+    + '<th style="text-align:right">Open</th><th style="text-align:right">Booked</th>'
+    + '<th style="text-align:right">Won</th><th style="text-align:right">Lost</th>'
+    + '<th style="text-align:right">Conv%</th></tr></thead><tbody>';
+
+  rows.forEach(r => {
+    const c = pct(r.won, r.enq);
+    const col = c >= best && best > 0 ? '#2bd47d' : c >= best * 0.6 ? '#ffb02e' : '#ff5c5c';
+    h += '<tr><td><strong>' + escapeHtml(r.rep) + '</strong></td>'
+      + '<td style="color:var(--muted);font-size:11px">' + escapeHtml(Object.keys(r.counters).sort().join(', ')) + '</td>'
+      + '<td style="text-align:right">' + r.enq + '</td>'
+      + '<td style="text-align:right">' + r.open + '</td>'
+      + '<td style="text-align:right;color:#a05bff">' + r.booked + '</td>'
+      + '<td style="text-align:right;color:#2bd47d">' + r.won + '</td>'
+      + '<td style="text-align:right;color:#ff5c5c">' + r.lost + '</td>'
+      + '<td style="text-align:right;font-weight:700;color:' + col + '">' + c + '%</td></tr>';
+  });
+
+  h += '<tr style="border-top:2px solid var(--line);font-weight:700">'
+    + '<td>TOTAL</td><td></td>'
+    + '<td style="text-align:right">' + tot.enq + '</td>'
+    + '<td style="text-align:right">' + tot.open + '</td>'
+    + '<td style="text-align:right">' + tot.booked + '</td>'
+    + '<td style="text-align:right">' + tot.won + '</td>'
+    + '<td style="text-align:right">' + tot.lost + '</td>'
+    + '<td style="text-align:right">' + pct(tot.won, tot.enq) + '%</td></tr>';
+
+  box.innerHTML = h + '</tbody></table></div></div>';
+}
+
 function renderTable() {
   const s=document.getElementById('f-search')?.value.toLowerCase()||'';
   const stg=document.getElementById('f-stage')?.value||'';
+  const sts=document.getElementById('f-status')?.value||'';
   const src=document.getElementById('f-source')?.value||'';
   const rep=document.getElementById('f-rep')?.value||'';
   const ctr=document.getElementById('f-counter')?.value||'';
@@ -1054,7 +1188,18 @@ function renderTable() {
   let list = enquiries.filter(e => {
     if (s && !['customer','phone','email','model','notes'].some(k=>(e[k]||'').toLowerCase().includes(s))) return false;
     if (stg && e.stage!==stg) return false;
-    if (src && !eqv(e.source,src)) return false;
+    if (sts) {
+      // "Open" is everything still being worked; Booked is separated because a
+      // booked unit is committed but not yet invoiced.
+      const st = e.stage;
+      const isOpen   = OPEN_STAGES.includes(st);
+      const isBooked = st === 'Booked';
+      const isClosed = (st === 'Won' || st === 'Lost');
+      if (sts === 'open'   && !isOpen) return false;
+      if (sts === 'live'   && !(isOpen || isBooked)) return false;
+      if (sts === 'closed' && !isClosed) return false;
+    }
+    if (src && bucketSource(e.source)!==src) return false;
     if (rep && !eqv(e.rep,rep)) return false;
     if (ctr && !eqv(e.counter,ctr)) return false;
     if (seg && segmentOf(e.model)!==seg) return false;
@@ -1065,6 +1210,7 @@ function renderTable() {
     return true;
   });
   lastFilteredIds = list.map(e=>e.id);
+  renderDseSummary(list);
   const tbody = document.getElementById('enquiry-tbody'); if (!tbody) return;
   if (!list.length) { tbody.innerHTML='<tr><td colspan="13" style="text-align:center;color:var(--muted);padding:24px;">No enquiries match your filters.</td></tr>'; return; }
   tbody.innerHTML = list.map(e => {
@@ -1093,7 +1239,7 @@ function renderTable() {
   updateBulkBar();
 }
 function clearFilters() {
-  ['f-search','f-stage','f-source','f-rep','f-counter','f-segment','f-finance','f-financier','f-exchange-filter','f-month'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['f-search','f-stage','f-status','f-source','f-rep','f-counter','f-segment','f-finance','f-financier','f-exchange-filter','f-month'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   renderTable();
 }
 function toggleSelect(id,checked) { if(checked) selectedIds.add(id); else selectedIds.delete(id); updateBulkBar(); }
@@ -1505,8 +1651,8 @@ function initApp() {
   refreshAllSelects();
   refreshMonthOptions();
   populateSelect('f-stage',STAGES,true,'All stages');
-  populateSelect('f-source',unionData('source',SOURCES),true,'All sources');
-  populateSelect('f-rep',unionData('rep',config.reps),true,'All reps');
+  populateSelect('f-source',sourceFilterOptions(),true,'All sources');
+  fillRepFilter();
   populateSelect('f-counter',unionData('counter',config.counters),true,'All counters');
   populateSelect('f-financier',unionData('financier',config.financiers),true,'All financiers');
   document.querySelectorAll('.nav-item').forEach(btn=>{
