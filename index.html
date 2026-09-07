@@ -2165,7 +2165,7 @@ document.addEventListener('DOMContentLoaded', initApp);
   var LYNET=(F100.total._network||{}).ly||0, LYTOT=(F100.total._total||{}).ly||0;
 
   var st={ total:3800, netPct: LYTOT? Math.round(LYNET/LYTOT*1000)/10 : 44.5,
-           ov:{}, segov:{}, counter:'', segment:'', model:'', minq:1, view:'plan' };
+           ov:{}, segov:{}, counter:'', segment:'', model:'', minq:1, cover:15, view:'plan' };
   try{ var sv=localStorage.getItem(KEY); if(sv){ var o=JSON.parse(sv); for(var k in o) st[k]=o[k]; } }catch(e){}
   function save(){ try{ localStorage.setItem(KEY,JSON.stringify(st)); }catch(e){} }
   function esc(x){ return String(x==null?'':x).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
@@ -2179,6 +2179,37 @@ document.addEventListener('DOMContentLoaded', initApp);
     var rem=total-used;
     keys.sort(function(a,b){ return (raw[b]-out[b])-(raw[a]-out[a]); });
     for(var i=0; rem>0; i++, rem--) out[keys[i%keys.length]]++;
+    return out;
+  }
+
+  /* ---------- stock in hand, read from the ops store ---------- */
+  // Stock is held by MODEL and LOCATION, never by SKU/colour. So the model
+  // figure is a real count; the colour figure is that count apportioned by the
+  // same selling mix. The table labels it as an estimate rather than letting an
+  // apportioned number look like a stock count.
+  var LOC2CTR = { 'Napier Town':'Napier Town', 'Madan Mahal':'MML (ICE)', 'Damoh Naka':'DN',
+                  'Adhartal':'Adhartal' };
+  var SHARED_LOCS = ['Godown','Festival Counter-DC'];
+  function opsStock(){
+    try{
+      var raw=localStorage.getItem('hero-ops-v1'); if(!raw) return null;
+      var o=JSON.parse(raw); return (o && o.stock && o.stock.length) ? o : null;
+    }catch(e){ return null; }
+  }
+  function normModel(m){ return String(m==null?'':m).toUpperCase().replace(/[^A-Z0-9]/g,''); }
+  function stockByCounterModel(){
+    var O=opsStock(); if(!O) return null;
+    var out={ byCtr:{}, shared:{}, total:0, sharedTotal:0, locsSeen:{} };
+    (O.stock||[]).forEach(function(r){
+      var q=+r.qty||0; if(!q) return;
+      var loc=String(r.loc==null?'':r.loc).trim();
+      var key=normModel(r.model);
+      out.locsSeen[loc]=1;
+      var ctr=LOC2CTR[loc];
+      if(ctr){ (out.byCtr[ctr]=out.byCtr[ctr]||{})[key]=((out.byCtr[ctr]||{})[key]||0)+q; out.total+=q; }
+      else { out.shared[key]=(out.shared[key]||0)+q; out.sharedTotal+=q; }
+    });
+    out.updatedAt = O.updatedAt || '';
     return out;
   }
 
@@ -2258,6 +2289,8 @@ document.addEventListener('DOMContentLoaded', initApp);
   /* ---------- render ---------- */
   function render(){
     var root=document.getElementById('f100-root'); if(!root) return;
+    // read stock first - the header text describes it, so it must exist by then
+    var SK = stockByCounterModel();
     var CT=counterTargets(), growthAll = pc(st.total-LYTOT, LYTOT);
     var h='<div class="card" style="border-left:4px solid #ffb02e">'
       +'<h3>&#127881; Festival 100 &mdash; target, growth and stock by counter</h3>'
@@ -2273,6 +2306,8 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'<input type="number" id="f1-net" value="'+st.netPct+'" min="0" max="100" step="0.5" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--text)"></div>'
       +'<div><label class="help-text">Drop SKUs under (qty)</label>'
       +'<input type="number" id="f1-minq" value="'+st.minq+'" min="0" step="1" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--text)"></div>'
+      +'<div><label class="help-text">Cover buffer (days)</label>'
+      +'<input type="number" id="f1-cover" value="'+st.cover+'" min="0" max="60" step="1" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--text)"></div>'
       +'</div>'
       +'<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:6px">'
       + kpi(nf(st.total), 'F100 target', '#ffb02e', (growthAll>=0?'+':'')+growthAll+'% vs LY '+nf(LYTOT))
@@ -2341,9 +2376,21 @@ document.addEventListener('DOMContentLoaded', initApp);
     if(st.model && modelOpts.indexOf(st.model)<0) st.model='';
 
     h+='<h3 style="margin-top:22px">Stock needed &mdash; by counter, segment, model, colour</h3>'
-      +'<p class="help-text">This is what goes to each counter manager. Every line is a SKU with its colour and the '
-      +'quantity that counter should hold for the 100 days. The filters below narrow both what you see and what the '
-      +'export contains, so a manager gets exactly their own sheet.</p>'
+      +'<p class="help-text"><b>LY here</b> is what that counter sold of that SKU last festive season. '
+      +'<b>Need</b> is the retail target for that SKU at that counter over the 100 days &mdash; '
+      +'how many to SELL, not what to hold. <b>In stock</b> is what is on that counter\'s floor now. '
+      +'<b>To order</b> = Need + '+st.cover+' days of cover &minus; stock in hand, floored at zero. '
+      +'The filters narrow both what you see and what the export contains, so a manager gets exactly their own sheet.</p>'
+      + (SK
+          ? '<p class="help-text">*LY here is the dealership\'s festive SKU history scaled to this counter\'s share of LY F100, '
+            +'because that history is not held per counter. Stock is held by <b>model and location</b>, never by colour. The model figure is a real '
+            +'count; the colour figure is that count shared out in the same proportion the colours sell, so treat it as an '
+            +'estimate. Counter stock read: <b>'+nf(SK.total)+'</b> units'
+            + (SK.sharedTotal ? ', plus <b>'+nf(SK.sharedTotal)+'</b> in godown / DC which is NOT counted against any counter' : '')
+            + (SK.updatedAt ? ' &middot; '+esc(SK.updatedAt) : '')+'.</p>'
+          : '<p class="help-text" style="color:#ffb02e">*LY here is scaled to this counter\'s share of LY F100. '
+            +'No stock feed loaded, so <b>In stock</b> and <b>To order</b> are blank. '
+            +'Load stock in the Ops / Stock tab and they fill in automatically.</p>')
       +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0 4px">'
       +'<select class="filter-select" id="f1-counter"><option value="">All counters</option>'
       + COUNTERS.map(function(c){ return '<option value="'+esc(c)+'"'+(st.counter===c?' selected':'')+'>'+esc(c)+'</option>'; }).join('')
@@ -2357,7 +2404,7 @@ document.addEventListener('DOMContentLoaded', initApp);
       + ((st.counter||st.segment||st.model) ? '<button class="btn" id="f1-clear">Clear</button>' : '')
       +'<button class="btn btn-primary" id="f1-csv2" title="Download exactly the lines shown below">&#11015;&#65039; Export this sheet</button>'
       +'<span style="flex:1"></span><span class="help-text" id="f1-subtotal"></span></div>';
-    var shownTotal=0, shownLines=0;
+    var shownTotal=0, shownLines=0, shownOrder=0;
     list.forEach(function(c){
       var q=CT.byCounter[c]||0; if(!q) return;
       var P=planFor(q).filter(function(sg){ return !st.segment || sg.seg===st.segment; })
@@ -2370,18 +2417,37 @@ document.addEventListener('DOMContentLoaded', initApp);
         +' <span class="help-text">(LY '+nf(LYC[c]||0)+', '+(pc(q-(LYC[c]||0),LYC[c]||0)>=0?'+':'')+pc(q-(LYC[c]||0),LYC[c]||0)+'%)</span></div>'
         +'<div style="overflow-x:auto"><table class="table"><thead><tr>'
         +'<th>Segment</th><th>Model</th><th>Variant</th><th>Colour</th><th>SKU</th>'
-        +'<th style="text-align:right">LY</th><th style="text-align:right">Need</th></tr></thead><tbody>';
+        +'<th style="text-align:right">LY here*</th><th style="text-align:right">Need</th>'
+        +'<th style="text-align:right">In stock*</th><th style="text-align:right">To order</th></tr></thead><tbody>';
       var n=0;
-      P.forEach(function(sg){ sg.models.forEach(function(m){ m.skus.forEach(function(k){
-        n++; shownLines++; shownTotal+=k.qty;
-        h+='<tr><td>'+esc(sg.label)+'</td><td>'+esc(m.model)+'</td>'
-          +'<td style="color:var(--muted);font-size:11px">'+esc(k.variant)+'</td>'
-          +'<td><strong>'+esc(k.colour)+'</strong></td>'
-          +'<td style="font-family:monospace;font-size:11px;color:var(--muted)">'+esc(k.sku)+'</td>'
-          +'<td style="text-align:right;color:var(--muted)">'+nf(k.ly)+'</td>'
-          +'<td style="text-align:right;font-weight:800;color:#ffb02e">'+nf(k.qty)+'</td></tr>';
-      }); }); });
-      if(!n) h+='<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:16px">Nothing above the drop threshold.</td></tr>';
+      // LY has to be on the same footing as Need. The festive SKU history is
+      // dealership-wide, so it is scaled to this counter's share of LY F100 -
+      // otherwise the column shows all counters next to one counter's target.
+      var lyFactor = LYCTR ? (LYC[c]||0)/LYCTR : 0;
+      P.forEach(function(sg){ sg.models.forEach(function(m){
+        var mStock = SK ? ((SK.byCtr[c]||{})[normModel(m.model)]||0) : null;
+        var mNeed  = m.skus.reduce(function(a,x){ return a+x.qty; },0);
+        m.skus.forEach(function(k){
+          n++; shownLines++; shownTotal+=k.qty;
+          // the model's stock, shared out across its colours in the same
+          // proportion those colours sell
+          var kStock = (mStock==null||!mNeed) ? null : Math.round(mStock * k.qty / mNeed);
+          var target = k.qty + Math.round(k.qty * st.cover / 100);
+          var order  = (kStock==null) ? null : Math.max(0, target - kStock);
+          if(order!=null) shownOrder += order;
+          h+='<tr><td>'+esc(sg.label)+'</td><td>'+esc(m.model)+'</td>'
+            +'<td style="color:var(--muted);font-size:11px">'+esc(k.variant)+'</td>'
+            +'<td><strong>'+esc(k.colour)+'</strong></td>'
+            +'<td style="font-family:monospace;font-size:11px;color:var(--muted)">'+esc(k.sku)+'</td>'
+            +'<td style="text-align:right;color:var(--muted)">'+nf(Math.round(k.ly*lyFactor))+'</td>'
+            +'<td style="text-align:right;font-weight:700;color:#ffb02e">'+nf(k.qty)+'</td>'
+            +'<td style="text-align:right;color:'+(kStock==null?'var(--line)':(kStock?'#5b9eff':'var(--muted)'))+'">'
+              +(kStock==null?'&mdash;':nf(kStock))+'</td>'
+            +'<td style="text-align:right;font-weight:800;color:'+(order==null?'var(--line)':(order>0?'#2bd47d':'var(--muted)'))+'">'
+              +(order==null?'&mdash;':nf(order))+'</td></tr>';
+        });
+      }); });
+      if(!n) h+='<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px">Nothing above the drop threshold.</td></tr>';
       h+='</tbody></table></div>';
     });
     if(!shownLines) h+='<p class="help-text" style="padding:14px;text-align:center">Nothing matches those filters.</p>';
@@ -2404,7 +2470,8 @@ document.addEventListener('DOMContentLoaded', initApp);
     root.innerHTML=h;
     var sub=document.getElementById('f1-subtotal');
     if(sub) sub.innerHTML = shownLines
-      ? 'Showing <b>'+nf(shownLines)+'</b> SKU line(s), <b style="color:#ffb02e">'+nf(shownTotal)+'</b> units'
+      ? 'Showing <b>'+nf(shownLines)+'</b> SKU line(s) &middot; need <b style="color:#ffb02e">'+nf(shownTotal)+'</b>'
+        + (SK ? ' &middot; to order <b style="color:#2bd47d">'+nf(shownOrder)+'</b>' : '')
       : '';
     wire(CT);
   }
@@ -2427,6 +2494,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     if(g('f1-total')) g('f1-total').onchange=function(){ st.total=Math.max(0,parseInt(this.value)||0); st.ov={}; save(); render(); };
     if(g('f1-net')) g('f1-net').onchange=function(){ st.netPct=Math.min(100,Math.max(0,parseFloat(this.value)||0)); st.ov={}; save(); render(); };
     if(g('f1-minq')) g('f1-minq').onchange=function(){ st.minq=Math.max(0,parseInt(this.value)||0); save(); render(); };
+    if(g('f1-cover')) g('f1-cover').onchange=function(){ st.cover=Math.max(0,parseInt(this.value)||0); save(); render(); };
     if(g('f1-counter')) g('f1-counter').onchange=function(){ st.counter=this.value; save(); render(); };
     if(g('f1-seg')) g('f1-seg').onchange=function(){ st.segment=this.value; st.model=''; save(); render(); };
     if(g('f1-model')) g('f1-model').onchange=function(){ st.model=this.value; save(); render(); };
@@ -2440,14 +2508,22 @@ document.addEventListener('DOMContentLoaded', initApp);
     });
     function exportStockSheet(){
       var rows=[];
+      var SKx = stockByCounterModel();
       (st.counter?[st.counter]:COUNTERS).forEach(function(c){
         var q=CT.byCounter[c]||0; if(!q) return;
         planFor(q).forEach(function(sg){
           if(st.segment && sg.seg!==st.segment) return;
           sg.models.forEach(function(m){
             if(st.model && m.model!==st.model) return;
+            var mStock = SKx ? ((SKx.byCtr[c]||{})[normModel(m.model)]||0) : null;
+            var mNeed  = m.skus.reduce(function(a,x){ return a+x.qty; },0);
+            var lyF    = LYCTR ? (LYC[c]||0)/LYCTR : 0;
             m.skus.forEach(function(k){
-              rows.push([c, sg.label, m.model, k.variant, k.colour, k.sku, k.ly, k.qty]);
+              var kStock = (mStock==null||!mNeed) ? '' : Math.round(mStock*k.qty/mNeed);
+              var target = k.qty + Math.round(k.qty*st.cover/100);
+              var order  = (kStock==='') ? '' : Math.max(0, target-kStock);
+              rows.push([c, sg.label, m.model, k.variant, k.colour, k.sku,
+                         Math.round(k.ly*lyF), k.ly, k.qty, kStock, order]);
             });
           });
         });
@@ -2455,7 +2531,8 @@ document.addEventListener('DOMContentLoaded', initApp);
       var tag=[st.counter||'all-counters', st.segment, st.model].filter(Boolean).join('-').replace(/[^A-Za-z0-9]+/g,'-');
       if(!rows.length){ try{ showToast('Nothing to export for those filters.'); }catch(e){} return; }
       csvDownload('festival100_stock_'+tag+'_'+new Date().toISOString().slice(0,10)+'.csv',
-        ['Counter','Segment','Model','Variant','Colour','SKU','LY festive units','Stock needed'], rows);
+        ['Counter','Segment','Model','Variant','Colour','SKU','LY at this counter (est)',
+         'LY dealership total','Need (retail)','In stock (est)','To order (+'+st.cover+'d cover)'], rows);
       try{ showToast('Exported '+rows.length+' line(s)'+(tag!=='all-counters'?' - '+tag.replace(/-/g,' '):'')+'.'); }catch(e){}
     }
     if(g('f1-csv'))  g('f1-csv').onclick  = exportStockSheet;
