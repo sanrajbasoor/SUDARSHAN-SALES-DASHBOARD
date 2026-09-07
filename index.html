@@ -114,7 +114,9 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
         <div class="menu-wrap">
           <button class="btn" onclick="toggleMenu('export-menu')">Export &#9662;</button>
           <div class="menu" id="export-menu">
-            <button class="menu-item" onclick="closeMenus();exportCSV();">CSV (for Google Sheets)</button>
+            <button class="menu-item" onclick="closeMenus();exportFilteredCSV();">CSV &mdash; current filter</button>
+            <button class="menu-item" onclick="closeMenus();exportDseSummaryCSV();">CSV &mdash; DSE performance</button>
+            <button class="menu-item" onclick="closeMenus();exportCSV();">CSV &mdash; everything</button>
             <button class="menu-item" onclick="closeMenus();exportJSON();">JSON Backup (full)</button>
           </div>
         </div>
@@ -154,6 +156,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
       <div class="filters">
         <input class="filter-input" id="f-search" placeholder="Search customer / phone / email..." oninput="renderTable()"/>
         <select class="filter-select" id="f-stage" onchange="renderTable()"><option value="">All stages</option></select>
+        <select class="filter-select" id="f-hot" onchange="renderTable()"><option value="">Hot: any</option><option value="1">&#128293; Hot only</option><option value="0">Not hot</option></select>
         <select class="filter-select" id="f-status" onchange="renderTable()"><option value="">Any status</option><option value="open">Open only</option><option value="live">Open + Booked</option><option value="closed">Closed (Won/Lost)</option></select>
         <select class="filter-select" id="f-source" onchange="renderTable()"><option value="">All sources</option></select>
         <select class="filter-select" id="f-rep" onchange="renderTable()"><option value="">All reps</option></select>
@@ -163,6 +166,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
         <select class="filter-select" id="f-financier" onchange="renderTable()"><option value="">All financiers</option></select>
         <select class="filter-select" id="f-exchange-filter" onchange="renderTable()"><option value="">Exchange: any</option><option value="Yes">Exchange only</option><option value="No">No exchange</option></select>
         <select class="filter-select" id="f-month" onchange="renderTable()"><option value="">All months</option></select>
+        <button class="btn" onclick="exportFilteredCSV()" title="Download exactly the rows shown below">&#11015; Export filtered</button>
         <button class="btn btn-sm" onclick="clearFilters()">Clear</button>
       </div>
       <div id="bulk-bar" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:10px 14px;margin-bottom:10px;background:var(--panel-2);border:1px solid var(--accent);border-radius:10px;">
@@ -576,10 +580,17 @@ function sourceFilterOptions() {
   if (present.has(SOURCE_OTHER)) out.push(SOURCE_OTHER);
   return out;
 }
-const STAGES = ['New','Contacted','Qualified','Test Drive','Negotiation','Booked','Won','Lost'];
+const STAGES = ['Open','Booked','Won','Lost'];
 // Still being worked. Booked is deliberately NOT here - it is committed but not
 // invoiced, so it gets its own choice in the status filter.
-const OPEN_STAGES = ['New','Contacted','Qualified','Test Drive','Negotiation'];
+const OPEN_STAGES = ['Open'];
+// "Hot" is a flag, not a stage - a lead can be Open AND Hot, which is exactly
+// the list a DSE should be working. Accepts whatever shape the payload carries.
+function isHot(e){
+  const v = e && e.hot;
+  if (v === true) return true;
+  return /^(1|y|yes|true|hot)$/i.test(String(v == null ? '' : v).trim());
+}
 const ACTIVE_STAGES = ['New','Contacted','Qualified','Test Drive','Negotiation','Booked'];
 const BOOKED_STAGE = 'Booked';
 const STALE_DAYS = 7;
@@ -730,11 +741,11 @@ function normStage(v){
   if(/\b(won|sold|retail(ed)?|deliver(ed)?|invoiced|billed)\b/.test(lc) || /\b(mml|nt|dn|at|hub|premia)\s*sold\b/.test(lc)) return 'Won';
   if(/\b(lost|closed?|dead|duplicate|invalid|cancel(led)?|rejected|not\s*interested|drop(ped)?)\b/.test(lc)) return 'Lost';
   if(/\bbook(ed|ing)?\b/.test(lc)) return 'Booked';
-  if(/negotiat/.test(lc)) return 'Negotiation';
-  if(/test\s*ride|test\s*drive|\btd\b/.test(lc)) return 'Test Drive';
-  if(/qualif/.test(lc)) return 'Qualified';
-  if(/contact|follow\s*-?\s*up|call\s*back/.test(lc)) return 'Contacted';
-  if(/\b(new|open|enquiry|enquiries|fresh|hot|warm|cold|pending)\b/.test(lc)) return 'New';
+  if(/negotiat|test\s*ride|test\s*drive|\btd\b|qualif|contact|follow\s*-?\s*up|call\s*back/.test(lc)) return 'Open';
+  // Everything still being worked is Open. This also folds the OLD five-stage
+  // vocabulary (New / Contacted / Qualified / Test Drive / Negotiation) forward,
+  // so a payload saved before the change still reads correctly.
+  if(/\b(new|open|enquiry|enquiries|fresh|hot|warm|cold|pending|contacted|qualified|negotiation|test\s*drive|follow\s*-?\s*up|call\s*back|cnr|postponed|interested)\b/.test(lc)) return 'Open';
   for(var i=0;i<STAGES.length;i++){ if(STAGES[i].toLowerCase()===lc) return STAGES[i]; }
   return t;
 }
@@ -1120,8 +1131,9 @@ function renderDseSummary(list) {
   const by = {};
   list.forEach(e => {
     const r = String(e.rep || '').trim() || '(unassigned)';
-    const s = by[r] || (by[r] = { rep: r, counters: {}, enq: 0, open: 0, booked: 0, won: 0, lost: 0 });
+    const s = by[r] || (by[r] = { rep: r, counters: {}, enq: 0, open: 0, hot: 0, booked: 0, won: 0, lost: 0 });
     s.enq++;
+    if (isHot(e)) s.hot++;
     if (e.counter) s.counters[e.counter] = 1;
     if (OPEN_STAGES.includes(e.stage)) s.open++;
     else if (e.stage === 'Booked') s.booked++;
@@ -1131,19 +1143,21 @@ function renderDseSummary(list) {
 
   const rows = Object.keys(by).map(k => by[k]).sort((a, b) => b.won - a.won || b.enq - a.enq);
   const tot = rows.reduce((a, r) => ({
-    enq: a.enq + r.enq, open: a.open + r.open, booked: a.booked + r.booked,
-    won: a.won + r.won, lost: a.lost + r.lost
-  }), { enq: 0, open: 0, booked: 0, won: 0, lost: 0 });
+    enq: a.enq + r.enq, open: a.open + r.open, hot: a.hot + r.hot,
+    booked: a.booked + r.booked, won: a.won + r.won, lost: a.lost + r.lost
+  }), { enq: 0, open: 0, hot: 0, booked: 0, won: 0, lost: 0 });
 
   const pct = (n, d) => d ? Math.round(n / d * 100) : 0;
   const best = rows.length ? Math.max.apply(null, rows.map(r => pct(r.won, r.enq))) : 0;
 
-  let h = '<div class="card"><h3>DSE performance &mdash; current filter</h3>'
+  let h = '<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+    + '<h3 style="margin:0">DSE performance &mdash; current filter</h3>'
+    + '<button class="btn" onclick="exportDseSummaryCSV()">&#11015; Export this table</button></div>'
     + '<p class="help-text">Every figure below reflects the filters above. '
     + rows.length + ' DSE across ' + tot.enq + ' enquir' + (tot.enq === 1 ? 'y' : 'ies') + '.</p>'
     + '<div style="overflow-x:auto"><table class="table"><thead><tr>'
     + '<th>DSE</th><th>Counter</th><th style="text-align:right">Enquiries</th>'
-    + '<th style="text-align:right">Open</th><th style="text-align:right">Booked</th>'
+    + '<th style="text-align:right">Open</th><th style="text-align:right">&#128293; Hot</th><th style="text-align:right">Booked</th>'
     + '<th style="text-align:right">Won</th><th style="text-align:right">Lost</th>'
     + '<th style="text-align:right">Conv%</th></tr></thead><tbody>';
 
@@ -1154,6 +1168,7 @@ function renderDseSummary(list) {
       + '<td style="color:var(--muted);font-size:11px">' + escapeHtml(Object.keys(r.counters).sort().join(', ')) + '</td>'
       + '<td style="text-align:right">' + r.enq + '</td>'
       + '<td style="text-align:right">' + r.open + '</td>'
+      + '<td style="text-align:right;color:#ff7a5c">' + r.hot + '</td>'
       + '<td style="text-align:right;color:#a05bff">' + r.booked + '</td>'
       + '<td style="text-align:right;color:#2bd47d">' + r.won + '</td>'
       + '<td style="text-align:right;color:#ff5c5c">' + r.lost + '</td>'
@@ -1164,6 +1179,7 @@ function renderDseSummary(list) {
     + '<td>TOTAL</td><td></td>'
     + '<td style="text-align:right">' + tot.enq + '</td>'
     + '<td style="text-align:right">' + tot.open + '</td>'
+    + '<td style="text-align:right">' + tot.hot + '</td>'
     + '<td style="text-align:right">' + tot.booked + '</td>'
     + '<td style="text-align:right">' + tot.won + '</td>'
     + '<td style="text-align:right">' + tot.lost + '</td>'
@@ -1176,6 +1192,7 @@ function renderTable() {
   const s=document.getElementById('f-search')?.value.toLowerCase()||'';
   const stg=document.getElementById('f-stage')?.value||'';
   const sts=document.getElementById('f-status')?.value||'';
+  const hotF=document.getElementById('f-hot')?.value||'';
   const src=document.getElementById('f-source')?.value||'';
   const rep=document.getElementById('f-rep')?.value||'';
   const ctr=document.getElementById('f-counter')?.value||'';
@@ -1187,6 +1204,7 @@ function renderTable() {
   const eqv=(a,b)=>String(a==null?'':a).trim().toLowerCase()===String(b==null?'':b).trim().toLowerCase();
   let list = enquiries.filter(e => {
     if (s && !['customer','phone','email','model','notes'].some(k=>(e[k]||'').toLowerCase().includes(s))) return false;
+    if (hotF) { const h=isHot(e); if (hotF==='1' ? !h : h) return false; }
     if (stg && e.stage!==stg) return false;
     if (sts) {
       // "Open" is everything still being worked; Booked is separated because a
@@ -1216,14 +1234,15 @@ function renderTable() {
   tbody.innerHTML = list.map(e => {
     const staleD = dateDiff(e.lastContactAt); const isStale = staleD!==null && staleD>STALE_DAYS && ACTIVE_STAGES.includes(e.stage);
     const fuOver = e.nextFollowUp && e.nextFollowUp < todayISO() && ACTIVE_STAGES.includes(e.stage);
-    const stageColors={'New':'#5b9eff','Contacted':'#ffb02e','Qualified':'#5be0ff','Test Drive':'#ff5c93','Negotiation':'#ff8b3d','Booked':'#a05bff','Won':'#2bd47d','Lost':'#ff4444'};
+    const stageColors={'Open':'#5b9eff','Booked':'#a05bff','Won':'#2bd47d','Lost':'#ff4444','Register Only':'#94a0c8','Other Counter':'#94a0c8'};
     const col=stageColors[e.stage]||'#94a0c8';
     const chk = selectedIds.has(e.id);
     const exBadge = e.exchange==='Yes' ? '<span style="background:rgba(255,176,46,0.15);color:#ffb02e;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:600;margin-left:4px;">EX</span>' : '';
+    const hotBadge = isHot(e) ? '<span title="Marked hot by the DSE" style="background:rgba(255,92,92,0.18);color:#ff7a5c;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;margin-left:4px;">&#128293; HOT</span>' : '';
     return '<tr'+(isStale?' style="opacity:0.7"':'')+(fuOver?' class="overdue-row"':'')+'>'
       +'<td><input type="checkbox" '+(chk?'checked':'')+' onchange="toggleSelect(\''+e.id+'\',this.checked)"/></td>'
       +'<td><span style="font-family:monospace;font-size:11px;">'+escapeHtml(e.id)+'</span></td>'
-      +'<td><strong>'+escapeHtml(e.customer)+'</strong>'+exBadge+'<br><span style="color:var(--muted);font-size:11px">'+escapeHtml(e.phone)+'</span></td>'
+      +'<td><strong>'+escapeHtml(e.customer)+'</strong>'+hotBadge+exBadge+'<br><span style="color:var(--muted);font-size:11px">'+escapeHtml(e.phone)+'</span></td>'
       +'<td>'+escapeHtml(e.counter||'')+'</td>'
       +'<td>'+escapeHtml(e.source||'')+'</td>'
       +'<td>'+escapeHtml(e.model)+'<br><span style="color:var(--muted);font-size:11px">'+escapeHtml(e.variant||'')+'</span></td>'
@@ -1239,7 +1258,7 @@ function renderTable() {
   updateBulkBar();
 }
 function clearFilters() {
-  ['f-search','f-stage','f-status','f-source','f-rep','f-counter','f-segment','f-finance','f-financier','f-exchange-filter','f-month'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['f-search','f-stage','f-status','f-hot','f-source','f-rep','f-counter','f-segment','f-finance','f-financier','f-exchange-filter','f-month'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   renderTable();
 }
 function toggleSelect(id,checked) { if(checked) selectedIds.add(id); else selectedIds.delete(id); updateBulkBar(); }
@@ -1492,6 +1511,79 @@ function exportCSV(){
   const blob=new Blob([[hdr,...rows].join('\n')],{type:'text/csv'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='sudarshan_enquiries_'+todayISO()+'.csv';a.click();
 }
+// The plain CSV export dumps every enquiry and ignores the filters, which is
+// no use when you have narrowed to one DSE at one counter for one month. This
+// exports exactly the rows the table is showing, and names the file after the
+// filters so you can tell two exports apart a week later.
+function currentFilterLabel() {
+  const g = id => { const el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; };
+  const bits = [];
+  if (g('f-counter'))  bits.push(g('f-counter'));
+  if (g('f-rep'))      bits.push(g('f-rep'));
+  if (g('f-source'))   bits.push(g('f-source'));
+  if (g('f-status'))   bits.push({ open:'open', live:'open+booked', closed:'closed' }[g('f-status')] || g('f-status'));
+  if (g('f-hot'))      bits.push(g('f-hot') === '1' ? 'hot' : 'not-hot');
+  if (g('f-stage'))    bits.push(g('f-stage'));
+  if (g('f-segment'))  bits.push(g('f-segment'));
+  if (g('f-month'))    bits.push(g('f-month'));
+  if (g('f-finance'))  bits.push('finance-' + g('f-finance'));
+  if (g('f-financier'))bits.push(g('f-financier'));
+  if (g('f-search'))   bits.push('search-' + g('f-search'));
+  return bits.join(' / ');
+}
+function downloadCsv(name, header, rows) {
+  const esc = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const body = [header.map(esc).join(',')].concat(rows.map(r => r.map(esc).join(','))).join('\n');
+  const blob = new Blob(['\ufeff' + body], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+function exportFilteredCSV() {
+  const ids = new Set(lastFilteredIds || []);
+  const list = (enquiries || []).filter(e => ids.has(e.id));
+  if (!list.length) { showToast('Nothing to export - no rows match the current filters.'); return; }
+  const label = currentFilterLabel();
+  const header = ['ID','Customer','Phone','Counter','Source','Source group','Model','Variant',
+                  'SKU','Rep (DSE)','Stage','Hot','Finance','Financier','Enquiry date','Invoice date',
+                  'Invoice no','Last contact','Next follow-up','Notes','Drop reason'];
+  const rows = list.map(e => [e.id, e.customer, e.phone, e.counter, e.source, bucketSource(e.source),
+    e.model, e.variant, e.sku, e.rep, e.stage, isHot(e) ? 'HOT' : '', e.financeRequired, e.financier,
+    e.enquiredAt || e.createdAt, e.soldAt, e.invoiceNo, e.lastContactAt, e.nextFollowUp,
+    e.notes, e.dropReason]);
+  const slug = (label || 'all').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+  downloadCsv('enquiries_' + slug + '_' + todayISO() + '.csv', header, rows);
+  showToast('Exported ' + list.length + ' row(s)' + (label ? ' - ' + label : '') + '.');
+}
+function exportDseSummaryCSV() {
+  const ids = new Set(lastFilteredIds || []);
+  const list = (enquiries || []).filter(e => ids.has(e.id));
+  if (!list.length) { showToast('Nothing to export.'); return; }
+  const by = {};
+  list.forEach(e => {
+    const r = String(e.rep || '').trim() || '(unassigned)';
+    const x = by[r] || (by[r] = { rep:r, counters:{}, enq:0, open:0, hot:0, booked:0, won:0, lost:0 });
+    x.enq++;
+    if (isHot(e)) x.hot++;
+    if (e.counter) x.counters[e.counter] = 1;
+    if (OPEN_STAGES.includes(e.stage)) x.open++;
+    else if (e.stage === 'Booked') x.booked++;
+    else if (e.stage === 'Won') x.won++;
+    else if (e.stage === 'Lost') x.lost++;
+  });
+  const rows = Object.keys(by).map(k => by[k])
+    .sort((a,b) => b.won - a.won || b.enq - a.enq)
+    .map(r => [r.rep, Object.keys(r.counters).sort().join(' / '), r.enq, r.open, r.hot, r.booked,
+               r.won, r.lost, r.enq ? Math.round(r.won / r.enq * 100) + '%' : '0%']);
+  const label = currentFilterLabel();
+  const slug = (label || 'all').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+  downloadCsv('dse_performance_' + slug + '_' + todayISO() + '.csv',
+    ['DSE','Counter','Enquiries','Open','Hot','Booked','Won','Lost','Conversion'], rows);
+  showToast('Exported ' + rows.length + ' DSE row(s).');
+}
+
 function exportJSON(){
   const blob=new Blob([JSON.stringify({enquiries,config,exportedAt:new Date().toISOString()},null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='sudarshan_backup_'+todayISO()+'.json';a.click();
