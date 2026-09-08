@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v32 &middot; 08 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v33 &middot; 08 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -2691,8 +2691,15 @@ document.addEventListener('DOMContentLoaded', initApp);
 (function(){
   "use strict";
   var STALE=7, FUNNEL_DAYS=90, PKEY='hero-dse-prefs-v1';
-  var prefs; try{ prefs=Object.assign({period:'tw',month:'',counter:'',cmode:'enq',open:'',showTargets:false,showRoster:false},JSON.parse(localStorage.getItem(PKEY))||{}); }
-             catch(e){ prefs={period:'tw',month:'',counter:'',cmode:'enq',open:'',showTargets:false,showRoster:false}; }
+  /* cmode decides what "Counter: Premia" means. 'enq' lists every DSE who logged an
+     enquiry at that counter - so VIDA Hub and DN staff appear in the Premia list the
+     moment they log one lead there. That is not what anyone means by "the Premia
+     team", so 'home' (DSEs based at this counter) is now the default. The old default
+     is still selectable under Show. */
+  var prefs; try{ prefs=Object.assign({period:'tw',month:'',counter:'',cmode:'home',open:'',showTargets:false,showRoster:false},JSON.parse(localStorage.getItem(PKEY))||{}); }
+             catch(e){ prefs={period:'tw',month:'',counter:'',cmode:'home',open:'',showTargets:false,showRoster:false}; }
+  /* Saved prefs from before this change carry cmode:'enq'; move them across once. */
+  try{ if(prefs.cmodeV!==2){ prefs.cmode='home'; prefs.cmodeV=2; localStorage.setItem(PKEY,JSON.stringify(prefs)); } }catch(e){}
   function savePrefs(){ try{ localStorage.setItem(PKEY,JSON.stringify(prefs)); }catch(e){} }
 
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
@@ -3490,8 +3497,8 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'</select></label>'
       + (prefs.counter?('<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Show'
           +'<select class="filter-select" onchange="dseSet(\'cmode\',this.value)">'
-          +'<option value="enq"'+(prefs.cmode!=='home'?' selected':'')+'>Enquiries logged here</option>'
           +'<option value="home"'+(prefs.cmode==='home'?' selected':'')+'>DSEs based here</option>'
+          +'<option value="enq"'+(prefs.cmode!=='home'?' selected':'')+'>Enquiries logged here</option>'
           +'</select></label>'):'')
       +'<button class="btn btn-sm'+(prefs.showRoster?' btn-primary':'')+'" onclick="dseSet(\'showRoster\','+(prefs.showRoster?'false':'true')+')">&#128101; Roster</button>'
       +'<button class="btn btn-sm'+(prefs.showTargets?' btn-primary':'')+'" onclick="dseSet(\'showTargets\','+(prefs.showTargets?'false':'true')+')">&#127919; Targets</button>'
@@ -3528,6 +3535,16 @@ document.addEventListener('DOMContentLoaded', initApp);
               + '. Switch <b>Show</b> to <b>DSEs based here</b> for the '+esc(prefs.counter)+' team only.'
             : 'Every DSE listed is based at this counter.')
         +'</p></div>';
+    } else if(prefs.counter){
+      var away=rows.filter(function(x){ return x.key!=='(UNASSIGNED)' && x.home && low(x.home)!==low(prefs.counter); });
+      h+='<div class="card" style="margin-top:14px;border-left:4px solid #2bd47d">'
+        +'<h3 style="margin:0 0 4px">&#128205; Who is showing under '+esc(prefs.counter)+'?</h3>'
+        +'<p class="help-text">The <b>'+esc(prefs.counter)+' team only</b> &mdash; '+rows.length+' DSE(s) whose home counter is '+esc(prefs.counter)
+        +', counting their enquiries wherever they logged them.'
+        + (away.length?(' <b style="color:#ffb02e">'+away.length+' row(s) still show another home counter</b> ('
+            + away.map(function(x){ return esc(x.name)+' &rarr; '+esc(x.home); }).join(', ')
+            + ') &mdash; open <b>Roster</b> to correct them.'):'')
+        +' Switch <b>Show</b> to <b>Enquiries logged here</b> to see everyone who logged a lead at this counter instead.</p></div>';
     }
     h+='<div class="card" style="margin-top:14px"><h3>DSE scorecard &mdash; '+esc(R.label)+'</h3>'
       +'<p class="help-text">Ranked by wins in the period. <b>Move</b> is the change in rank against the previous period. '
