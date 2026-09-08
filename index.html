@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v31 &middot; 08 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v32 &middot; 08 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -2779,28 +2779,57 @@ document.addEventListener('DOMContentLoaded', initApp);
   /* The register spells the same person several ways and prefixes a team that may now be
      out of date. These rules fold the variants onto one identity and carry the correct
      team. Anything you set on the roster still overrides them. */
+  /* Rebuilt from the DMS invoice register (Apr-Aug 2026), which is the only place
+     a DSE's counter is stated as fact rather than inferred. Two classes of bug were
+     fixed here:
+       1. People with NO rule fell through to "whichever counter holds most of their
+          enquiries", and the enquiry registers push those to Premia - which is why
+          VIDA Hub and DN staff were showing in the Premia list. Every DSE that has
+          ever raised an invoice now has an explicit rule.
+       2. Over-broad regexes swallowed a second person. /vishwakarma/ folded Pratibha
+          (Adhartal) onto Ishika (DN); /rajak/ folded Manish (DN) onto Amit (VIDA Hub).
+          The regexes now key on the given name, and the more specific rule is listed
+          FIRST because ruleFor() returns the first match.                            */
   var NAME_RULES=[
-    {id:'ASHISH AGRAWAL',      re:/ashish/i,                     team:'Premia'},
-    {id:'ROHIT',               re:/\brohit\b/i,                  team:'Premia'},
-    {id:'DANISH KHAN',         re:/danish/i,                     team:'MML (ICE)'},
-    {id:'SAMEER',              re:/sam(ee|i)r/i,                 team:'VIDA Hub'},
-    {id:'GUPTA, SALABH',       re:/sal[ae]bh|shal[ae]?bh?\b/i,    team:'MML (ICE)'},
-    {id:'VISHWAKARMA, ISHIKA', re:/vishwakarma|ish[ik]{2}a/i,    team:'DN'},
-    {id:'SAHU, KARISHMA',      re:/kar[iy]shma|\bsa[bh]u\b/i,    team:'VIDA Hub'},
-    {id:'SAFIYA, BEBY',        re:/safiya|\bbeby\b/i,            team:'VIDA Hub'},
-    {id:'RAJAK, AMIT',         re:/rajak/i,                      team:'VIDA Hub'},
-    {id:'SAHANI, AKASH',       re:/sahani|\balah\b|\bakash\b/i,  team:'MML (ICE)'},
-    {id:'RAIKWAR, SHIVANI',    re:/raik[aw]*ar|rekvar|\bshivani\b/i, team:'MML (ICE)'},
-    {id:'KUSHWAHA, SHRUTI',    re:/kushwaha|shruti/i,            team:'Premia'},
-    {id:'SARMAN THAKUR',       re:/sarman/i,                     team:'DN'},
-    {id:'SHRADHA SINGH',       re:/shr[ae]d+ha/i,                team:'DN'},
-    {id:'MAHIMA RAO',          re:/mahima/i,                     team:'DN'},
-    {id:'KRISH',               re:/\bkrish\b/i,                  team:'Premia'},
-    {id:'RAJ',                 re:/\braj\b/i,                    team:'Premia'},
-    {id:'PRAKASH',             re:/\bprakash\b/i,                team:'Napier Town'},
-    {id:'KOMAL',               re:/\bkomal\b/i,                  team:'Napier Town'},
-    {id:'RAJENDRA',            re:/\brajendra\b/i,               team:'Napier Town'},
-    {id:'AHIRWAR, MUSKAN',     re:/muskan/i,                     team:'Napier Town'}
+    /* -- Adhartal ------------------------------------------------------------ */
+    {id:'VISHWAKARMA, PRATIBHA', re:/pratibha/i,                 team:'Adhartal'},
+    {id:'AT, SYED FARZAN ALI',   re:/farzan|\bsyed\b/i,          team:'Adhartal'},
+    {id:'AT, SAIF',              re:/\bsaif\b/i,                 team:'Adhartal'},
+    /* -- DN ------------------------------------------------------------------ */
+    {id:'BARMAN, KANCHAN',       re:/kanchan|\bbarman\b/i,       team:'DN'},
+    {id:'RAJAK, MANISH',         re:/\bmanish\b/i,               team:'DN'},
+    {id:'SARMAN THAKUR',         re:/sarman/i,                   team:'DN'},
+    {id:'SHRADHA SINGH',         re:/shr[ae]d+ha/i,              team:'DN'},
+    {id:'MAHIMA RAO',            re:/mahima/i,                   team:'DN'},
+    {id:'VISHWAKARMA, ISHIKA',   re:/ish[ik]{2}a/i,              team:'DN'},
+    /* -- VIDA Hub ------------------------------------------------------------ */
+    {id:'SAFIYA, BEBY',          re:/safiya|\bbeby\b/i,          team:'VIDA Hub'},
+    {id:'RAJAK, AMIT',           re:/\bamit\b|rajak/i,           team:'VIDA Hub'},
+    {id:'SAMEER',                re:/sam(ee|i)r/i,               team:'VIDA Hub'},
+    {id:'SAHU, KARISHMA',        re:/kar[iy]shma|\bsa[bh]u\b/i,  team:'VIDA Hub'},
+    {id:'ISRAT FATIMA',          re:/fatima|isr[ah]t|ishrad/i,   team:'VIDA Hub'},
+    /* -- MML (ICE) ----------------------------------------------------------- */
+    {id:'GUPTA, SALABH',         re:/sal[ae]bh|shal[ae]?bh?\b/i, team:'MML (ICE)'},
+    {id:'RAIKWAR, SHIVANI',      re:/raik[aw]*ar|rekvar|\bshivani\b/i, team:'MML (ICE)'},
+    {id:'SAHANI, AKASH',         re:/sahani|\balah\b|\bakash\b/i,team:'MML (ICE)'},
+    {id:'DANISH KHAN',           re:/danish/i,                   team:'MML (ICE)'},
+    /* -- Napier Town --------------------------------------------------------- */
+    {id:'AHIRWAR, MUSKAN',       re:/muskan/i,                   team:'Napier Town'},
+    {id:'KOMAL',                 re:/\bkomal\b/i,                team:'Napier Town'},
+    {id:'RAJENDRA',              re:/rajendra/i,                 team:'Napier Town'},
+    {id:'GUPTA, PRIYA',          re:/\bpriya\b/i,                team:'Napier Town'},
+    {id:'MISHRA, RITESH',        re:/ritesh/i,                   team:'Napier Town'},
+    {id:'PRAKASH',               re:/\bprakash\b/i,              team:'Napier Town'},
+    /* -- Premia -------------------------------------------------------------- */
+    {id:'ASHISH AGRAWAL',        re:/ashish/i,                   team:'Premia'},
+    {id:'KRISH',                 re:/\bkrish\b/i,                team:'Premia'},
+    {id:'ROHIT',                 re:/\brohit\b/i,                team:'Premia'},
+    /* Shruti was appearing as two DSEs because the register misspells her several
+       ways and /shruti/ only caught one of them. All the spellings fold onto one row. */
+    {id:'KUSHWAHA, SHRUTI',      re:/kushwah|shruti|shruthi|shrut[ei]{1,2}|shurti|sruti|srut[hi]/i, team:'Premia'},
+    {id:'VEDIKA PANDEY',         re:/vedika/i,                   team:'Premia'},
+    {id:'NANDINI',               re:/nandini/i,                  team:'Premia'},
+    {id:'RAJ',                   re:/\braj\b/i,                  team:'Premia'}
   ];
   function ruleFor(k){
     for(var i=0;i<NAME_RULES.length;i++){ if(NAME_RULES[i].re.test(k)) return NAME_RULES[i]; }
@@ -2815,7 +2844,7 @@ document.addEventListener('DOMContentLoaded', initApp);
   function seedRoster(){
     try{
       var v=config.dseRosterSeedV||(config.dseRosterSeeded?1:0), r=roster(), changed=false;
-      if(v>=5) return;
+      if(v>=6) return;
       if(v<1) Object.keys(SEED_ROSTER).forEach(function(k){ if(!r[k]){ r[k]=Object.assign({},SEED_ROSTER[k]); changed=true; } });
       if(v<2){
         if(!r['SAMEER']){ r['SAMEER']={team:'VIDA Hub'}; changed=true; }
@@ -2847,7 +2876,38 @@ document.addEventListener('DOMContentLoaded', initApp);
         u2['Napier Town']='PRAKASH';
         changed=true;
       }
-      if(v<5){ config.dseRosterSeedV=5; config.dseRosterSeeded=true; changed=true; }
+      if(v<6){
+        /* Ground truth from the DMS invoice register: the counter that actually
+           billed each DSE's retails, Apr-Aug 2026. A roster team beats the name
+           rules, so any stale team saved on an earlier version is corrected here
+           rather than left to fight the rule. */
+        var TEAM6={
+          'BARMAN, KANCHAN':'DN',        'RAJAK, MANISH':'DN',
+          'SARMAN THAKUR':'DN',          'SHRADHA SINGH':'DN',
+          'MAHIMA RAO':'DN',             'VISHWAKARMA, ISHIKA':'DN',
+          'SAFIYA, BEBY':'VIDA Hub',     'RAJAK, AMIT':'VIDA Hub',
+          'SAMEER':'VIDA Hub',           'SAHU, KARISHMA':'VIDA Hub',
+          'ISRAT FATIMA':'VIDA Hub',
+          'GUPTA, SALABH':'MML (ICE)',   'RAIKWAR, SHIVANI':'MML (ICE)',
+          'SAHANI, AKASH':'MML (ICE)',   'DANISH KHAN':'MML (ICE)',
+          'AHIRWAR, MUSKAN':'Napier Town','KOMAL':'Napier Town',
+          'RAJENDRA':'Napier Town',      'GUPTA, PRIYA':'Napier Town',
+          'MISHRA, RITESH':'Napier Town','PRAKASH':'Napier Town',
+          'ASHISH AGRAWAL':'Premia',     'KRISH':'Premia',
+          'ROHIT':'Premia',              'KUSHWAHA, SHRUTI':'Premia',
+          'VEDIKA PANDEY':'Premia',      'NANDINI':'Premia', 'RAJ':'Premia',
+          'AT, SAIF':'Adhartal',         'AT, SYED FARZAN ALI':'Adhartal',
+          'VISHWAKARMA, PRATIBHA':'Adhartal'
+        };
+        Object.keys(TEAM6).forEach(function(k){ r[k]=Object.assign({},r[k],{team:TEAM6[k]}); });
+        r['PRAKASH'].note='exchange desk, shared between Napier Town and Premia';
+        r['SAHANI, AKASH'].note='Akash Sahani (logged as "Alah")';
+        /* Shruti was two rows. Every spelling the register uses folds onto one identity. */
+        ['SHRUTI','NT, SHRUTI','SHRUTI KUSHWAHA','KUSHWAHA SHRUTI','SHURTI','SRUTI','SHRUTHI']
+          .forEach(function(k){ r[k]=Object.assign({},r[k],{mergeTo:'KUSHWAHA, SHRUTI',team:'Premia',note:'spelling variant of Shruti Kushwaha'}); });
+        changed=true;
+      }
+      if(v<6){ config.dseRosterSeedV=6; config.dseRosterSeeded=true; changed=true; }
       if(changed && typeof saveData==='function') saveData();
     }catch(e){}
   }
