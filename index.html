@@ -2253,11 +2253,18 @@ document.addEventListener('DOMContentLoaded', initApp);
   function planFor(qty){
     var T=segTree(), sw={};
     Object.keys(T).forEach(function(sg){ sw[sg]=T[sg].u; });
-    // a segment percentage typed by the user overrides the LY mix
+
+    // A typed weight has to be compared against the OTHER segments on the same
+    // scale. The box shows a percentage, so overriding Entry with 31.5 while the
+    // rest were still raw LY unit counts (912, 227, 159) put Entry at 31.5 of
+    // 1,329 - about 2% - instead of 31.5 of 106. Convert every segment to its LY
+    // percentage first, then drop the typed values in.
+    var lyTotal=0; Object.keys(sw).forEach(function(k){ lyTotal+=sw[k]; });
     var useW={}, anyOv=false;
     Object.keys(sw).forEach(function(sg){
+      var lyPct = lyTotal ? sw[sg]/lyTotal*100 : 0;
       if(st.segov[sg]!=null && st.segov[sg]!==''){ useW[sg]=Math.max(0,parseFloat(st.segov[sg])||0); anyOv=true; }
-      else useW[sg]=sw[sg];
+      else useW[sg]=lyPct;
     });
     if(anyOv){ var tot=0; Object.keys(useW).forEach(function(k){ tot+=useW[k]; }); if(tot<=0) useW=sw; }
     var segQty=lr(qty,useW), out=[];
