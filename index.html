@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v33 &middot; 08 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v35 &middot; 08 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -2815,6 +2815,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     {id:'SAMEER',                re:/sam(ee|i)r/i,               team:'VIDA Hub'},
     {id:'SAHU, KARISHMA',        re:/kar[iy]shma|\bsa[bh]u\b/i,  team:'VIDA Hub'},
     {id:'ISRAT FATIMA',          re:/fatima|isr[ah]t|ishrad/i,   team:'VIDA Hub'},
+    {id:'IKTHAR',                re:/ikth?[ae]r|iftikhar/i,      team:'VIDA Hub'},
     /* -- MML (ICE) ----------------------------------------------------------- */
     {id:'GUPTA, SALABH',         re:/sal[ae]bh|shal[ae]?bh?\b/i, team:'MML (ICE)'},
     {id:'RAIKWAR, SHIVANI',      re:/raik[aw]*ar|rekvar|\bshivani\b/i, team:'MML (ICE)'},
@@ -2851,7 +2852,7 @@ document.addEventListener('DOMContentLoaded', initApp);
   function seedRoster(){
     try{
       var v=config.dseRosterSeedV||(config.dseRosterSeeded?1:0), r=roster(), changed=false;
-      if(v>=6) return;
+      if(v>=7) return;
       if(v<1) Object.keys(SEED_ROSTER).forEach(function(k){ if(!r[k]){ r[k]=Object.assign({},SEED_ROSTER[k]); changed=true; } });
       if(v<2){
         if(!r['SAMEER']){ r['SAMEER']={team:'VIDA Hub'}; changed=true; }
@@ -2914,7 +2915,20 @@ document.addEventListener('DOMContentLoaded', initApp);
           .forEach(function(k){ r[k]=Object.assign({},r[k],{mergeTo:'KUSHWAHA, SHRUTI',team:'Premia',note:'spelling variant of Shruti Kushwaha'}); });
         changed=true;
       }
-      if(v<6){ config.dseRosterSeedV=6; config.dseRosterSeeded=true; changed=true; }
+      if(v<7){
+        /* The blank-name rule was crediting every unnamed VIDA Hub enquiry to Sameer.
+           That was 110 enquiries resting on an assumption, and the dealership says they
+           are not his. They stay Unassigned now, so the register gets fixed at source
+           instead of one person carrying someone else's pipeline. */
+        var u7=unassignedMap();
+        if(u7['VIDA Hub']) delete u7['VIDA Hub'];
+        /* Karishma works at VIDA Hub only - the MML-logged rows are a tagging error,
+           not a second posting. Pinned so no share of enquiries can move her. */
+        r['SAHU, KARISHMA']=Object.assign({},r['SAHU, KARISHMA'],{team:'VIDA Hub',note:'VIDA Hub only'});
+        r['MML, KARISHMA'] =Object.assign({},r['MML, KARISHMA'], {team:'VIDA Hub',mergeTo:'SAHU, KARISHMA',note:'same person, logged under MML in error'});
+        changed=true;
+      }
+      if(v<7){ config.dseRosterSeedV=7; config.dseRosterSeeded=true; changed=true; }
       if(changed && typeof saveData==='function') saveData();
     }catch(e){}
   }
@@ -3074,7 +3088,12 @@ document.addEventListener('DOMContentLoaded', initApp);
     }
     P.forEach(function(e){
       var k=dkeyE(e), s=slot(k);
-      if(!s.counter && e.counter) s.counter=e.counter;
+      /* s.counter drives the Targets table and the even-split suggestion. It used to
+         take whichever enquiry happened to come first in the list, so a DSE who logged
+         one lead at another counter was filed there - Amit (VIDA Hub) was being counted
+         against Premia's target. Use the home team, and fall back to the enquiry only
+         when there is no home team to go on. */
+      if(!s.counter) s.counter = teamOf(k) || e.counter || '';
       var cd=closeDate(e), cr=e.createdAt||'';
       // results, by close date
       if(inR(cd,R.from,R.to)){
