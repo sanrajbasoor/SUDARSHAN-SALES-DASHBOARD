@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v36 &middot; 09 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v37 &middot; 09 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -2583,6 +2583,330 @@ document.addEventListener('DOMContentLoaded', initApp);
   document.addEventListener('DOMContentLoaded',function(){ setTimeout(ensure,1000); });
 })();
 </script>
+<!-- ===== DISPATCH & STOCK ====================================================
+     Monthly Power BI dispatch export, model-wise: opening stock, dispatch,
+     invoiced, net retail, closing stock, in transit, physical, stock on DC.
+     Answers the two planning questions: is dispatch running ahead of or behind
+     retail, and how many months of cover is each model carrying.
+     Self-contained and additive.
+     ======================================================================== -->
+<script>
+(function(){
+  "use strict";
+  var KEY='hero-dispatch-v1', PKEY='hero-dispatch-prefs-v1';
+  var SEED={"months":["2026-05","2026-06","2026-07","2026-08","2026-09"],"models":["SPLENDOR +","HF DELUXE","SPLENDOR+ XTEC 2.0","GLAMOUR X","DESTINI 125","DESTINI 110","SUPER SPLENDOR XTEC","XTREME 125R","DESTINI PRIME","SPLENDOR+ XTEC","PASSION +","XOOM 125","GLAMOUR XTEC","PLEASURE+","XTREME 160R 4V","SUPER SPLENDOR XTEC 2.0","MAVRICK 440","XPULSE 200 4V","PLEASURE+ XTEC","SPLENDOR+ FLEX","HF DELUXE FLEX"],"segs":["Deluxe","Entry","125cc","Scooter","Premium"],"cols":["Opening Stock","Dispatch","Actual Invoiced","Cancellation","Sale return","Net Retail","Damaged","Closing Stock","In Transit","Physical Stock","Stock On DC"],"rows":[[0,0,0,200,405,220,1,0,219,0,386,60,326,60],[0,1,1,245,200,148,6,0,142,0,303,45,258,52],[0,2,0,105,124,130,0,0,130,0,99,15,84,17],[0,3,2,44,56,25,0,0,25,0,75,32,43,4],[0,4,3,56,8,17,0,0,17,0,47,8,39,3],[0,5,3,51,0,18,1,0,17,0,34,0,34,3],[0,6,2,36,20,27,0,0,27,0,29,0,29,9],[0,7,2,29,12,16,0,0,16,0,25,0,25,6],[0,8,3,35,0,13,0,0,13,0,22,0,22,6],[0,9,0,11,70,62,3,0,59,0,22,0,22,4],[0,10,1,21,0,10,0,0,10,0,11,0,11,6],[0,11,3,1,4,0,0,0,0,0,5,4,1,0],[0,12,2,1,0,1,0,0,1,0,0,0,0,0],[0,13,3,3,0,3,0,0,3,0,0,0,0,0],[0,14,4,1,0,1,0,0,1,0,0,0,0,0],[1,0,0,386,125,227,0,0,227,0,284,50,234,59],[1,1,1,303,40,143,1,0,142,0,181,0,181,41],[1,2,0,99,81,65,0,0,65,0,115,50,65,19],[1,3,2,75,36,22,0,0,22,0,65,0,65,7],[1,5,3,34,40,22,2,0,20,0,54,40,14,4],[1,10,1,11,52,14,0,0,14,0,49,27,22,13],[1,4,3,47,4,16,1,0,15,0,36,4,32,3],[1,15,2,0,60,25,0,0,25,0,35,0,35,0],[1,7,2,25,23,21,0,0,21,0,27,0,27,7],[1,8,3,22,20,16,0,0,16,0,26,20,6,3],[1,9,0,22,44,46,0,0,46,0,20,0,20,8],[1,6,2,29,0,16,0,0,16,0,13,0,13,6],[1,11,3,5,0,2,0,0,2,0,3,0,3,0],[1,16,4,0,1,2,1,0,1,0,0,0,0,0],[1,13,3,0,0,0,0,0,0,0,0,0,0,0],[1,17,4,0,0,0,0,0,0,0,0,0,0,0],[1,14,4,0,0,0,0,0,0,0,0,0,0,0],[2,1,1,181,121,115,2,0,113,0,189,62,127,46],[2,0,0,284,59,169,1,0,168,0,175,0,175,62],[2,2,0,115,59,54,0,0,54,0,120,9,111,17],[2,3,2,65,8,21,3,0,18,0,55,0,55,6],[2,15,2,35,32,24,1,0,23,0,44,0,44,3],[2,10,1,49,0,18,0,0,18,0,31,0,31,13],[2,5,3,54,8,34,0,0,34,0,28,0,28,5],[2,4,3,36,0,14,0,0,14,0,22,0,22,3],[2,8,3,26,0,10,0,0,10,0,16,0,16,5],[2,7,2,27,8,25,0,0,25,0,10,0,10,6],[2,6,2,13,0,4,0,0,4,0,9,0,9,4],[2,9,0,20,0,16,3,0,13,0,7,0,7,5],[2,11,3,3,8,6,0,0,6,0,5,0,5,0],[2,18,3,0,4,0,0,0,0,0,4,0,4,0],[2,19,0,0,2,0,0,0,0,0,2,0,2,0],[2,20,1,0,1,0,0,0,0,0,1,0,1,0],[2,13,3,0,0,0,0,0,0,0,0,0,0,0],[3,1,1,189,478,144,4,0,140,0,527,255,272,48],[3,0,0,175,155,143,1,0,142,0,188,47,141,58],[3,2,0,120,30,55,0,0,55,0,95,30,65,17],[3,3,2,55,9,19,0,0,19,0,45,1,44,10],[3,15,2,44,17,16,0,0,16,0,45,9,36,8],[3,5,3,28,35,24,1,0,23,0,40,0,40,5],[3,9,0,7,50,24,0,0,24,0,33,0,33,10],[3,4,3,22,13,16,0,0,16,0,19,0,19,2],[3,10,1,31,0,13,0,0,13,0,18,0,18,11],[3,7,2,10,20,16,0,0,16,0,14,0,14,2],[3,8,3,16,0,5,0,0,5,0,11,0,11,5],[3,6,2,9,0,2,0,0,2,0,7,0,7,3],[3,19,0,2,5,4,0,0,4,0,3,0,3,0],[3,20,1,1,0,1,0,0,1,0,0,0,0,0],[3,13,3,0,0,0,0,0,0,0,0,0,0,0],[3,18,3,4,0,4,0,0,4,0,0,0,0,0],[3,11,3,5,0,5,0,0,5,0,0,0,0,0],[4,1,1,527,106,124,2,0,122,0,476,97,379,65],[4,0,0,188,159,49,5,0,44,0,303,166,137,66],[4,2,0,95,0,14,1,0,13,0,82,0,82,24],[4,3,2,45,0,7,0,0,7,0,38,0,38,11],[4,15,2,45,0,8,0,0,8,0,37,0,37,7],[4,4,3,19,16,3,0,0,3,0,32,16,16,2],[4,5,3,40,0,10,0,0,10,0,30,0,30,5],[4,10,1,18,0,0,0,0,0,0,18,0,18,12],[4,9,0,33,0,17,0,0,17,0,16,0,16,10],[4,8,3,11,0,0,0,0,0,0,11,0,11,5],[4,7,2,14,0,5,0,0,5,0,9,0,9,2],[4,6,2,7,0,0,0,0,0,0,7,0,7,3],[4,18,3,0,4,0,0,0,0,0,4,4,0,0],[4,19,0,3,0,0,0,0,0,0,3,0,3,0],[4,13,3,0,0,0,0,0,0,0,0,0,0,0]]};
+
+  var prefs; try{ prefs=Object.assign({month:'',cover:1.5,seg:''},JSON.parse(localStorage.getItem(PKEY))||{}); }
+             catch(e){ prefs={month:'',cover:1.5,seg:''}; }
+  function savePrefs(){ try{ localStorage.setItem(PKEY,JSON.stringify(prefs)); }catch(e){} }
+  window.dpSet=function(k,v){ prefs[k]=(k==='cover')?(parseFloat(v)||0):v; savePrefs(); render(); };
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function num(n){ return (Math.round(n)||0).toLocaleString('en-IN'); }
+  function sgn(n){ return (n>0?'+':'')+num(n); }
+  function mlabel(ym){ try{ if(typeof formatMonthLabel==='function') return formatMonthLabel(ym); }catch(e){} return ym; }
+  function thisYM(){ var d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2); }
+
+  function DATA(){
+    try{ var s=localStorage.getItem(KEY); if(s){ var d=JSON.parse(s); if(d&&d.rows&&d.months) return d; } }catch(e){}
+    return SEED;
+  }
+  function saveData(d){ try{ localStorage.setItem(KEY,JSON.stringify(d)); }catch(e){ alert('Could not save that file to browser storage.'); } }
+
+  /* row: 0 monthIdx 1 modelIdx 2 segIdx then COLS:
+     3 opening 4 dispatch 5 invoiced 6 cancel 7 saleReturn 8 netRetail
+     9 damaged 10 closing 11 inTransit 12 physical 13 stockOnDC              */
+  var O=3,DIS=4,INV=5,CAN=6,SRT=7,NET=8,DMG=9,CLO=10,TRA=11,PHY=12,DC=13;
+
+  function build(){
+    var D=DATA(), M=D.months.slice().sort();
+    var month=prefs.month && M.indexOf(prefs.month)>=0 ? prefs.month : M[M.length-1];
+    var mi=D.months.indexOf(month);
+    var partial = month===thisYM();
+
+    function rowsFor(ym){ var i=D.months.indexOf(ym); return D.rows.filter(function(r){ return r[0]===i; }); }
+    function keep(r){ return !prefs.seg || D.segs[r[2]]===prefs.seg; }
+
+    var cur=rowsFor(month).filter(keep);
+    var totals={};
+    [O,DIS,INV,CAN,SRT,NET,DMG,CLO,TRA,PHY,DC].forEach(function(c){ totals[c]=cur.reduce(function(a,r){ return a+r[c]; },0); });
+
+    /* months of cover uses complete months only - a month still running would
+       understate retail and make every model look over-stocked. */
+    var complete=M.filter(function(m){ return m!==thisYM(); });
+    var basis=complete.slice(-3);
+    if(!basis.length) basis=M.slice(-3);
+    var avgByModel={};
+    D.models.forEach(function(_,idx){
+      var t=0,n=0;
+      basis.forEach(function(ym){
+        var i=D.months.indexOf(ym);
+        D.rows.forEach(function(r){ if(r[0]===i&&r[1]===idx){ t+=r[NET]; n++; } });
+      });
+      avgByModel[idx]= n? t/basis.length : 0;
+    });
+
+    var models=cur.map(function(r){
+      var avg=avgByModel[r[1]]||0;
+      var cover= avg>0 ? r[CLO]/avg : (r[CLO]>0?99:0);
+      var need = Math.max(0, Math.round(prefs.cover*avg - r[CLO]));
+      return {name:D.models[r[1]], seg:D.segs[r[2]], r:r, avg:avg, cover:cover, need:need,
+              gap:r[DIS]-r[NET]};
+    }).sort(function(a,b){ return b.r[CLO]-a.r[CLO]; });
+
+    var hist=M.map(function(ym){
+      var rs=rowsFor(ym).filter(keep), o={ym:ym};
+      [O,DIS,INV,CAN,SRT,NET,DMG,CLO,TRA,PHY,DC].forEach(function(c){ o[c]=rs.reduce(function(a,r){ return a+r[c]; },0); });
+      o.gap=o[DIS]-o[NET]; o.partial=(ym===thisYM());
+      return o;
+    });
+
+    var segs={};
+    cur.forEach(function(r){
+      var k=D.segs[r[2]], s=segs[k]||(segs[k]={seg:k,dis:0,net:0,clo:0,avg:0});
+      s.dis+=r[DIS]; s.net+=r[NET]; s.clo+=r[CLO]; s.avg+=avgByModel[r[1]]||0;
+    });
+    var segRows=Object.keys(segs).map(function(k){ var s=segs[k]; s.cover=s.avg>0?s.clo/s.avg:(s.clo>0?99:0); return s; })
+      .sort(function(a,b){ return b.clo-a.clo; });
+
+    return {D:D,M:M,month:month,partial:partial,totals:totals,models:models,hist:hist,segRows:segRows,basis:basis};
+  }
+
+  function coverColour(c){ return c>=3?'#ff5c5c':c>=2?'#ffb02e':c>=0.75?'#2bd47d':'#5b9eff'; }
+  function coverText(c){ return c>=99?'&mdash;':(Math.round(c*10)/10)+'m'; }
+
+  function kpi(v,l,c,s){
+    return '<div class="card kpi"><div class="kpi-value" style="color:'+(c||'var(--text)')+'">'+v+'</div>'
+      +'<div class="kpi-label">'+l+'</div>'+(s?('<div class="help-text" style="margin-top:2px">'+s+'</div>'):'')+'</div>';
+  }
+  function table(head,rows){
+    if(!rows.length) return '<p class="help-text">Nothing to show.</p>';
+    return '<div style="overflow-x:auto"><table class="table"><thead><tr>'
+      +head.map(function(h){ return '<th>'+h+'</th>'; }).join('')+'</tr></thead><tbody>'
+      +rows.map(function(r){ return '<tr>'+r.map(function(c){ return '<td>'+c+'</td>'; }).join('')+'</tr>'; }).join('')
+      +'</tbody></table></div>';
+  }
+
+  var chart=null;
+  function drawChart(B){
+    var cv=document.getElementById('dp-chart'); if(!cv||typeof Chart==='undefined') return;
+    try{ if(chart) chart.destroy(); }catch(e){}
+    chart=new Chart(cv.getContext('2d'),{
+      type:'bar',
+      data:{labels:B.hist.map(function(h){ return mlabel(h.ym)+(h.partial?' *':''); }),
+        datasets:[
+          {label:'Dispatch',type:'bar',data:B.hist.map(function(h){ return h[DIS]; }),backgroundColor:'rgba(91,158,255,0.75)'},
+          {label:'Net retail',type:'bar',data:B.hist.map(function(h){ return h[NET]; }),backgroundColor:'rgba(43,212,125,0.75)'},
+          {label:'Closing stock',type:'line',data:B.hist.map(function(h){ return h[CLO]; }),borderColor:'#a05bff',backgroundColor:'#a05bff',tension:0.3,yAxisID:'y'}
+        ]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{labels:{color:'#94a0c8'}}},
+        scales:{x:{ticks:{color:'#94a0c8'},grid:{color:'rgba(255,255,255,0.05)'}},
+                y:{ticks:{color:'#94a0c8'},grid:{color:'rgba(255,255,255,0.05)'}}}}
+    });
+  }
+
+  function render(){
+    var root=document.getElementById('dispatch-root'); if(!root) return;
+    var B=build(), D=B.D, T=B.totals;
+    var gap=T[DIS]-T[NET];
+    var totCover=(function(){ var a=B.models.reduce(function(s,m){ return s+m.avg; },0); return a>0?T[CLO]/a:0; })();
+    var h='';
+
+    h+='<div class="card" style="margin-bottom:14px"><h2 style="margin:0 0 4px">&#128666; Dispatch &amp; stock</h2>'
+      +'<p class="help-text">Model-wise monthly movement from the Power BI dispatch export. '
+      +'<b>Cover</b> is closing stock divided by average monthly net retail over '+B.basis.map(mlabel).join(', ')+'. '
+      +'Months still running are excluded from that average so cover is not flattered.</p></div>';
+
+    h+='<div class="card" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Month'
+      +'<select class="filter-select" onchange="dpSet(\'month\',this.value)">'
+      + B.M.slice().reverse().map(function(m){ return '<option value="'+m+'"'+(B.month===m?' selected':'')+'>'+esc(mlabel(m))+(m===thisYM()?' (running)':'')+'</option>'; }).join('')
+      +'</select></label>'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Segment'
+      +'<select class="filter-select" onchange="dpSet(\'seg\',this.value)"><option value="">All segments</option>'
+      + D.segs.map(function(s){ return '<option value="'+esc(s)+'"'+(prefs.seg===s?' selected':'')+'>'+esc(s)+'</option>'; }).join('')
+      +'</select></label>'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Target cover'
+      +'<select class="filter-select" onchange="dpSet(\'cover\',this.value)">'
+      + [1,1.5,2,2.5,3].map(function(n){ return '<option value="'+n+'"'+(prefs.cover===n?' selected':'')+'>'+n+' month'+(n===1?'':'s')+'</option>'; }).join('')
+      +'</select></label>'
+      +'<span style="margin-left:auto"><button class="btn btn-sm" onclick="dpImport()">&#128228; Add / update a month</button></span></div>';
+
+    h+='<div class="grid grid-4">';
+    h+=kpi(num(T[DIS]),'Dispatch','#5b9eff',esc(mlabel(B.month))+(B.partial?' so far':''));
+    h+=kpi(num(T[NET]),'Net retail','#2bd47d','invoiced less cancellations');
+    h+=kpi(sgn(gap),'Dispatch vs retail',gap>0?'#ffb02e':'#2bd47d',gap>0?'stock built up':'stock drawn down');
+    h+=kpi(num(T[CLO]),'Closing stock','#a05bff',num(T[PHY])+' physical + '+num(T[TRA])+' in transit');
+    h+='</div><div class="grid grid-4" style="margin-top:12px">';
+    h+=kpi(coverText(totCover),'Months of cover',coverColour(totCover),'at recent retail run-rate');
+    h+=kpi(num(T[TRA]),'In transit','#5b9eff','dispatched, not yet received');
+    h+=kpi(num(T[DC]),'Stock on DC','#ffb02e','held on delivery challan');
+    var risk=B.models.filter(function(m){ return m.cover>=3 && m.r[CLO]>0; }).length;
+    h+=kpi(String(risk),'Models over 3 months cover',risk?'#ff5c5c':'#2bd47d','slow movers tying up capital');
+    h+='</div>';
+
+    if(B.partial){
+      h+='<div class="card" style="margin-top:14px;border-left:4px solid #5b9eff"><p class="help-text">'
+        +'<b>'+esc(mlabel(B.month))+' is still running</b>, so its dispatch and retail are month-to-date. '
+        +'It is shown with an asterisk on the chart and excluded from the cover averages.</p></div>';
+    }
+
+    h+='<div class="card" style="margin-top:14px"><h3>Dispatch vs retail vs closing stock</h3>'
+      +'<div class="chart-wrap" style="height:280px"><canvas id="dp-chart"></canvas></div></div>';
+
+    h+='<div class="card" style="margin-top:14px"><h3>Month by month</h3>';
+    h+=table(['Month','Opening','Dispatch','Invoiced','Cancelled','Returns','Net retail','Dispatch &minus; retail','Closing','In transit','Physical','On DC'],
+      B.hist.slice().reverse().map(function(o){
+        return ['<b>'+esc(mlabel(o.ym))+(o.partial?' <span class="help-text">(running)</span>':'')+'</b>',
+          num(o[O]),'<b style="color:#5b9eff">'+num(o[DIS])+'</b>',num(o[INV]),num(o[CAN]),num(o[SRT]),
+          '<b style="color:#2bd47d">'+num(o[NET])+'</b>',
+          '<b style="color:'+(o.gap>0?'#ffb02e':'#2bd47d')+'">'+sgn(o.gap)+'</b>',
+          '<b>'+num(o[CLO])+'</b>',num(o[TRA]),num(o[PHY]),num(o[DC])];
+      }));
+    h+='<div style="margin-top:10px"><button class="btn btn-sm" onclick="dpExport(\'months\')">&#11015;&#65039; Export</button></div></div>';
+
+    h+='<div class="card" style="margin-top:14px"><h3>By segment &mdash; '+esc(mlabel(B.month))+'</h3>';
+    h+=table(['Segment','Dispatch','Net retail','Gap','Closing','Cover'],
+      B.segRows.map(function(s){
+        var g=s.dis-s.net;
+        return ['<b>'+esc(s.seg)+'</b>',num(s.dis),num(s.net),
+          '<b style="color:'+(g>0?'#ffb02e':'#2bd47d')+'">'+sgn(g)+'</b>',num(s.clo),
+          '<b style="color:'+coverColour(s.cover)+'">'+coverText(s.cover)+'</b>'];
+      }));
+    h+='</div>';
+
+    h+='<div class="card" style="margin-top:14px"><h3>Model-wise &mdash; '+esc(mlabel(B.month))+'</h3>'
+      +'<p class="help-text"><b>Order</b> is what to ask for to reach '+prefs.cover+' month'+(prefs.cover===1?'':'s')+' of cover at the recent run-rate: '
+      +'target cover &times; average monthly retail, less what is already in closing stock. Zero means the model is already covered.</p>';
+    h+=table(['Model','Segment','Opening','Dispatch','Net retail','Gap','Closing','In transit','On DC','Avg retail/mo','Cover','Order'],
+      B.models.map(function(m){
+        var r=m.r;
+        return ['<b>'+esc(m.name)+'</b>',esc(m.seg),num(r[O]),
+          '<b style="color:#5b9eff">'+num(r[DIS])+'</b>',
+          '<b style="color:#2bd47d">'+num(r[NET])+'</b>',
+          '<span style="color:'+(m.gap>0?'#ffb02e':'#2bd47d')+'">'+sgn(m.gap)+'</span>',
+          '<b>'+num(r[CLO])+'</b>',num(r[TRA]),num(r[DC]),
+          (Math.round(m.avg*10)/10),
+          '<b style="color:'+coverColour(m.cover)+'">'+coverText(m.cover)+'</b>',
+          m.need?('<b style="color:#ffb02e">'+num(m.need)+'</b>'):'&mdash;'];
+      }));
+    h+='<div style="margin-top:10px"><button class="btn btn-sm" onclick="dpExport(\'models\')">&#11015;&#65039; Export model table</button></div></div>';
+
+    root.innerHTML=h;
+    drawChart(B);
+  }
+
+  function dl(name,rows){
+    var csv=rows.map(function(r){ return r.map(function(c){ var s=String(c==null?'':c).replace(/<[^>]*>/g,'').replace(/&mdash;/g,'').replace(/&minus;/g,'-'); return /[",\n]/.test(s)?('"'+s.replace(/"/g,'""')+'"'):s; }).join(','); }).join('\n');
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));
+    a.download=name+'_'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },100);
+  }
+  window.dpExport=function(what){
+    var B=build(), out;
+    if(what==='months'){
+      out=[['Month','Opening','Dispatch','Invoiced','Cancelled','Returns','Net retail','Dispatch-retail','Closing','In transit','Physical','On DC']];
+      B.hist.forEach(function(o){ out.push([o.ym,o[O],o[DIS],o[INV],o[CAN],o[SRT],o[NET],o.gap,o[CLO],o[TRA],o[PHY],o[DC]]); });
+    } else {
+      out=[['Month','Model','Segment','Opening','Dispatch','Invoiced','Cancelled','Returns','Net retail','Gap','Closing','In transit','Physical','On DC','Avg retail/mo','Cover (months)','Order to '+prefs.cover+'m']];
+      B.models.forEach(function(m){ var r=m.r;
+        out.push([B.month,m.name,m.seg,r[O],r[DIS],r[INV],r[CAN],r[SRT],r[NET],m.gap,r[CLO],r[TRA],r[PHY],r[DC],
+          Math.round(m.avg*10)/10, m.cover>=99?'':Math.round(m.cover*10)/10, m.need]); });
+    }
+    dl('dispatch_'+what,out);
+  };
+
+  /* ---------------- add or replace a month ---------------- */
+  function loadSheetJS(){
+    return new Promise(function(res,rej){
+      if(window.XLSX) return res(window.XLSX);
+      var s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload=function(){ res(window.XLSX); };
+      s.onerror=function(){ rej(new Error('Could not load the spreadsheet reader. Check the internet connection.')); };
+      document.head.appendChild(s);
+    });
+  }
+  var SEGMAP={'HF DELUXE':'Entry','HF DELUXE FLEX':'Entry','PASSION +':'Entry',
+    'SPLENDOR +':'Deluxe','SPLENDOR+ FLEX':'Deluxe','SPLENDOR+ XTEC':'Deluxe','SPLENDOR+ XTEC 2.0':'Deluxe',
+    'SUPER SPLENDOR XTEC':'125cc','SUPER SPLENDOR XTEC 2.0':'125cc','GLAMOUR X':'125cc','GLAMOUR XTEC':'125cc','XTREME 125R':'125cc',
+    'XTREME 160R 4V':'Premium','XPULSE 200 4V':'Premium','MAVRICK 440':'Premium',
+    'DESTINI 110':'Scooter','DESTINI 125':'Scooter','DESTINI PRIME':'Scooter','PLEASURE+':'Scooter','PLEASURE+ XTEC':'Scooter','XOOM 125':'Scooter'};
+  window.dpImport=function(){
+    var ym=prompt('Which month is this file for? Use YYYY-MM, for example 2026-10.', thisYM());
+    if(!ym) return;
+    ym=String(ym).trim();
+    if(!/^\d{4}-\d{2}$/.test(ym)){ alert('That is not a YYYY-MM month.'); return; }
+    var inp=document.createElement('input'); inp.type='file'; inp.accept='.xlsx,.xls,.csv';
+    inp.onchange=function(){
+      var f=inp.files&&inp.files[0]; if(!f) return;
+      loadSheetJS().then(function(XLSX){
+        var fr=new FileReader();
+        fr.onload=function(){
+          try{
+            var wb=XLSX.read(new Uint8Array(fr.result),{type:'array'});
+            var aoa=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true});
+            var head=(aoa[0]||[]).map(function(x){ return String(x==null?'':x).trim(); });
+            var D=JSON.parse(JSON.stringify(DATA()));
+            function col(name){ for(var i=0;i<head.length;i++) if(head[i].toLowerCase()===name.toLowerCase()) return i; return -1; }
+            var cm=col('Model');
+            if(cm<0){ alert('No "Model" column found - is this the dispatch export?'); return; }
+            var ci=D.cols.map(col);
+            if(ci[1]<0){ alert('No "Dispatch" column found - is this the dispatch export?'); return; }
+            function ix(list,v){ var i=list.indexOf(v); if(i<0){ list.push(v); i=list.length-1; } return i; }
+            function n(v){ var x=parseFloat(String(v==null?'':v).replace(/,/g,'')); return isFinite(x)?Math.round(x):0; }
+            var mi=ix(D.months,ym);
+            D.rows=D.rows.filter(function(r){ return r[0]!==mi; });   // replace, so re-importing is safe
+            var added=0;
+            aoa.slice(1).forEach(function(r){
+              if(!r||!r[cm]) return;
+              var mod=String(r[cm]).trim();
+              D.rows.push([mi,ix(D.models,mod),ix(D.segs,SEGMAP[mod]||'Other')].concat(ci.map(function(c){ return c<0?0:n(r[c]); })));
+              added++;
+            });
+            if(!added){ alert('No model rows found in that file.'); return; }
+            /* D.months must NOT be re-sorted here - every stored row holds a month
+               INDEX, so reordering the labels would silently reassign old months.
+               build() sorts a copy for display instead. */
+            saveData(D); prefs.month=ym; savePrefs(); render();
+            alert('Loaded '+added+' model rows for '+ym+'.');
+          }catch(err){ alert('Could not read that file: '+err.message); }
+        };
+        fr.readAsArrayBuffer(f);
+      }).catch(function(err){ alert(err.message); });
+    };
+    inp.click();
+  };
+
+  /* ---------------- nav + view ---------------- */
+  function ensure(){
+    if(document.getElementById('view-dispatch')) return true;
+    var nav=document.getElementById('nav'); if(!nav) return false;
+    var btn=document.createElement('button');
+    btn.className='nav-item'; btn.setAttribute('data-view','dispatch');
+    btn.innerHTML='<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+      +'<path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>Dispatch';
+    btn.onclick=function(){ window.setView('dispatch'); };
+    var setup=nav.querySelector('.nav-section');
+    if(setup) nav.insertBefore(btn,setup); else nav.appendChild(btn);
+    var views=document.querySelectorAll('.view');
+    var sec=document.createElement('section'); sec.className='view'; sec.id='view-dispatch';
+    sec.innerHTML='<div id="dispatch-root"></div>';
+    if(views.length) views[views.length-1].parentNode.appendChild(sec); else document.body.appendChild(sec);
+    return true;
+  }
+  var prev=window.setView;
+  window.setView=function(n){
+    var r=prev.apply(this,arguments);
+    if(n==='dispatch'){ setTimeout(function(){ if(ensure()) render(); },60); }
+    return r;
+  };
+  document.addEventListener('DOMContentLoaded',function(){ setTimeout(ensure,1000); });
+})();
+</script>
+
 <!-- ===== VIDA ENQUIRY -> BOOKING -> DELIVERY =================================
      Cross-references the VIDA booking report against DMS billing on Order Number,
      and against the live enquiry register on mobile number, to separate:
