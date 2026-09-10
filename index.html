@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v37 &middot; 09 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v38 &middot; 10 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -2583,6 +2583,315 @@ document.addEventListener('DOMContentLoaded', initApp);
   document.addEventListener('DOMContentLoaded',function(){ setTimeout(ensure,1000); });
 })();
 </script>
+<!-- ===== DIGITAL FUNNEL ======================================================
+     Monthly Power BI digital-enquiry export, source-wise: open carried in, new
+     received, total worked, sales, lost and duplicates. Tracks whether digital
+     leads are actually being converted or are silently ageing in the open pile.
+     Self-contained and additive.
+     ======================================================================== -->
+<script>
+(function(){
+  "use strict";
+  var KEY='hero-digital-v1', PKEY='hero-digital-prefs-v1';
+  var SEED={"months":["2026-04","2026-05","2026-06","2026-07","2026-08","2026-09"],"sources":["BikeDekho","CarBike360","CWS Leads","DIY Finance","Facebook","Google","HeroApp","WhatsApp Business","Impact","Cross Selling","Web Site","Hero Sure Leads","Digital Direct","Portals"],"vals":["Open","New","Total Enquiries","Sale","No of Lost Enquiries","No of Duplicate Enquiries"],"rows":[[0,0,2,0,2,0,1,0],[0,1,8,0,8,0,1,0],[0,2,11,1,12,0,1,0],[0,3,7,0,7,0,0,0],[0,4,21,0,21,0,10,0],[0,5,2,0,2,0,0,0],[0,6,6,2,8,0,0,0],[0,7,1,0,1,0,1,0],[0,8,0,1,1,1,0,0],[0,9,26,7,33,2,4,0],[0,10,6,6,12,4,0,0],[0,11,44,77,121,69,4,0],[1,0,1,0,1,0,0,0],[1,1,7,0,7,0,0,0],[1,2,11,2,13,0,0,0],[1,3,7,2,9,0,0,0],[1,4,11,0,11,0,1,0],[1,5,2,0,2,0,0,0],[1,6,8,0,8,0,0,0],[1,8,0,1,1,0,0,0],[1,10,8,0,8,0,0,0],[1,9,27,12,39,6,0,0],[1,11,48,47,95,36,1,0],[2,0,1,0,1,0,0,0],[2,1,7,0,7,0,4,0],[2,2,13,0,13,0,0,0],[2,3,9,0,9,0,6,0],[2,5,2,0,2,0,0,0],[2,6,8,2,10,0,2,0],[2,8,1,0,1,0,0,0],[2,10,8,0,8,0,5,0],[2,4,10,5,15,2,7,0],[2,9,33,35,68,15,6,0],[2,11,58,60,118,30,20,0],[3,0,1,0,1,0,0,0],[3,1,3,0,3,0,0,0],[3,2,13,3,16,0,2,0],[3,3,3,1,4,0,0,0],[3,5,2,0,2,0,1,0],[3,6,8,0,8,0,0,0],[3,8,1,0,1,0,0,0],[3,10,3,0,3,0,0,0],[3,7,0,1,1,0,0,0],[3,4,6,8,14,2,1,0],[3,9,47,23,70,9,0,0],[3,11,68,29,97,19,1,0],[4,0,0,0,0,0,3,0],[4,2,12,5,17,0,10,0],[4,12,0,1,1,0,6,0],[4,3,4,2,6,0,3,0],[4,4,11,9,20,0,11,1],[4,5,1,0,1,0,0,0],[4,6,8,1,9,0,5,0],[4,8,1,0,1,0,0,0],[4,13,0,0,0,0,1,0],[4,10,3,0,3,0,2,0],[4,7,1,0,1,0,0,0],[4,9,61,27,88,4,39,0],[4,11,77,74,151,28,54,0],[5,9,52,3,55,0,14,0],[5,2,7,1,8,0,5,0],[5,12,1,0,1,0,0,0],[5,3,4,0,4,0,0,0],[5,4,8,0,8,0,4,0],[5,5,1,0,1,0,0,0],[5,6,4,0,4,0,3,0],[5,8,1,0,1,0,0,0],[5,10,1,0,1,0,0,0],[5,7,1,0,1,0,1,0],[5,11,73,22,95,5,22,3]],"totals":{"2026-04":{"dig":[134,94,228,76,22,0],"non":[1287,628,1915,303,152,32],"all":[1421,722,2143,379,174,32]},"2026-05":{"dig":[130,64,194,42,2,0],"non":[1430,535,1965,219,20,4],"all":[1560,599,2159,261,22,4]},"2026-06":{"dig":[150,102,252,47,50,0],"non":[1722,566,2288,216,352,35],"all":[1872,668,2540,263,402,35]},"2026-07":{"dig":[155,65,220,30,5,0],"non":[1685,656,2341,188,158,84],"all":[1840,721,2561,218,163,84]},"2026-08":{"dig":[179,119,298,32,134,1],"non":[1907,809,2716,208,1342,100],"all":[2086,928,3014,240,1476,101]},"2026-09":{"dig":[153,26,179,5,49,3],"non":[1207,202,1409,50,406,43],"all":[1360,228,1588,55,455,46]}}};
+
+  var prefs; try{ prefs=Object.assign({month:'',src:''},JSON.parse(localStorage.getItem(PKEY))||{}); }
+             catch(e){ prefs={month:'',src:''}; }
+  function savePrefs(){ try{ localStorage.setItem(PKEY,JSON.stringify(prefs)); }catch(e){} }
+  window.dgSet=function(k,v){ prefs[k]=v; savePrefs(); render(); };
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function num(n){ return (Math.round(n)||0).toLocaleString('en-IN'); }
+  function pct(a,b){ return b?Math.round(a/b*1000)/10:0; }
+  function sgn(n){ return (n>0?'+':'')+num(n); }
+  function mlabel(ym){ try{ if(typeof formatMonthLabel==='function') return formatMonthLabel(ym); }catch(e){} return ym; }
+  function thisYM(){ var d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2); }
+
+  function DATA(){
+    try{ var s=localStorage.getItem(KEY); if(s){ var d=JSON.parse(s); if(d&&d.rows&&d.months) return d; } }catch(e){}
+    return SEED;
+  }
+  function saveData(d){ try{ localStorage.setItem(KEY,JSON.stringify(d)); }catch(e){ alert('Could not save that file to browser storage.'); } }
+
+  /* row: 0 monthIdx 1 sourceIdx then 2 open 3 new 4 total 5 sale 6 lost 7 dup */
+  var OP=2,NW=3,TT=4,SA=5,LO=6,DU=7;
+
+  function build(){
+    var D=DATA(), M=D.months.slice().sort();
+    var month=prefs.month && M.indexOf(prefs.month)>=0 ? prefs.month : M[M.length-1];
+    var partial=month===thisYM();
+
+    function rowsFor(ym){ var i=D.months.indexOf(ym); return D.rows.filter(function(r){ return r[0]===i; }); }
+    function tot(ym,k){ var t=(D.totals||{})[ym]||{}; return t[k]||[0,0,0,0,0,0]; }
+
+    var hist=M.map(function(ym){
+      var dg=tot(ym,'dig'), all=tot(ym,'all');
+      return {ym:ym, partial:ym===thisYM(),
+              open:dg[0], nw:dg[1], total:dg[2], sale:dg[3], lost:dg[4], dup:dg[5],
+              allTotal:all[2], allSale:all[3],
+              conv:pct(dg[3],dg[2]), lostPct:pct(dg[4],dg[2]),
+              shareEnq:pct(dg[2],all[2]), shareSale:pct(dg[3],all[3])};
+    });
+    var cur=hist.filter(function(h){ return h.ym===month; })[0]||hist[hist.length-1];
+    var prevM=M[M.indexOf(month)-1];
+    var prev=prevM?hist.filter(function(h){ return h.ym===prevM; })[0]:null;
+
+    var pmap={};
+    if(prevM) rowsFor(prevM).forEach(function(r){ pmap[r[1]]=r; });
+    var srcs=rowsFor(month).map(function(r){
+      var p=pmap[r[1]];
+      return {name:D.sources[r[1]], r:r, conv:pct(r[SA],r[TT]), lostPct:pct(r[LO],r[TT]),
+              dSale:p?(r[SA]-p[SA]):null, dTot:p?(r[TT]-p[TT]):null};
+    }).sort(function(a,b){ return b.r[TT]-a.r[TT]; });
+
+    /* sales by source across every month, for the trend grid */
+    var grid=D.sources.map(function(s,si){
+      var cells=M.map(function(ym){
+        var i=D.months.indexOf(ym);
+        var r=D.rows.filter(function(x){ return x[0]===i&&x[1]===si; })[0];
+        return r?{tot:r[TT],sale:r[SA]}:{tot:0,sale:0};
+      });
+      return {name:s, cells:cells, sale:cells.reduce(function(a,c){ return a+c.sale; },0),
+                       tot:cells.reduce(function(a,c){ return a+c.tot; },0)};
+    }).filter(function(g){ return g.tot>0; }).sort(function(a,b){ return b.sale-a.sale || b.tot-a.tot; });
+
+    /* sources carrying real volume but producing nothing */
+    var dead=srcs.filter(function(s){ return s.r[TT]>=5 && s.r[SA]===0; });
+
+    return {D:D,M:M,month:month,partial:partial,hist:hist,cur:cur,prev:prev,srcs:srcs,grid:grid,dead:dead};
+  }
+
+  function convColour(c){ return c>=25?'#2bd47d':c>=15?'#ffb02e':'#ff5c5c'; }
+
+  function kpi(v,l,c,s){
+    return '<div class="card kpi"><div class="kpi-value" style="color:'+(c||'var(--text)')+'">'+v+'</div>'
+      +'<div class="kpi-label">'+l+'</div>'+(s?('<div class="help-text" style="margin-top:2px">'+s+'</div>'):'')+'</div>';
+  }
+  function table(head,rows){
+    if(!rows.length) return '<p class="help-text">Nothing to show.</p>';
+    return '<div style="overflow-x:auto"><table class="table"><thead><tr>'
+      +head.map(function(h){ return '<th>'+h+'</th>'; }).join('')+'</tr></thead><tbody>'
+      +rows.map(function(r){ return '<tr>'+r.map(function(c){ return '<td>'+c+'</td>'; }).join('')+'</tr>'; }).join('')
+      +'</tbody></table></div>';
+  }
+
+  var chart=null;
+  function drawChart(B){
+    var cv=document.getElementById('dg-chart'); if(!cv||typeof Chart==='undefined') return;
+    try{ if(chart) chart.destroy(); }catch(e){}
+    chart=new Chart(cv.getContext('2d'),{
+      data:{labels:B.hist.map(function(h){ return mlabel(h.ym)+(h.partial?' *':''); }),
+        datasets:[
+          {type:'bar',label:'Digital enquiries',data:B.hist.map(function(h){ return h.total; }),backgroundColor:'rgba(91,158,255,0.7)',yAxisID:'y'},
+          {type:'bar',label:'Sales',data:B.hist.map(function(h){ return h.sale; }),backgroundColor:'rgba(43,212,125,0.8)',yAxisID:'y'},
+          {type:'line',label:'Conversion %',data:B.hist.map(function(h){ return h.conv; }),borderColor:'#ffb02e',backgroundColor:'#ffb02e',tension:0.3,yAxisID:'y1'}
+        ]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{labels:{color:'#94a0c8'}}},
+        scales:{x:{ticks:{color:'#94a0c8'},grid:{color:'rgba(255,255,255,0.05)'}},
+                y:{position:'left',ticks:{color:'#94a0c8'},grid:{color:'rgba(255,255,255,0.05)'}},
+                y1:{position:'right',ticks:{color:'#ffb02e',callback:function(v){return v+'%';}},grid:{display:false},min:0}}}
+    });
+  }
+
+  function render(){
+    var root=document.getElementById('digital-root'); if(!root) return;
+    var B=build(), D=B.D, c=B.cur, p=B.prev;
+    var h='';
+
+    h+='<div class="card" style="margin-bottom:14px"><h2 style="margin:0 0 4px">&#128241; Digital funnel</h2>'
+      +'<p class="help-text">Source-wise digital enquiries from the Power BI export. '
+      +'<b>Conversion</b> here is sales &divide; <b>total</b> enquiries worked (open carried in + new). '
+      +'Power BI divides by <i>new</i> only, which is why its figure can exceed 100% in a month where old leads close.</p></div>';
+
+    h+='<div class="card" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Month'
+      +'<select class="filter-select" onchange="dgSet(\'month\',this.value)">'
+      + B.M.slice().reverse().map(function(m){ return '<option value="'+m+'"'+(B.month===m?' selected':'')+'>'+esc(mlabel(m))+(m===thisYM()?' (running)':'')+'</option>'; }).join('')
+      +'</select></label>'
+      +'<span style="margin-left:auto"><button class="btn btn-sm" onclick="dgImport()">&#128228; Add / update a month</button></span></div>';
+
+    h+='<div class="grid grid-4">';
+    h+=kpi(num(c.total),'Digital enquiries worked','#5b9eff',num(c.open)+' carried in + '+num(c.nw)+' new');
+    h+=kpi(num(c.sale),'Sales','#2bd47d',p?('previous '+num(p.sale)+' &middot; '+sgn(c.sale-p.sale)):'&nbsp;');
+    h+=kpi(c.conv+'%','Conversion',convColour(c.conv),p?('previous '+p.conv+'%'):'sales / total worked');
+    h+=kpi(c.lostPct+'%','Lost',c.lostPct>25?'#ff5c5c':'#ffb02e',num(c.lost)+' marked lost');
+    h+='</div><div class="grid grid-4" style="margin-top:12px">';
+    h+=kpi(num(c.open),'Open carried in','#ffb02e','worked but not closed last month');
+    h+=kpi(c.shareEnq+'%','Digital share of enquiries','#a05bff','of '+num(c.allTotal)+' dealership enquiries');
+    h+=kpi(c.shareSale+'%','Digital share of sales',c.shareSale>=c.shareEnq?'#2bd47d':'#ff5c5c','of '+num(c.allSale)+' dealership sales');
+    h+=kpi(num(c.dup),'Duplicates','#94a0c8','same customer logged twice');
+    h+='</div>';
+
+    /* the headline judgement */
+    var first=B.hist[0], last=B.hist.filter(function(x){ return !x.partial; }).pop()||B.hist[B.hist.length-1];
+    if(first && last && first!==last && last.conv < first.conv-5){
+      h+='<div class="card" style="margin-top:14px;border-left:4px solid #ff5c5c;background:rgba(255,92,92,0.07)">'
+        +'<h3 style="margin:0 0 4px;color:#ff5c5c">&#9888;&#65039; Digital conversion is falling while volume is not</h3>'
+        +'<p class="help-text">Conversion has gone from <b>'+first.conv+'%</b> in '+esc(mlabel(first.ym))
+        +' to <b>'+last.conv+'%</b> in '+esc(mlabel(last.ym))+', on '+(last.total>=first.total?'higher':'similar')
+        +' enquiry volume ('+num(first.total)+' &rarr; '+num(last.total)+'). '
+        +'Digital is bringing the leads in; they are not being closed.</p></div>';
+    }
+    if(B.dead.length){
+      h+='<div class="card" style="margin-top:14px;border-left:4px solid #ffb02e">'
+        +'<h3 style="margin:0 0 4px">&#128269; Sources with volume but no sales in '+esc(mlabel(B.month))+'</h3>'
+        +'<p class="help-text">'+B.dead.map(function(s){ return '<b>'+esc(s.name)+'</b> ('+s.r[TT]+' enquiries)'; }).join(', ')
+        +'. Either the leads are poor, or nobody is working them &mdash; worth deciding which before renewing spend.</p></div>';
+    }
+
+    h+='<div class="card" style="margin-top:14px"><h3>Digital enquiries, sales and conversion</h3>'
+      +'<div class="chart-wrap" style="height:280px"><canvas id="dg-chart"></canvas></div></div>';
+
+    h+='<div class="card" style="margin-top:14px"><h3>Month by month</h3>';
+    h+=table(['Month','Open in','New','Total worked','Sales','Conversion','Lost','Lost %','Duplicates','Share of enquiries','Share of sales'],
+      B.hist.slice().reverse().map(function(o){
+        return ['<b>'+esc(mlabel(o.ym))+(o.partial?' <span class="help-text">(running)</span>':'')+'</b>',
+          num(o.open),num(o.nw),'<b>'+num(o.total)+'</b>',
+          '<b style="color:#2bd47d">'+num(o.sale)+'</b>',
+          '<b style="color:'+convColour(o.conv)+'">'+o.conv+'%</b>',
+          num(o.lost),o.lostPct+'%',num(o.dup),
+          o.shareEnq+'%',
+          '<b style="color:'+(o.shareSale>=o.shareEnq?'#2bd47d':'#ff5c5c')+'">'+o.shareSale+'%</b>'];
+      }));
+    h+='<div style="margin-top:10px"><button class="btn btn-sm" onclick="dgExport(\'months\')">&#11015;&#65039; Export</button></div></div>';
+
+    h+='<div class="card" style="margin-top:14px"><h3>By source &mdash; '+esc(mlabel(B.month))+'</h3>';
+    h+=table(['Source','Open in','New','Total worked','Sales','vs prev','Conversion','Lost','Lost %','Duplicates'],
+      B.srcs.map(function(s){
+        var r=s.r;
+        return ['<b>'+esc(s.name)+'</b>',num(r[OP]),num(r[NW]),'<b>'+num(r[TT])+'</b>',
+          '<b style="color:#2bd47d">'+num(r[SA])+'</b>',
+          s.dSale==null?'&mdash;':('<span style="color:'+(s.dSale>0?'#2bd47d':s.dSale<0?'#ff5c5c':'var(--muted)')+'">'+sgn(s.dSale)+'</span>'),
+          '<b style="color:'+(r[TT]?convColour(s.conv):'var(--muted)')+'">'+(r[TT]?s.conv+'%':'&mdash;')+'</b>',
+          num(r[LO]),s.lostPct+'%',num(r[DU])];
+      }));
+    h+='<div style="margin-top:10px"><button class="btn btn-sm" onclick="dgExport(\'sources\')">&#11015;&#65039; Export by source</button></div></div>';
+
+    h+='<div class="card" style="margin-top:14px"><h3>Sales by source, every month</h3>'
+      +'<p class="help-text">Each cell is <b>sales</b> with total enquiries worked beneath it. This is where you see a source quietly stop producing.</p>';
+    h+=table(['Source'].concat(B.M.map(function(m){ return esc(mlabel(m))+(m===thisYM()?' *':''); })).concat(['Total sales']),
+      B.grid.map(function(g){
+        return ['<b>'+esc(g.name)+'</b>'].concat(g.cells.map(function(c){
+          return '<b style="color:'+(c.sale?'#2bd47d':'var(--muted)')+'">'+c.sale+'</b>'
+            +'<div class="help-text" style="font-size:10px">'+c.tot+'</div>';
+        })).concat(['<b>'+g.sale+'</b>']);
+      }));
+    h+='<div style="margin-top:10px"><button class="btn btn-sm" onclick="dgExport(\'grid\')">&#11015;&#65039; Export grid</button></div></div>';
+
+    root.innerHTML=h;
+    drawChart(B);
+  }
+
+  function dl(name,rows){
+    var csv=rows.map(function(r){ return r.map(function(c){ var s=String(c==null?'':c).replace(/<[^>]*>/g,' ').replace(/&mdash;/g,'').replace(/\s+/g,' ').trim(); return /[",\n]/.test(s)?('"'+s.replace(/"/g,'""')+'"'):s; }).join(','); }).join('\n');
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));
+    a.download=name+'_'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },100);
+  }
+  window.dgExport=function(what){
+    var B=build(), out;
+    if(what==='months'){
+      out=[['Month','Open in','New','Total worked','Sales','Conversion %','Lost','Lost %','Duplicates','Dealership enquiries','Dealership sales','Digital share of enquiries %','Digital share of sales %']];
+      B.hist.forEach(function(o){ out.push([o.ym,o.open,o.nw,o.total,o.sale,o.conv,o.lost,o.lostPct,o.dup,o.allTotal,o.allSale,o.shareEnq,o.shareSale]); });
+    } else if(what==='sources'){
+      out=[['Month','Source','Open in','New','Total worked','Sales','Conversion %','Lost','Lost %','Duplicates']];
+      B.srcs.forEach(function(s){ var r=s.r; out.push([B.month,s.name,r[OP],r[NW],r[TT],r[SA],s.conv,r[LO],s.lostPct,r[DU]]); });
+    } else {
+      out=[['Source'].concat(B.M.map(function(m){ return m+' sales'; })).concat(B.M.map(function(m){ return m+' enquiries'; }))];
+      B.grid.forEach(function(g){ out.push([g.name].concat(g.cells.map(function(c){ return c.sale; })).concat(g.cells.map(function(c){ return c.tot; }))); });
+    }
+    dl('digital_'+what,out);
+  };
+
+  /* ---------------- add or replace a month ---------------- */
+  function loadSheetJS(){
+    return new Promise(function(res,rej){
+      if(window.XLSX) return res(window.XLSX);
+      var s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload=function(){ res(window.XLSX); };
+      s.onerror=function(){ rej(new Error('Could not load the spreadsheet reader. Check the internet connection.')); };
+      document.head.appendChild(s);
+    });
+  }
+  window.dgImport=function(){
+    var ym=prompt('Which month is this digital export for? Use YYYY-MM, for example 2026-10.', thisYM());
+    if(!ym) return;
+    ym=String(ym).trim();
+    if(!/^\d{4}-\d{2}$/.test(ym)){ alert('That is not a YYYY-MM month.'); return; }
+    var inp=document.createElement('input'); inp.type='file'; inp.accept='.xlsx,.xls,.csv';
+    inp.onchange=function(){
+      var f=inp.files&&inp.files[0]; if(!f) return;
+      loadSheetJS().then(function(XLSX){
+        var fr=new FileReader();
+        fr.onload=function(){
+          try{
+            var wb=XLSX.read(new Uint8Array(fr.result),{type:'array'});
+            var aoa=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true});
+            var head=(aoa[0]||[]).map(function(x){ return String(x==null?'':x).trim(); });
+            function col(nm){ for(var i=0;i<head.length;i++) if(head[i].toLowerCase()===nm.toLowerCase()) return i; return -1; }
+            var cB=col('Bucket'), cS=col('Enquiry Source'), cN=col('Name');
+            if(cB<0||cS<0){ alert('No "Bucket" / "Enquiry Source" column found - is this the digital enquiry export?'); return; }
+            var D=JSON.parse(JSON.stringify(DATA()));
+            var ci=D.vals.map(col);
+            function ix(list,v){ var i=list.indexOf(v); if(i<0){ list.push(v); i=list.length-1; } return i; }
+            function n(v){ var x=parseFloat(String(v==null?'':v).replace(/,/g,'')); return isFinite(x)?Math.round(x):0; }
+            var mi=ix(D.months,ym);
+            D.rows=D.rows.filter(function(r){ return r[0]!==mi; });   // replace, so re-importing is safe
+            if(!D.totals) D.totals={};
+            var t={}, added=0;
+            aoa.slice(1).forEach(function(r){
+              if(!r) return;
+              var bucket=String(r[cB]||'').trim(), src=String(r[cS]||'').trim(), name=String(cN>=0?(r[cN]||''):'').trim();
+              var v=ci.map(function(c){ return c<0?0:n(r[c]); });
+              if(bucket==='Digital'&&src==='Total') t.dig=v;
+              else if(bucket==='Non-Digital'&&src==='Total') t.non=v;
+              else if(bucket==='Total'&&!src) t.all=v;
+              /* each source appears twice - the rollup (Name = "Total") and the
+                 dealer line. Taking only the rollup avoids double counting. */
+              else if(bucket==='Digital'&&src&&name==='Total'){ D.rows.push([mi,ix(D.sources,src)].concat(v)); added++; }
+            });
+            if(!added){ alert('No digital source rows found in that file.'); return; }
+            D.totals[ym]=t;
+            saveData(D); prefs.month=ym; savePrefs(); render();
+            alert('Loaded '+added+' sources for '+ym+'.');
+          }catch(err){ alert('Could not read that file: '+err.message); }
+        };
+        fr.readAsArrayBuffer(f);
+      }).catch(function(err){ alert(err.message); });
+    };
+    inp.click();
+  };
+
+  /* ---------------- nav + view ---------------- */
+  function ensure(){
+    if(document.getElementById('view-digital')) return true;
+    var nav=document.getElementById('nav'); if(!nav) return false;
+    var btn=document.createElement('button');
+    btn.className='nav-item'; btn.setAttribute('data-view','digital');
+    btn.innerHTML='<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+      +'<rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>Digital Funnel';
+    btn.onclick=function(){ window.setView('digital'); };
+    var setup=nav.querySelector('.nav-section');
+    if(setup) nav.insertBefore(btn,setup); else nav.appendChild(btn);
+    var views=document.querySelectorAll('.view');
+    var sec=document.createElement('section'); sec.className='view'; sec.id='view-digital';
+    sec.innerHTML='<div id="digital-root"></div>';
+    if(views.length) views[views.length-1].parentNode.appendChild(sec); else document.body.appendChild(sec);
+    return true;
+  }
+  var prev=window.setView;
+  window.setView=function(n){
+    var r=prev.apply(this,arguments);
+    if(n==='digital'){ setTimeout(function(){ if(ensure()) render(); },60); }
+    return r;
+  };
+  document.addEventListener('DOMContentLoaded',function(){ setTimeout(ensure,1000); });
+})();
+</script>
+
 <!-- ===== DISPATCH & STOCK ====================================================
      Monthly Power BI dispatch export, model-wise: opening stock, dispatch,
      invoiced, net retail, closing stock, in transit, physical, stock on DC.
