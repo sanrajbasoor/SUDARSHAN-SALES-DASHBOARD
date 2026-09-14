@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v45 &middot; 14 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v46 &middot; 14 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -2583,6 +2583,264 @@ document.addEventListener('DOMContentLoaded', initApp);
   document.addEventListener('DOMContentLoaded',function(){ setTimeout(ensure,1000); });
 })();
 </script>
+<!-- ===== FESTIVAL 100 — DAILY RETAIL TRACKER ==================================
+     Day-by-day retail entry for each festive phase, in the same shape as the
+     dealership's own Ganesh Chaturthi sheet: one row per day, one column per
+     counter, with LY / TARGET / ACHIEVED footers underneath.
+     Attaches itself under the existing Festival 100 view; nothing there is
+     modified, so the F100 planner keeps working exactly as before.
+     ========================================================================= -->
+<script>
+(function(){
+  "use strict";
+  var KEY='hero-f100daily-v1';
+  var PH=[{"p":"Phase 1","n":"Pre-Ganesh Chaturthi","a":"2026-09-01","b":"2026-09-13","ev":null,"ly":[7,11,3,0,12,22],"ty":[20,17,14,5,25,25]},{"p":"Phase 1","n":"Ganesh Chaturthi","a":"2026-09-14","b":"2026-09-25","ev":"GANESH","ly":[25,31,19,2,10,60],"ty":[40,40,26,5,15,70]},{"p":"Phase 1","n":"Post Ganesh to Pre Navratri","a":"2026-09-26","b":"2026-10-10","ev":null,"ly":[0,9,7,0,13,30],"ty":[10,12,10,2,15,35]},{"p":"Phase 2","n":"Navratri","a":"2026-10-11","b":"2026-10-21","ev":"NAVRATRI","ly":[98,82,64,7,61,141],"ty":[120,90,70,10,65,155]},{"p":"Phase 2","n":"Pre Dhanteras","a":"2026-10-22","b":"2026-11-05","ev":null,"ly":[56,50,34,6,30,168],"ty":[65,60,40,6,30,180]},{"p":"Phase 2","n":"Dhanteras","a":"2026-11-06","b":"2026-11-06","ev":null,"ly":[117,79,66,5,72,346],"ty":[130,90,70,10,80,380]},{"p":"Phase 2","n":"Choti Diwali","a":"2026-11-07","b":"2026-11-07","ev":null,"ly":[39,17,24,3,52,144],"ty":[45,20,30,5,60,160]},{"p":"Phase 2","n":"Diwali","a":"2026-11-08","b":"2026-11-08","ev":null,"ly":[40,29,26,2,52,151],"ty":[50,30,30,5,60,160]},{"p":"Phase 2","n":"Post Diwali","a":"2026-11-09","b":"2026-11-11","ev":null,"ly":[12,15,18,1,56,54],"ty":[12,15,20,2,60,60]},{"p":"Phase 3","n":"Post-festive run","a":"2026-11-12","b":"2026-12-09","ev":null,"ly":[166,98,90,9,102,350],"ty":[90,70,60,15,70,320]}];
+  /* columns: HO (Napier Town), MML, DN, AT (Adhartal), OT (Other), NET (network) */
+  var COLS=[['HO','Napier Town'],['MML','MML (ICE)'],['DN','DN'],['AT','Adhartal'],
+            ['OT','Other'],['NET','Network']];
+
+  var st; try{ st=Object.assign({phase:1,day:{},tgt:{}},JSON.parse(localStorage.getItem(KEY))||{}); }
+          catch(e){ st={phase:1,day:{},tgt:{}}; }
+  function save(){ try{ localStorage.setItem(KEY,JSON.stringify(st)); }catch(e){} }
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function num(n){ return (Math.round(n)||0).toLocaleString('en-IN'); }
+  function sgn(n){ return (n>0?'+':'')+num(n); }
+  var MS=86400000;
+  function d2(n){ return (n<10?'0':'')+n; }
+  function iso(d){ return d.getUTCFullYear()+'-'+d2(d.getUTCMonth()+1)+'-'+d2(d.getUTCDate()); }
+  function parse(s){ var p=s.split('-'); return new Date(Date.UTC(+p[0],+p[1]-1,+p[2])); }
+  var DAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function pretty(d){ return d.getUTCDate()+'-'+MON[d.getUTCMonth()]+'-'+String(d.getUTCFullYear()).slice(2); }
+
+  /* every date in a phase, with the event label that belongs to it */
+  function daysOf(i){
+    var p=PH[i], a=parse(p.a), b=parse(p.b), out=[];
+    for(var t=a.getTime(); t<=b.getTime(); t+=MS){
+      var d=new Date(t), s=iso(d), ev=p.n;
+      if(p.ev==='GANESH'){
+        ev = (s===p.a) ? 'Ganesh Sthapana' : (s===p.b) ? 'Ganesh Visarjan' : 'Ganesh Chaturthi';
+      } else if(p.ev==='NAVRATRI'){
+        ev = (s===p.a) ? 'Navratri begins' : (s===p.b) ? 'Dussehra' : 'Navratri';
+      }
+      out.push({iso:s, d:d, ev:ev, day:DAYS[d.getUTCDay()]});
+    }
+    return out;
+  }
+
+  function cell(i,dayIso,key){
+    var k=i+'|'+dayIso, r=st.day[k];
+    return (r && r[key]!=null && r[key]!=='') ? +r[key] : null;
+  }
+  window.fdSet=function(i,dayIso,key,v){
+    var k=i+'|'+dayIso;
+    st.day[k]=st.day[k]||{};
+    if(v===''||v==null) delete st.day[k][key]; else st.day[k][key]=Math.max(0,parseInt(v,10)||0);
+    if(!Object.keys(st.day[k]).length) delete st.day[k];
+    save(); render();
+  };
+  window.fdTgt=function(i,key,v){
+    st.tgt[i]=st.tgt[i]||{};
+    if(v===''||v==null) delete st.tgt[i][key]; else st.tgt[i][key]=Math.max(0,parseInt(v,10)||0);
+    save(); render();
+  };
+  window.fdPhase=function(v){ st.phase=parseInt(v,10)||0; save(); render(); };
+  window.fdClear=function(i){
+    if(!confirm('Clear every entry for this phase? Targets are kept.')) return;
+    Object.keys(st.day).forEach(function(k){ if(k.indexOf(i+'|')===0) delete st.day[k]; });
+    save(); render();
+  };
+
+  function target(i,ci){
+    var t=st.tgt[i]||{};
+    var key=COLS[ci][0];
+    return (t[key]!=null && t[key]!=='') ? +t[key] : PH[i].ty[ci];
+  }
+
+  function build(i){
+    var days=daysOf(i), tot=[0,0,0,0,0,0], filled=0, today=iso(new Date());
+    days.forEach(function(dd){
+      var any=false;
+      COLS.forEach(function(c,ci){ var v=cell(i,dd.iso,c[0]); if(v!=null){ tot[ci]+=v; any=true; } });
+      dd.entered=any; if(any) filled++;
+      dd.past = dd.iso <= today;
+      dd.counter = COLS.slice(0,5).reduce(function(a,c){ var v=cell(i,dd.iso,c[0]); return a+(v||0); },0);
+      dd.total = dd.counter + (cell(i,dd.iso,'NET')||0);
+    });
+    var tgt=COLS.map(function(_,ci){ return target(i,ci); });
+    var ctrAch=tot[0]+tot[1]+tot[2]+tot[3]+tot[4], ctrLy=PH[i].ly.slice(0,5).reduce(function(a,b){return a+b;},0);
+    var ctrTgt=tgt.slice(0,5).reduce(function(a,b){return a+b;},0);
+    var elapsed=days.filter(function(d){ return d.past; }).length;
+    return {days:days,tot:tot,tgt:tgt,filled:filled,elapsed:elapsed,
+            ach:{ctr:ctrAch,net:tot[5],all:ctrAch+tot[5]},
+            ly:{ctr:ctrLy,net:PH[i].ly[5],all:ctrLy+PH[i].ly[5]},
+            tg:{ctr:ctrTgt,net:tgt[5],all:ctrTgt+tgt[5]}};
+  }
+
+  function render(){
+    var host=document.getElementById('f100-daily'); if(!host) return;
+    var i=Math.min(Math.max(st.phase|0,0),PH.length-1), p=PH[i], B=build(i);
+    var h='';
+
+    h+='<div class="card" style="margin-top:18px"><h3>&#128197; Daily retail tracker</h3>'
+      +'<p class="help-text">Enter each day\'s retail as it happens, counter by counter, in the same shape as the festive sheet. '
+      +'<b>10348</b> and <b>Total</b> are calculated. The three rows underneath compare the phase against last year and against target.</p>';
+
+    h+='<div style="margin:10px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:center">'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Phase'
+      +'<select class="filter-select" onchange="fdPhase(this.value)">'
+      + PH.map(function(x,k){ return '<option value="'+k+'"'+(k===i?' selected':'')+'>'+esc(x.p)+' &middot; '+esc(x.n)+'</option>'; }).join('')
+      +'</select></label>'
+      +'<span class="help-text">'+esc(pretty(parse(p.a)))+' &rarr; '+esc(pretty(parse(p.b)))+' &middot; '+B.days.length+' days'
+      +' &middot; '+B.filled+' filled</span>'
+      +'<span style="margin-left:auto;display:flex;gap:8px">'
+      +'<button class="btn btn-sm" onclick="fdExport()">&#11015;&#65039; Export</button>'
+      +'<button class="btn btn-sm" onclick="fdClear('+i+')">Clear phase</button></span></div>';
+
+    /* ---- the grid ---- */
+    h+='<div style="overflow-x:auto"><table class="table" style="min-width:760px"><thead><tr>'
+      +'<th>Date</th><th>Event</th><th>Day</th>'
+      + COLS.slice(0,5).map(function(c){ return '<th style="text-align:center">'+(c[0]==='OT'?'Other':c[0])+'</th>'; }).join('')
+      +'<th style="text-align:right">10348</th>'
+      +'<th style="text-align:center">Network</th>'
+      +'<th style="text-align:right">Total</th></tr></thead><tbody>';
+
+    B.days.forEach(function(dd){
+      var miss = dd.past && !dd.entered;
+      h+='<tr'+(miss?' style="background:rgba(255,92,92,0.06)"':'')+'>'
+        +'<td style="white-space:nowrap"><b>'+esc(pretty(dd.d))+'</b></td>'
+        +'<td style="font-size:12px;color:var(--muted)">'+esc(dd.ev)+'</td>'
+        +'<td style="font-size:12px">'+esc(dd.day)+'</td>';
+      COLS.slice(0,5).forEach(function(c){
+        var v=cell(i,dd.iso,c[0]);
+        h+='<td style="text-align:center"><input type="number" min="0" value="'+(v==null?'':v)+'"'
+          +' onchange="fdSet('+i+',\''+dd.iso+'\',\''+c[0]+'\',this.value)"'
+          +' style="width:52px;text-align:center;background:var(--panel);border:1px solid var(--line);'
+          +'color:var(--text);border-radius:6px;padding:3px 4px;font-size:13px"></td>';
+      });
+      h+='<td style="text-align:right"><b>'+(dd.counter||'&mdash;')+'</b></td>';
+      var nv=cell(i,dd.iso,'NET');
+      h+='<td style="text-align:center"><input type="number" min="0" value="'+(nv==null?'':nv)+'"'
+        +' onchange="fdSet('+i+',\''+dd.iso+'\',\'NET\',this.value)"'
+        +' style="width:56px;text-align:center;background:var(--panel);border:1px solid var(--line);'
+        +'color:var(--text);border-radius:6px;padding:3px 4px;font-size:13px"></td>';
+      h+='<td style="text-align:right"><b style="color:'+(dd.total?'#2bd47d':'var(--muted)')+'">'+(dd.total||'&mdash;')+'</b></td>';
+      h+='</tr>';
+    });
+
+    /* ---- footers ---- */
+    function foot(label,vals,ctr,net,all,colour,extra){
+      var r='<tr style="border-top:2px solid var(--line)">'
+        +'<td colspan="3"><b'+(colour?(' style="color:'+colour+'"'):'')+'>'+label+'</b>'
+        +(extra?('<div class="help-text" style="font-size:11px">'+extra+'</div>'):'')+'</td>';
+      vals.slice(0,5).forEach(function(v){ r+='<td style="text-align:center"><b>'+num(v)+'</b></td>'; });
+      r+='<td style="text-align:right"><b>'+num(ctr)+'</b></td>'
+        +'<td style="text-align:center"><b>'+num(net)+'</b></td>'
+        +'<td style="text-align:right"><b'+(colour?(' style="color:'+colour+'"'):'')+'>'+num(all)+'</b></td></tr>';
+      return r;
+    }
+    h+=foot('ACHIEVED',B.tot,B.ach.ctr,B.ach.net,B.ach.all,'#2bd47d',
+            B.elapsed+' of '+B.days.length+' days elapsed');
+    h+=foot('LY',PH[i].ly,B.ly.ctr,B.ly.net,B.ly.all,'#94a0c8','same phase last year');
+
+    /* target row is editable */
+    h+='<tr><td colspan="3"><b style="color:#ffb02e">TARGET</b>'
+      +'<div class="help-text" style="font-size:11px">type to override the plan</div></td>';
+    COLS.slice(0,5).forEach(function(c,ci){
+      h+='<td style="text-align:center"><input type="number" min="0" value="'+target(i,ci)+'"'
+        +' onchange="fdTgt('+i+',\''+c[0]+'\',this.value)"'
+        +' style="width:52px;text-align:center;background:var(--panel);border:1px solid #ffb02e;'
+        +'color:#ffb02e;border-radius:6px;padding:3px 4px;font-size:13px;font-weight:700"></td>';
+    });
+    h+='<td style="text-align:right"><b style="color:#ffb02e">'+num(B.tg.ctr)+'</b></td>'
+      +'<td style="text-align:center"><input type="number" min="0" value="'+target(i,5)+'"'
+      +' onchange="fdTgt('+i+',\'NET\',this.value)"'
+      +' style="width:56px;text-align:center;background:var(--panel);border:1px solid #ffb02e;'
+      +'color:#ffb02e;border-radius:6px;padding:3px 4px;font-size:13px;font-weight:700"></td>'
+      +'<td style="text-align:right"><b style="color:#ffb02e">'+num(B.tg.all)+'</b></td></tr>';
+
+    /* gap row */
+    var gaps=B.tot.map(function(v,ci){ return v-target(i,ci); });
+    h+='<tr><td colspan="3"><b>vs TARGET</b></td>';
+    gaps.slice(0,5).forEach(function(g){
+      h+='<td style="text-align:center"><b style="color:'+(g>=0?'#2bd47d':'#ff5c5c')+'">'+sgn(g)+'</b></td>';
+    });
+    var gc=B.ach.ctr-B.tg.ctr, gn=B.ach.net-B.tg.net, ga=B.ach.all-B.tg.all;
+    h+='<td style="text-align:right"><b style="color:'+(gc>=0?'#2bd47d':'#ff5c5c')+'">'+sgn(gc)+'</b></td>'
+      +'<td style="text-align:center"><b style="color:'+(gn>=0?'#2bd47d':'#ff5c5c')+'">'+sgn(gn)+'</b></td>'
+      +'<td style="text-align:right"><b style="color:'+(ga>=0?'#2bd47d':'#ff5c5c')+'">'+sgn(ga)+'</b></td></tr>';
+    h+='</tbody></table></div>';
+
+    /* ---- pace ---- */
+    var left=B.days.length-B.elapsed, need=Math.max(0,B.tg.all-B.ach.all);
+    var pace=B.elapsed? (B.ach.all/B.elapsed) : 0;
+    var req = left? (need/left) : 0;
+    h+='<div class="grid grid-4" style="margin-top:14px">'
+      +kpi(num(B.ach.all),'Achieved so far','#2bd47d',B.elapsed+' days in')
+      +kpi(num(B.tg.all),'Phase target','#ffb02e',B.days.length+' days total')
+      +kpi((Math.round(pace*10)/10),'Running at / day',pace>=req?'#2bd47d':'#ffb02e','average so far')
+      +kpi(left?(Math.round(req*10)/10):'&mdash;','Needed / day for the rest',req>pace?'#ff5c5c':'#2bd47d',
+           left?(num(need)+' over '+left+' days'):'phase complete')
+      +'</div>';
+    var lyPct = B.ly.all? Math.round((B.ach.all-B.ly.all)/B.ly.all*100) : 0;
+    if(B.ach.all){
+      h+='<p class="help-text" style="margin-top:8px">Against last year\'s <b>'+num(B.ly.all)+'</b> for this phase, '
+        +'we are on <b>'+num(B.ach.all)+'</b> &mdash; <b style="color:'+(lyPct>=0?'#2bd47d':'#ff5c5c')+'">'
+        +(lyPct>0?'+':'')+lyPct+'%</b>. Rows shaded red are days already past with nothing entered.</p>';
+    }
+    h+='</div>';
+    host.innerHTML=h;
+  }
+
+  function kpi(v,l,c,s){
+    return '<div class="card kpi"><div class="kpi-value" style="color:'+(c||'var(--text)')+'">'+v+'</div>'
+      +'<div class="kpi-label">'+l+'</div>'+(s?('<div class="help-text" style="margin-top:2px">'+s+'</div>'):'')+'</div>';
+  }
+
+  window.fdExport=function(){
+    var i=st.phase|0, B=build(i), p=PH[i];
+    var out=[['Phase',p.p+' - '+p.n],[],
+      ['Date','Event','Day','HO','MML','DN','AT','Other','10348','Network','Total']];
+    B.days.forEach(function(dd){
+      out.push([dd.iso,dd.ev,dd.day].concat(COLS.slice(0,5).map(function(c){ var v=cell(i,dd.iso,c[0]); return v==null?'':v; }))
+        .concat([dd.counter, (cell(i,dd.iso,'NET')==null?'':cell(i,dd.iso,'NET')), dd.total]));
+    });
+    out.push([]);
+    out.push(['ACHIEVED','','' ].concat(B.tot.slice(0,5)).concat([B.ach.ctr,B.ach.net,B.ach.all]));
+    out.push(['LY','','' ].concat(p.ly.slice(0,5)).concat([B.ly.ctr,B.ly.net,B.ly.all]));
+    out.push(['TARGET','','' ].concat(COLS.slice(0,5).map(function(_,ci){ return target(i,ci); }))
+      .concat([B.tg.ctr,B.tg.net,B.tg.all]));
+    var csv=out.map(function(r){ return r.map(function(c){ var s=String(c==null?'':c);
+      return /[",\n]/.test(s)?('"'+s.replace(/"/g,'""')+'"'):s; }).join(','); }).join('\n');
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));
+    a.download='f100_daily_'+p.n.replace(/[^A-Za-z0-9]+/g,'_').toLowerCase()+'.csv';
+    document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },100);
+  };
+
+  /* ---- attach under the existing Festival 100 view ---- */
+  function ensure(){
+    var view=document.getElementById('view-f100'); if(!view) return false;
+    if(!document.getElementById('f100-daily')){
+      var d=document.createElement('div'); d.id='f100-daily';
+      view.appendChild(d);          // sibling of #f100-root, so F100's own render never clears it
+    }
+    return true;
+  }
+  var prev=window.setView;
+  window.setView=function(n){
+    var r=prev.apply(this,arguments);
+    if(n==='f100'){ setTimeout(function(){ if(ensure()) render(); },120); }
+    return r;
+  };
+  document.addEventListener('DOMContentLoaded',function(){
+    setTimeout(function(){ try{ var a=document.querySelector('.nav-item.active');
+      if(a&&a.dataset.view==='f100'&&ensure()) render(); }catch(e){} },1200);
+  });
+})();
+</script>
+
 <!-- ===== 17097 - HARLEY X440 / PREMIUM =======================================
      Digital enquiry register for dealer code 17097 (Harley-Davidson X440), plus
      the premium-ICE source summary. Small dataset, deliberately shown lead by
