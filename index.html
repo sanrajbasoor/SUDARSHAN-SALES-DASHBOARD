@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v46 &middot; 14 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v48 &middot; 15 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -2583,6 +2583,288 @@ document.addEventListener('DOMContentLoaded', initApp);
   document.addEventListener('DOMContentLoaded',function(){ setTimeout(ensure,1000); });
 })();
 </script>
+<!-- ===== VIDA — FESTIVAL DAILY RETAIL TRACKER ==================================
+     Day-by-day retail entry for each festive phase, in the same shape as the
+     dealership's own Ganesh Chaturthi sheet: one row per day, one column per
+     counter, with LY / TARGET / ACHIEVED footers underneath.
+     Attaches itself under the existing Festival 100 view; nothing there is
+     modified, so the F100 planner keeps working exactly as before.
+     ========================================================================= -->
+<script>
+(function(){
+  "use strict";
+  var KEY='hero-vidadaily-v1';
+  var PH=[{"p":"Phase 1","n":"Pre-Ganesh Chaturthi","a":"2026-09-01","b":"2026-09-13","ev":null},{"p":"Phase 1","n":"Ganesh Chaturthi","a":"2026-09-14","b":"2026-09-25","ev":"GANESH"},{"p":"Phase 1","n":"Post Ganesh to Pre Navratri","a":"2026-09-26","b":"2026-10-10","ev":null},{"p":"Phase 2","n":"Navratri","a":"2026-10-11","b":"2026-10-21","ev":"NAVRATRI"},{"p":"Phase 2","n":"Pre Dhanteras","a":"2026-10-22","b":"2026-11-05","ev":null},{"p":"Phase 2","n":"Dhanteras","a":"2026-11-06","b":"2026-11-06","ev":null},{"p":"Phase 2","n":"Choti Diwali","a":"2026-11-07","b":"2026-11-07","ev":null},{"p":"Phase 2","n":"Diwali","a":"2026-11-08","b":"2026-11-08","ev":null},{"p":"Phase 2","n":"Post Diwali","a":"2026-11-09","b":"2026-11-11","ev":null},{"p":"Phase 3","n":"Post-festive run","a":"2026-11-12","b":"2026-12-09","ev":null}];
+  /* columns: HO (Napier Town), MML, DN, AT (Adhartal), OT (Other), NET (network) */
+  var COLS=[['PRM','Premia'],['HUB','VIDA Hub'],['DN','DN'],['AT','Adhartal'],
+            ['OT','Other'],['NET','Network']];
+
+  var st; try{ st=Object.assign({phase:1,day:{},tgt:{},ly:{}},JSON.parse(localStorage.getItem(KEY))||{}); }
+          catch(e){ st={phase:1,day:{},tgt:{},ly:{}}; }
+  function save(){ try{ localStorage.setItem(KEY,JSON.stringify(st)); }catch(e){} }
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function num(n){ return (Math.round(n)||0).toLocaleString('en-IN'); }
+  function sgn(n){ return (n>0?'+':'')+num(n); }
+  var MS=86400000;
+  function d2(n){ return (n<10?'0':'')+n; }
+  function iso(d){ return d.getUTCFullYear()+'-'+d2(d.getUTCMonth()+1)+'-'+d2(d.getUTCDate()); }
+  function parse(s){ var p=s.split('-'); return new Date(Date.UTC(+p[0],+p[1]-1,+p[2])); }
+  var DAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function pretty(d){ return d.getUTCDate()+'-'+MON[d.getUTCMonth()]+'-'+String(d.getUTCFullYear()).slice(2); }
+
+  /* every date in a phase, with the event label that belongs to it */
+  function daysOf(i){
+    var p=PH[i], a=parse(p.a), b=parse(p.b), out=[];
+    for(var t=a.getTime(); t<=b.getTime(); t+=MS){
+      var d=new Date(t), s=iso(d), ev=p.n;
+      if(p.ev==='GANESH'){
+        ev = (s===p.a) ? 'Ganesh Sthapana' : (s===p.b) ? 'Ganesh Visarjan' : 'Ganesh Chaturthi';
+      } else if(p.ev==='NAVRATRI'){
+        ev = (s===p.a) ? 'Navratri begins' : (s===p.b) ? 'Dussehra' : 'Navratri';
+      }
+      out.push({iso:s, d:d, ev:ev, day:DAYS[d.getUTCDay()]});
+    }
+    return out;
+  }
+
+  function cell(i,dayIso,key){
+    var k=i+'|'+dayIso, r=st.day[k];
+    return (r && r[key]!=null && r[key]!=='') ? +r[key] : null;
+  }
+  window.vdSet=function(i,dayIso,key,v){
+    var k=i+'|'+dayIso;
+    st.day[k]=st.day[k]||{};
+    if(v===''||v==null) delete st.day[k][key]; else st.day[k][key]=Math.max(0,parseInt(v,10)||0);
+    if(!Object.keys(st.day[k]).length) delete st.day[k];
+    save(); render();
+  };
+  window.vdTgt=function(i,key,v){
+    st.tgt[i]=st.tgt[i]||{};
+    if(v===''||v==null) delete st.tgt[i][key]; else st.tgt[i][key]=Math.max(0,parseInt(v,10)||0);
+    save(); render();
+  };
+  window.vdPhase=function(v){ st.phase=parseInt(v,10)||0; save(); render(); };
+  window.vdClear=function(i){
+    if(!confirm('Clear every entry for this phase? Targets are kept.')) return;
+    Object.keys(st.day).forEach(function(k){ if(k.indexOf(i+'|')===0) delete st.day[k]; });
+    save(); render();
+  };
+
+  function target(i,ci){
+    var t=st.tgt[i]||{}, key=COLS[ci][0];
+    return (t[key]!=null && t[key]!=='') ? +t[key] : 0;
+  }
+  function lastYear(i,ci){
+    var l=(st.ly||{})[i]||{}, key=COLS[ci][0];
+    return (l[key]!=null && l[key]!=='') ? +l[key] : 0;
+  }
+  window.vdLy=function(i,key,v){
+    st.ly=st.ly||{}; st.ly[i]=st.ly[i]||{};
+    if(v===''||v==null) delete st.ly[i][key]; else st.ly[i][key]=Math.max(0,parseInt(v,10)||0);
+    save(); render();
+  };
+
+  function build(i){
+    var days=daysOf(i), tot=[0,0,0,0,0,0], filled=0, today=iso(new Date());
+    days.forEach(function(dd){
+      var any=false;
+      COLS.forEach(function(c,ci){ var v=cell(i,dd.iso,c[0]); if(v!=null){ tot[ci]+=v; any=true; } });
+      dd.entered=any; if(any) filled++;
+      dd.past = dd.iso <= today;
+      dd.counter = COLS.slice(0,5).reduce(function(a,c){ var v=cell(i,dd.iso,c[0]); return a+(v||0); },0);
+      dd.total = dd.counter + (cell(i,dd.iso,'NET')||0);
+    });
+    var tgt=COLS.map(function(_,ci){ return target(i,ci); });
+    var ctrAch=tot[0]+tot[1]+tot[2]+tot[3]+tot[4];
+    var ctrLy=[0,1,2,3,4].reduce(function(a,ci){ return a+lastYear(i,ci); },0);
+    var ctrTgt=tgt.slice(0,5).reduce(function(a,b){return a+b;},0);
+    var elapsed=days.filter(function(d){ return d.past; }).length;
+    return {days:days,tot:tot,tgt:tgt,filled:filled,elapsed:elapsed,
+            ach:{ctr:ctrAch,net:tot[5],all:ctrAch+tot[5]},
+            ly:{ctr:ctrLy,net:lastYear(i,5),all:ctrLy+lastYear(i,5)},
+            tg:{ctr:ctrTgt,net:tgt[5],all:ctrTgt+tgt[5]}};
+  }
+
+  function render(){
+    var host=document.getElementById('vida-daily'); if(!host) return;
+    var i=Math.min(Math.max(st.phase|0,0),PH.length-1), p=PH[i], B=build(i);
+    var h='';
+
+    h+='<div class="card" style="margin-top:18px"><h3>&#9889; VIDA &mdash; daily festive retail</h3>'
+      +'<p class="help-text">Enter each day\'s retail as it happens, counter by counter, in the same shape as the festive sheet. '
+      +'<b>Dealership</b> and <b>Total</b> are calculated. LY and TARGET are both yours to type &mdash; there is no VIDA festive plan in the dashboard to default them from, so an empty row means nobody has set it yet.</p>';
+
+    h+='<div style="margin:10px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:center">'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Phase'
+      +'<select class="filter-select" onchange="vdPhase(this.value)">'
+      + PH.map(function(x,k){ return '<option value="'+k+'"'+(k===i?' selected':'')+'>'+esc(x.p)+' &middot; '+esc(x.n)+'</option>'; }).join('')
+      +'</select></label>'
+      +'<span class="help-text">'+esc(pretty(parse(p.a)))+' &rarr; '+esc(pretty(parse(p.b)))+' &middot; '+B.days.length+' days'
+      +' &middot; '+B.filled+' filled</span>'
+      +'<span style="margin-left:auto;display:flex;gap:8px">'
+      +'<button class="btn btn-sm" onclick="vdExport()">&#11015;&#65039; Export</button>'
+      +'<button class="btn btn-sm" onclick="vdClear('+i+')">Clear phase</button></span></div>';
+
+    /* ---- the grid ---- */
+    h+='<div style="overflow-x:auto"><table class="table" style="min-width:760px"><thead><tr>'
+      +'<th>Date</th><th>Event</th><th>Day</th>'
+      + COLS.slice(0,5).map(function(c){ var L={PRM:'Premia',HUB:'VIDA Hub',DN:'DN',AT:'Adhartal',OT:'Other'}; return '<th style="text-align:center">'+(L[c[0]]||c[0])+'</th>'; }).join('')
+      +'<th style="text-align:right">Dealership</th>'
+      +'<th style="text-align:center">Network</th>'
+      +'<th style="text-align:right">Total</th></tr></thead><tbody>';
+
+    B.days.forEach(function(dd){
+      var miss = dd.past && !dd.entered;
+      h+='<tr'+(miss?' style="background:rgba(255,92,92,0.06)"':'')+'>'
+        +'<td style="white-space:nowrap"><b>'+esc(pretty(dd.d))+'</b></td>'
+        +'<td style="font-size:12px;color:var(--muted)">'+esc(dd.ev)+'</td>'
+        +'<td style="font-size:12px">'+esc(dd.day)+'</td>';
+      COLS.slice(0,5).forEach(function(c){
+        var v=cell(i,dd.iso,c[0]);
+        h+='<td style="text-align:center"><input type="number" min="0" value="'+(v==null?'':v)+'"'
+          +' onchange="vdSet('+i+',\''+dd.iso+'\',\''+c[0]+'\',this.value)"'
+          +' style="width:52px;text-align:center;background:var(--panel);border:1px solid var(--line);'
+          +'color:var(--text);border-radius:6px;padding:3px 4px;font-size:13px"></td>';
+      });
+      h+='<td style="text-align:right"><b>'+(dd.counter||'&mdash;')+'</b></td>';
+      var nv=cell(i,dd.iso,'NET');
+      h+='<td style="text-align:center"><input type="number" min="0" value="'+(nv==null?'':nv)+'"'
+        +' onchange="vdSet('+i+',\''+dd.iso+'\',\'NET\',this.value)"'
+        +' style="width:56px;text-align:center;background:var(--panel);border:1px solid var(--line);'
+        +'color:var(--text);border-radius:6px;padding:3px 4px;font-size:13px"></td>';
+      h+='<td style="text-align:right"><b style="color:'+(dd.total?'#2bd47d':'var(--muted)')+'">'+(dd.total||'&mdash;')+'</b></td>';
+      h+='</tr>';
+    });
+
+    /* ---- footers ---- */
+    function foot(label,vals,ctr,net,all,colour,extra){
+      var r='<tr style="border-top:2px solid var(--line)">'
+        +'<td colspan="3"><b'+(colour?(' style="color:'+colour+'"'):'')+'>'+label+'</b>'
+        +(extra?('<div class="help-text" style="font-size:11px">'+extra+'</div>'):'')+'</td>';
+      vals.slice(0,5).forEach(function(v){ r+='<td style="text-align:center"><b>'+num(v)+'</b></td>'; });
+      r+='<td style="text-align:right"><b>'+num(ctr)+'</b></td>'
+        +'<td style="text-align:center"><b>'+num(net)+'</b></td>'
+        +'<td style="text-align:right"><b'+(colour?(' style="color:'+colour+'"'):'')+'>'+num(all)+'</b></td></tr>';
+      return r;
+    }
+    h+=foot('ACHIEVED',B.tot,B.ach.ctr,B.ach.net,B.ach.all,'#2bd47d',
+            B.elapsed+' of '+B.days.length+' days elapsed');
+    h+='<tr><td colspan="3"><b style="color:#94a0c8">LY</b>'
+      +'<div class="help-text" style="font-size:11px">type last year\'s phase total</div></td>';
+    COLS.slice(0,5).forEach(function(c,ci){
+      var lv=(st.ly&&st.ly[i]&&st.ly[i][c[0]]!=null)?st.ly[i][c[0]]:'';
+      h+='<td style="text-align:center"><input type="number" min="0" value="'+lv+'"'
+        +' onchange="vdLy('+i+',\''+c[0]+'\',this.value)"'
+        +' style="width:52px;text-align:center;background:var(--panel);border:1px solid var(--line);'
+        +'color:#94a0c8;border-radius:6px;padding:3px 4px;font-size:13px"></td>';
+    });
+    var lnv=(st.ly&&st.ly[i]&&st.ly[i].NET!=null)?st.ly[i].NET:'';
+    h+='<td style="text-align:right"><b style="color:#94a0c8">'+num(B.ly.ctr)+'</b></td>'
+      +'<td style="text-align:center"><input type="number" min="0" value="'+lnv+'"'
+      +' onchange="vdLy('+i+',\'NET\',this.value)"'
+      +' style="width:56px;text-align:center;background:var(--panel);border:1px solid var(--line);'
+      +'color:#94a0c8;border-radius:6px;padding:3px 4px;font-size:13px"></td>'
+      +'<td style="text-align:right"><b style="color:#94a0c8">'+num(B.ly.all)+'</b></td></tr>';
+
+    /* target row is editable */
+    h+='<tr><td colspan="3"><b style="color:#ffb02e">TARGET</b>'
+      +'<div class="help-text" style="font-size:11px">type the phase target</div></td>';
+    COLS.slice(0,5).forEach(function(c,ci){
+      h+='<td style="text-align:center"><input type="number" min="0" value="'+target(i,ci)+'"'
+        +' onchange="vdTgt('+i+',\''+c[0]+'\',this.value)"'
+        +' style="width:52px;text-align:center;background:var(--panel);border:1px solid #ffb02e;'
+        +'color:#ffb02e;border-radius:6px;padding:3px 4px;font-size:13px;font-weight:700"></td>';
+    });
+    h+='<td style="text-align:right"><b style="color:#ffb02e">'+num(B.tg.ctr)+'</b></td>'
+      +'<td style="text-align:center"><input type="number" min="0" value="'+target(i,5)+'"'
+      +' onchange="vdTgt('+i+',\'NET\',this.value)"'
+      +' style="width:56px;text-align:center;background:var(--panel);border:1px solid #ffb02e;'
+      +'color:#ffb02e;border-radius:6px;padding:3px 4px;font-size:13px;font-weight:700"></td>'
+      +'<td style="text-align:right"><b style="color:#ffb02e">'+num(B.tg.all)+'</b></td></tr>';
+
+    /* gap row */
+    var gaps=B.tot.map(function(v,ci){ return v-target(i,ci); });
+    h+='<tr><td colspan="3"><b>vs TARGET</b></td>';
+    gaps.slice(0,5).forEach(function(g){
+      h+='<td style="text-align:center"><b style="color:'+(g>=0?'#2bd47d':'#ff5c5c')+'">'+sgn(g)+'</b></td>';
+    });
+    var gc=B.ach.ctr-B.tg.ctr, gn=B.ach.net-B.tg.net, ga=B.ach.all-B.tg.all;
+    h+='<td style="text-align:right"><b style="color:'+(gc>=0?'#2bd47d':'#ff5c5c')+'">'+sgn(gc)+'</b></td>'
+      +'<td style="text-align:center"><b style="color:'+(gn>=0?'#2bd47d':'#ff5c5c')+'">'+sgn(gn)+'</b></td>'
+      +'<td style="text-align:right"><b style="color:'+(ga>=0?'#2bd47d':'#ff5c5c')+'">'+sgn(ga)+'</b></td></tr>';
+    h+='</tbody></table></div>';
+
+    /* ---- pace ---- */
+    var left=B.days.length-B.elapsed, need=Math.max(0,B.tg.all-B.ach.all);
+    var pace=B.elapsed? (B.ach.all/B.elapsed) : 0;
+    var req = left? (need/left) : 0;
+    h+='<div class="grid grid-4" style="margin-top:14px">'
+      +kpi(num(B.ach.all),'Achieved so far','#2bd47d',B.elapsed+' days in')
+      +kpi(num(B.tg.all),'Phase target','#ffb02e',B.days.length+' days total')
+      +kpi((Math.round(pace*10)/10),'Running at / day',pace>=req?'#2bd47d':'#ffb02e','average so far')
+      +kpi(left?(Math.round(req*10)/10):'&mdash;','Needed / day for the rest',req>pace?'#ff5c5c':'#2bd47d',
+           left?(num(need)+' over '+left+' days'):'phase complete')
+      +'</div>';
+    var lyPct = B.ly.all? Math.round((B.ach.all-B.ly.all)/B.ly.all*100) : 0;
+    if(B.ach.all){
+      h+='<p class="help-text" style="margin-top:8px">Against last year\'s <b>'+num(B.ly.all)+'</b> for this phase, '
+        +'we are on <b>'+num(B.ach.all)+'</b> &mdash; <b style="color:'+(lyPct>=0?'#2bd47d':'#ff5c5c')+'">'
+        +(lyPct>0?'+':'')+lyPct+'%</b>. Rows shaded red are days already past with nothing entered.</p>';
+    }
+    h+='</div>';
+    host.innerHTML=h;
+  }
+
+  function kpi(v,l,c,s){
+    return '<div class="card kpi"><div class="kpi-value" style="color:'+(c||'var(--text)')+'">'+v+'</div>'
+      +'<div class="kpi-label">'+l+'</div>'+(s?('<div class="help-text" style="margin-top:2px">'+s+'</div>'):'')+'</div>';
+  }
+
+  window.vdExport=function(){
+    var i=st.phase|0, B=build(i), p=PH[i];
+    var out=[['Phase',p.p+' - '+p.n],[],
+      ['Date','Event','Day','Premia','VIDA Hub','DN','Adhartal','Other','Dealership','Network','Total']];
+    B.days.forEach(function(dd){
+      out.push([dd.iso,dd.ev,dd.day].concat(COLS.slice(0,5).map(function(c){ var v=cell(i,dd.iso,c[0]); return v==null?'':v; }))
+        .concat([dd.counter, (cell(i,dd.iso,'NET')==null?'':cell(i,dd.iso,'NET')), dd.total]));
+    });
+    out.push([]);
+    out.push(['ACHIEVED','','' ].concat(B.tot.slice(0,5)).concat([B.ach.ctr,B.ach.net,B.ach.all]));
+    out.push(['LY','','' ].concat([0,1,2,3,4].map(function(ci){ return lastYear(i,ci); })).concat([B.ly.ctr,B.ly.net,B.ly.all]));
+    out.push(['TARGET','','' ].concat(COLS.slice(0,5).map(function(_,ci){ return target(i,ci); }))
+      .concat([B.tg.ctr,B.tg.net,B.tg.all]));
+    var csv=out.map(function(r){ return r.map(function(c){ var s=String(c==null?'':c);
+      return /[",\n]/.test(s)?('"'+s.replace(/"/g,'""')+'"'):s; }).join(','); }).join('\n');
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));
+    a.download='vida_daily_'+p.n.replace(/[^A-Za-z0-9]+/g,'_').toLowerCase()+'.csv';
+    document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },100);
+  };
+
+  /* ---- attach under the existing Festival 100 view ---- */
+  function ensure(){
+    var view=document.getElementById('view-vidabk'); if(!view) return false;
+    if(!document.getElementById('vida-daily')){
+      var d=document.createElement('div'); d.id='vida-daily';
+      view.appendChild(d);          // sibling of #f100-root, so F100's own render never clears it
+    }
+    return true;
+  }
+  var prev=window.setView;
+  window.setView=function(n){
+    var r=prev.apply(this,arguments);
+    if(n==='vidabk'){ setTimeout(function(){ if(ensure()) render(); },120); }
+    return r;
+  };
+  document.addEventListener('DOMContentLoaded',function(){
+    setTimeout(function(){ try{ var a=document.querySelector('.nav-item.active');
+      if(a&&a.dataset.view==='vidabk'&&ensure()) render(); }catch(e){} },1200);
+  });
+})();
+</script>
+
 <!-- ===== FESTIVAL 100 — DAILY RETAIL TRACKER ==================================
      Day-by-day retail entry for each festive phase, in the same shape as the
      dealership's own Ganesh Chaturthi sheet: one row per day, one column per
@@ -3627,13 +3909,14 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'Their conversion is 0% &mdash; not low, zero. Pick a month and a counter, export, and assign each list to a DSE by name.</p>'
       +'<p class="help-text" style="border-top:1px solid var(--line);padding-top:9px;margin-top:9px">'
       +'<b>This list is a snapshot, not a live feed.</b> Follow-ups your DSEs log in the Hero DMS will not remove anyone from it '
-      +'on their own. Pull a fresh enquiry export after the team has worked the list and load it with <b>Refresh enquiry data</b> &mdash; '
+      +'on their own. Drop a fresh export into the Google Sheet and press <b>Refresh from sheet</b> &mdash; '
       +'the count then drops by however many were genuinely followed up. '+enqStamp()+'</p></div>';
     h+='<div class="card" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">'
       + monthPicker()
       + (prefs.emonth?'<button class="btn btn-sm" onclick="dgSet(\'emonth\',\'\')">All months</button>':'')
       +'<span style="margin-left:auto;display:flex;gap:8px">'
-      +'<button class="btn btn-sm btn-primary" onclick="dgImportEnq()">&#128228; Refresh enquiry data</button>'
+      +'<button class="btn btn-sm btn-primary" onclick="dgPullSheet()">&#128260; Refresh from sheet</button>'
+      +'<button class="btn btn-sm" onclick="dgImportEnq()">&#128228; Load a file instead</button>'
       + ((function(){ try{ return localStorage.getItem(EKEY)?'<button class="btn btn-sm" onclick="dgResetEnq()">Back to original</button>':''; }catch(e){ return ''; } })())
       +'</span></div>';
     var CH=chaseRows();
@@ -3693,11 +3976,14 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'<span style="margin-left:auto"><button class="btn btn-sm btn-primary" onclick="dgExport('
       + (prefs.ctr? ("'chase:"+encodeURIComponent(prefs.ctr)+"'") : "'chase'")
       +')">&#11015;&#65039; Export '+(prefs.ctr?(esc(prefs.ctr)+' &mdash; '+num(shown.length)+' leads'):('all '+num(CH.length)+' leads'))+'</button></span></div>';
-    h+=table(['Enquiry date','Customer','Mobile','Variant','Location','Source','Counter','Assigned to','Needs'],
+    h+=table(['Enquiry date','Waiting','Customer','Mobile','Variant','Location','Source','Counter','Assigned to','Needs'],
       shown.slice(0,150).map(function(c){
         var un=/webservice/i.test(c.dse);
         var needs=[]; if(c.fin) needs.push('Finance'); if(c.exc) needs.push('Exchange');
-        return [esc(c.date),esc(c.name),esc(c.mob),
+        var d=dgAge(c.date), acol=d>=60?'#ff5c5c':(d>=30?'#ffb02e':'var(--muted)');
+        return [esc(c.date),
+          (d==null?'&mdash;':'<b style="color:'+acol+'">'+d+'d</b>'),
+          esc(c.name),esc(c.mob),
           (c.vida?'<b style="color:#00d0ff">':'<b>')+esc(c.variant)+'</b>',
           c.loc?esc(c.loc):'<span style="color:var(--muted)">not captured</span>',
           esc(c.src),
@@ -3740,16 +4026,16 @@ document.addEventListener('DOMContentLoaded', initApp);
     var out;
     if(what.indexOf('chase:')===0){
       var want=decodeURIComponent(what.slice(6));
-      out=[['Enquiry date','Customer','Mobile','Variant','Location','Source','Counter','Assigned to','VIDA','Finance','Exchange']];
+      out=[['Enquiry date','Days waiting','Customer','Mobile','Variant','Location','Source','Counter','Assigned to','VIDA','Finance','Exchange']];
       chaseRows().forEach(function(c){ if(c.ctr!==want) return;
-        out.push([c.date,c.name,c.mob,c.variant,c.loc,c.src,c.ctr,c.dse,c.vida?'Yes':'No',c.fin?'Yes':'No',c.exc?'Yes':'No']); });
+        out.push([c.date,dgAge(c.date),c.name,c.mob,c.variant,c.loc,c.src,c.ctr,c.dse,c.vida?'Yes':'No',c.fin?'Yes':'No',c.exc?'Yes':'No']); });
       dl('never_contacted_'+want.replace(/[^A-Za-z0-9]+/g,'_').toLowerCase()+(prefs.emonth?('_'+prefs.emonth):''),out); return;
     }
     if(what==='chase'||what.charAt(0)==='n'||what.charAt(0)==='v'){
       var vid=what.charAt(0)==='v', N=buildNW(what==='chase'?false:vid), E=N.E;
       if(what==='chase'){
-        out=[['Enquiry date','Customer','Mobile','Variant','Location','Source','Counter','Assigned to','VIDA','Finance','Exchange']];
-        chaseRows().forEach(function(c){ out.push([c.date,c.name,c.mob,c.variant,c.loc,c.src,c.ctr,c.dse,c.vida?'Yes':'No',c.fin?'Yes':'No',c.exc?'Yes':'No']); });
+        out=[['Enquiry date','Days waiting','Customer','Mobile','Variant','Location','Source','Counter','Assigned to','VIDA','Finance','Exchange']];
+        chaseRows().forEach(function(c){ out.push([c.date,dgAge(c.date),c.name,c.mob,c.variant,c.loc,c.src,c.ctr,c.dse,c.vida?'Yes':'No',c.fin?'Yes':'No',c.exc?'Yes':'No']); });
       } else if(what==='nmonths'||what==='vmonths'){
         out=[['Month','Enquiries','Won','Lost','Open','Conversion %','Never followed up','Walk-in enquiries','Walk-in won','Walk-in conversion %']];
         N.hist.forEach(function(o){ out.push([o.ym,o.tot,o.won,o.lost,o.open,o.conv,o.fu0,o.wiTot,o.wiWon,o.wiConv]); });
@@ -3855,6 +4141,124 @@ document.addEventListener('DOMContentLoaded', initApp);
     var s=String(sub||'').toUpperCase();
     return s.indexOf('VIDA')>=0 || s.indexOf('VX2')===0 || /^V[12]\s/.test(s);
   }
+  /* Days a never-contacted lead has been sitting. A 90-day-old untouched lead
+     and a 2-day-old one are not the same job, and the list is worked top-down. */
+  function dgAge(day){
+    var t=Date.parse(String(day||'')+'T00:00:00'); if(isNaN(t)) return null;
+    var d=Math.floor((Date.now()-t)/86400000);
+    return d<0?0:d;
+  }
+  /* ================= enquiry cube builder =================
+     One parser, two sources: a file the user picks, or the feed tabs pulled
+     straight off the Google Sheet. Returns {err:...} instead of throwing so
+     the caller can say something useful.
+
+     Follow-up is judged on whichever column the export actually carries:
+       "Follow Ups Count"    — the full Enquiry Export (0 = never contacted)
+       "Last Followup Date"  — the Enquiry Follow Up report (blank = never)
+     The follow-up report has no Won/Lost column, so a cube built from it is
+     marked outcome:false and is only trusted for the chase list. */
+  function dgBuild(aoa){
+    var head=(aoa[0]||[]).map(function(x){ return String(x==null?'':x).trim().toLowerCase(); });
+    function col(){ for(var i=0;i<arguments.length;i++){ var j=head.indexOf(String(arguments[i]).toLowerCase()); if(j>=0) return j; } return -1; }
+    var c={src:col('Enquiry Source'), dt:col('Date','Open Dt'), sub:col('Sub Model','Model'),
+           fu:col('Follow Ups Count'),
+           lfu:col('Last Followup Date','Last Follow Up Date','Last Followup Dt'),
+           out:col('Enquiry WON/LOST/Duplicate','Enquiry Status'),
+           dse:col('DSE Full Name'), nm:col('Full Name'),
+           mob:col('Conatct Mobile Number','Contact Mobile Number','Mobile Phone #'),
+           city:col('City'), addr:col('Street Address','St_address'),
+           fin:col('Finance Required'), exc:col('Exchange Required'), no:col('Enquiry No')};
+    if(c.src<0||c.dt<0) return {err:'No "Enquiry Source" or date column — that does not look like an enquiry export.'};
+    if(c.fu<0&&c.lfu<0) return {err:'Neither "Follow Ups Count" nor "Last Followup Date" is present, so there is no way to tell who was contacted.'};
+
+    var months=[],sources=[],dses=[];
+    function ix(l,v){ var i=l.indexOf(v); if(i<0){ l.push(v); i=l.length-1; } return i; }
+    function ymOf(v){
+      if(v instanceof Date) return v.getFullYear()+'-'+('0'+(v.getMonth()+1)).slice(-2);
+      var s=String(v||''); var m=s.match(/^(\d{4})-(\d{2})/); if(m) return m[1]+'-'+m[2];
+      var t=Date.parse(s); if(isNaN(t)) return ''; var d=new Date(t);
+      return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2);
+    }
+    function dayOf(v){
+      if(v instanceof Date) return v.getFullYear()+'-'+('0'+(v.getMonth()+1)).slice(-2)+'-'+('0'+v.getDate()).slice(-2);
+      var s=String(v||''); if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+      var t=Date.parse(s); if(isNaN(t)) return ''; var d=new Date(t);
+      return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+    }
+    function g(r,i){ return i<0?'':String(r[i]==null?'':r[i]).trim(); }
+    /* blank, "Unspecified" and a bare dot all mean "nothing recorded" in DMS */
+    function blank(v){ var s=String(v||'').trim(); return !s || s==='.' || s.toLowerCase()==='unspecified'; }
+
+    var cube={}, wi={}, dcube={}, fub={}, chase=[], n=0, nwalk=0, won=0, lost=0;
+    aoa.slice(1).forEach(function(r){
+      if(!r || (c.no>=0 && !g(r,c.no))) return;
+      var ym=ymOf(r[c.dt]); if(!ym) return;
+      var src=g(r,c.src)||'Unspecified';
+      var out=g(r,c.out); if(out!=='Won'&&out!=='Lost'&&out!=='Open') out='Open';
+      if(out==='Won') won++; else if(out==='Lost') lost++;
+
+      /* follow-ups: prefer the explicit count, fall back to the date */
+      var fuN;
+      if(c.fu>=0){ fuN=parseInt(g(r,c.fu)||'0',10); if(!isFinite(fuN)) fuN=0; }
+      else { fuN = blank(r[c.lfu]) ? 0 : 1; }
+
+      var vida=eIsVida(g(r,c.sub))?1:0;
+
+      if(src==='Walk-In'){
+        var w=wi[ym]||(wi[ym]=[0,0,0,0]); w[0]++;
+        if(out==='Won') w[1]++; else if(out==='Lost') w[2]++; else w[3]++;
+        nwalk++; return;
+      }
+      n++;
+      var mi=ix(months,ym), si=ix(sources,src), di=ix(dses,g(r,c.dse)||'(none)');
+      var k=mi+'|'+si+'|'+vida, a=cube[k]||(cube[k]=[mi,si,vida,0,0,0,0,0]);
+      a[3]++; if(out==='Won') a[4]++; else if(out==='Lost') a[5]++; else a[6]++;
+      if(fuN===0) a[7]++;
+
+      var dk=di+'|'+vida+'|'+mi, b=dcube[dk]||(dcube[dk]=[di,vida,mi,0,0,0,0]);
+      b[3]++; if(out==='Won') b[4]++; if(out==='Open') b[5]++; if(fuN===0) b[6]++;
+
+      var bk=(fuN<4?String(fuN):'4+'), fk=bk+'|'+vida+'|'+mi, e=fub[fk]||(fub[fk]=[bk,vida,mi,0,0]);
+      e[3]++; if(out==='Won') e[4]++;
+
+      if(fuN===0 && out==='Open'){
+        var city=g(r,c.city);
+        if(blank(city)){
+          var ad=g(r,c.addr);
+          city=blank(ad)?'':ad.slice(0,40);
+        }
+        chase.push([dayOf(r[c.dt]), g(r,c.nm).slice(0,28),
+          g(r,c.mob).replace(/\D/g,'').slice(-10), si, g(r,c.sub).slice(0,24), di, vida, city,
+          (g(r,c.fin)==='Y'?1:0)+(g(r,c.exc)==='Y'?2:0)]);
+      }
+    });
+    if(!n) return {err:'No non walk-in enquiries found.'};
+    chase.sort(function(a,b){ return a[0]<b[0]?-1:a[0]>b[0]?1:0; });
+
+    var grp={}; sources.forEach(function(s){ grp[s]=ESRC2GRP[s]||'Other'; });
+    return {
+      built:{months:months,sources:sources,dses:dses,grp:grp,walkin:wi,
+        rows:Object.keys(cube).map(function(k){ return cube[k]; }),
+        dse:Object.keys(dcube).map(function(k){ return dcube[k]; }),
+        fu:Object.keys(fub).map(function(k){ return fub[k]; }),
+        chase:chase},
+      n:n, nwalk:nwalk, chase:chase.length,
+      /* the follow-up report reports every lead as "Open"; without a single
+         Won or Lost anywhere, its conversion numbers are meaningless */
+      outcome:(won+lost)>0,
+      byDate:(c.fu>=0?'count':'date')
+    };
+  }
+
+  function dgStore(built,msg){
+    try{ localStorage.setItem(EKEY,JSON.stringify(built)); }
+    catch(err){ msg+='\n(Too large for browser storage — it will reset when you reload.)'; }
+    ENQS=built; prefs.emonth=''; prefs.ctr=''; savePrefs(); render();
+    return msg;
+  }
+
+  /* ================= refresh from a file ================= */
   window.dgImportEnq=function(){
     var inp=document.createElement('input'); inp.type='file'; inp.accept='.xlsx,.xls,.csv';
     inp.onchange=function(){
@@ -3865,83 +4269,13 @@ document.addEventListener('DOMContentLoaded', initApp);
           try{
             var wb=XLSX.read(new Uint8Array(fr.result),{type:'array',cellDates:true});
             var aoa=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true});
-            var head=(aoa[0]||[]).map(function(x){ return String(x==null?'':x).trim().toLowerCase(); });
-            function col(){ for(var i=0;i<arguments.length;i++){ var j=head.indexOf(String(arguments[i]).toLowerCase()); if(j>=0) return j; } return -1; }
-            var c={src:col('Enquiry Source'), dt:col('Date','Open Dt'), sub:col('Sub Model','Model'),
-                   fu:col('Follow Ups Count'), out:col('Enquiry WON/LOST/Duplicate','Enquiry Status'),
-                   dse:col('DSE Full Name'), nm:col('Full Name'),
-                   mob:col('Conatct Mobile Number','Contact Mobile Number','Mobile Phone #'),
-                   city:col('City'), addr:col('Street Address','St_address'),
-                   fin:col('Finance Required'), exc:col('Exchange Required'), no:col('Enquiry No')};
-            if(c.src<0||c.dt<0||c.out<0){ alert('That does not look like the enquiry register export — no Enquiry Source / Date / Won-Lost column found.'); return; }
-
-            var months=[],sources=[],dses=[];
-            function ix(l,v){ var i=l.indexOf(v); if(i<0){ l.push(v); i=l.length-1; } return i; }
-            function ymOf(v){
-              if(v instanceof Date) return v.getFullYear()+'-'+('0'+(v.getMonth()+1)).slice(-2);
-              var s=String(v||''); var m=s.match(/^(\d{4})-(\d{2})/); if(m) return m[1]+'-'+m[2];
-              var t=Date.parse(s); if(isNaN(t)) return ''; var d=new Date(t);
-              return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2);
-            }
-            function dayOf(v){
-              if(v instanceof Date) return v.getFullYear()+'-'+('0'+(v.getMonth()+1)).slice(-2)+'-'+('0'+v.getDate()).slice(-2);
-              var s=String(v||''); if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
-              var t=Date.parse(s); if(isNaN(t)) return ''; var d=new Date(t);
-              return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
-            }
-            function g(r,i){ return i<0?'':String(r[i]==null?'':r[i]).trim(); }
-
-            var cube={}, wi={}, dcube={}, fub={}, chase=[], n=0, nwalk=0;
-            aoa.slice(1).forEach(function(r){
-              if(!r || (c.no>=0 && !g(r,c.no))) return;
-              var ym=ymOf(r[c.dt]); if(!ym) return;
-              var src=g(r,c.src)||'Unspecified';
-              var out=g(r,c.out); if(out!=='Won'&&out!=='Lost'&&out!=='Open') out='Open';
-              var fuN=parseInt(g(r,c.fu)||'0',10); if(!isFinite(fuN)) fuN=0;
-              var vida=eIsVida(g(r,c.sub))?1:0;
-
-              if(src==='Walk-In'){
-                var w=wi[ym]||(wi[ym]=[0,0,0,0]); w[0]++;
-                if(out==='Won') w[1]++; else if(out==='Lost') w[2]++; else w[3]++;
-                nwalk++; return;
-              }
-              n++;
-              var mi=ix(months,ym), si=ix(sources,src), di=ix(dses,g(r,c.dse)||'(none)');
-              var k=mi+'|'+si+'|'+vida, a=cube[k]||(cube[k]=[mi,si,vida,0,0,0,0,0]);
-              a[3]++; if(out==='Won') a[4]++; else if(out==='Lost') a[5]++; else a[6]++;
-              if(fuN===0) a[7]++;
-
-              var dk=di+'|'+vida+'|'+mi, b=dcube[dk]||(dcube[dk]=[di,vida,mi,0,0,0,0]);
-              b[3]++; if(out==='Won') b[4]++; if(out==='Open') b[5]++; if(fuN===0) b[6]++;
-
-              var bk=(fuN<4?String(fuN):'4+'), fk=bk+'|'+vida+'|'+mi, e=fub[fk]||(fub[fk]=[bk,vida,mi,0,0]);
-              e[3]++; if(out==='Won') e[4]++;
-
-              if(fuN===0 && out==='Open'){
-                var city=g(r,c.city);
-                if(!city || city.toLowerCase()==='unspecified'){
-                  var ad=g(r,c.addr);
-                  city=(!ad||ad.toLowerCase()==='unspecified')?'':ad.slice(0,40);
-                }
-                chase.push([dayOf(r[c.dt]), g(r,c.nm).slice(0,28),
-                  g(r,c.mob).replace(/\D/g,'').slice(-10), si, g(r,c.sub).slice(0,24), di, vida, city,
-                  (g(r,c.fin)==='Y'?1:0)+(g(r,c.exc)==='Y'?2:0)]);
-              }
-            });
-            if(!n){ alert('No non walk-in enquiries found in that file.'); return; }
-            chase.sort(function(a,b){ return a[0]<b[0]?-1:a[0]>b[0]?1:0; });
-
-            var grp={}; sources.forEach(function(s){ grp[s]=ESRC2GRP[s]||'Other'; });
-            var built={months:months,sources:sources,dses:dses,grp:grp,walkin:wi,
-              rows:Object.keys(cube).map(function(k){ return cube[k]; }),
-              dse:Object.keys(dcube).map(function(k){ return dcube[k]; }),
-              fu:Object.keys(fub).map(function(k){ return fub[k]; }),
-              chase:chase};
-            try{ localStorage.setItem(EKEY,JSON.stringify(built)); }
-            catch(err){ alert('Loaded, but the file was too large for browser storage — it will reset when you reload.'); }
-            ENQS=built; prefs.emonth=''; prefs.ctr=''; savePrefs(); render();
-            alert('Loaded '+n+' non walk-in enquiries ('+nwalk+' walk-ins skipped).\n'
-                  +chase.length+' are open with no follow-up logged.');
+            var res=dgBuild(aoa);
+            if(res.err){ alert(res.err); return; }
+            if(!res.outcome && !confirm('This export has no Won/Lost column — every lead reads as "Open".\n\n'
+                +'The never-followed-up list will be right, but conversion % will read 0.\n\nLoad it anyway?')) return;
+            try{ localStorage.setItem(EKEY+'-src',JSON.stringify({how:'file',name:f.name,at:Date.now()})); }catch(e){}
+            alert(dgStore(res.built,'Loaded '+res.n+' non walk-in enquiries ('+res.nwalk+' walk-ins skipped).\n'
+                  +res.chase+' are open with no follow-up logged.'));
           }catch(err){ alert('Could not read that file: '+err.message); }
         };
         fr.readAsArrayBuffer(f);
@@ -3949,6 +4283,115 @@ document.addEventListener('DOMContentLoaded', initApp);
     };
     inp.click();
   };
+
+  /* ================= refresh from the Google Sheet =================
+     Pulls the ENQ tab for the cube (it carries Won/Lost) and, when it exists,
+     the follow-up tab for the chase list — that one is usually fresher because
+     it is the report the counters actually re-export. Chunked, because 8,000
+     rows will not come back in one response. */
+  function dgUrl(){
+    var u=''; try{ u=(config&&config.script&&config.script.url)||''; }catch(e){}
+    return u;
+  }
+
+  function dgFetchFeed(url,feed,onProgress){
+    var rows=[], cols=null;
+    function step(from){
+      return fetch(url+'?feed='+encodeURIComponent(feed)+'&from='+from+'&t='+Date.now(),
+                   {cache:'no-cache',redirect:'follow'})
+        .then(function(r){ return r.json(); })
+        .then(function(j){
+          if(!j || j.ok!==true) throw new Error((j&&j.error)||('Feed '+feed+' did not answer.'));
+          if(!cols) cols=j.cols||[];
+          rows=rows.concat(j.rows||[]);
+          if(onProgress) onProgress(rows.length,j.total||0,feed);
+          if(j.more && j.rows && j.rows.length) return step(from+j.rows.length);
+          return {cols:cols,rows:rows,tab:j.tab,total:j.total||rows.length};
+        });
+    }
+    return step(0);
+  }
+
+  window.dgPullSheet=function(silent){
+    var url=dgUrl();
+    if(!url){
+      if(!silent) alert('No Apps Script URL saved.\n\nSettings → Live Team Sync → paste the web app URL, then try again.');
+      return Promise.resolve(false);
+    }
+    var say=function(m){ if(!silent&&typeof showToast==='function') showToast(m); };
+    say('Reading the sheet…');
+
+    return fetch(url+'?feed=list&t='+Date.now(),{cache:'no-cache',redirect:'follow'})
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        if(!j||j.ok!==true){
+          throw new Error('The web app answered, but not with a feed list. Deploy a NEW VERSION '
+            +'after pasting Feeds.gs, or the old code is still live.');
+        }
+        var have={}; (j.feeds||[]).forEach(function(f){ if(f.present && f.rows>0) have[f.feed]=f.rows; });
+        if(!have.ENQ && !have.FOLLOWUP){
+          throw new Error('Neither an ENQ tab nor a follow-up tab has any rows yet. '
+            +'Import the export into the sheet first.');
+        }
+        var jobs=[];
+        if(have.ENQ)      jobs.push(dgFetchFeed(url,'ENQ',function(a,b){ say('ENQ '+a+' / '+b+' rows…'); }));
+        else              jobs.push(Promise.resolve(null));
+        if(have.FOLLOWUP) jobs.push(dgFetchFeed(url,'FOLLOWUP',function(a,b){ say('Follow-up '+a+' / '+b+' rows…'); }));
+        else              jobs.push(Promise.resolve(null));
+        return Promise.all(jobs);
+      })
+      .then(function(res){
+        var enq=res[0], fup=res[1], main=null, from='', note=[];
+
+        if(enq){
+          var a=dgBuild([enq.cols].concat(enq.rows));
+          if(a.err) note.push('ENQ tab: '+a.err); else { main=a; from='ENQ'; }
+        }
+        if(!main && fup){
+          var b=dgBuild([fup.cols].concat(fup.rows));
+          if(b.err) note.push('Follow-up tab: '+b.err);
+          else { main=b; from='FOLLOWUP';
+                 note.push('No usable ENQ tab, so conversion % is not available — only the chase list.'); }
+        }
+        if(!main) throw new Error(note.join('\n') || 'Nothing readable in either tab.');
+
+        /* The follow-up report is the fresher view of who has been contacted,
+           so when both are present its chase list wins. */
+        if(from==='ENQ' && fup){
+          var f=dgBuild([fup.cols].concat(fup.rows));
+          if(!f.err){
+            main.built.chase=f.built.chase;
+            main.built.sources=f.built.sources;
+            main.built.dses=f.built.dses;
+            var g2={}; main.built.sources.forEach(function(s){ g2[s]=ESRC2GRP[s]||'Other'; });
+            main.built.grp=g2;
+            main.chase=f.chase;
+            note.push('Chase list from the follow-up tab ('+f.chase+' never contacted); everything else from ENQ.');
+          }
+        }
+
+        try{ localStorage.setItem(EKEY+'-src',JSON.stringify({how:'sheet',feed:from,at:Date.now()})); }catch(e){}
+        var msg='Pulled from the sheet: '+main.n+' non walk-in enquiries, '
+                +main.chase+' never contacted.'+(note.length?('\n\n'+note.join('\n')):'');
+        msg=dgStore(main.built,msg);
+        if(silent) { if(typeof showToast==='function') showToast('Digital funnel refreshed from the sheet'); }
+        else alert(msg);
+        return true;
+      })
+      .catch(function(err){
+        if(!silent) alert('Could not read the sheet.\n\n'+err.message);
+        return false;
+      });
+  };
+
+  /* Quietly refresh at most once every 6 hours, so opening the dashboard in the
+     morning already shows last night's export without anyone clicking. */
+  function dgAutoPull(){
+    if(!dgUrl()) return;
+    var last=0; try{ last=(JSON.parse(localStorage.getItem(EKEY+'-src')||'{}').at)||0; }catch(e){}
+    if(Date.now()-last < 6*3600*1000) return;
+    setTimeout(function(){ try{ window.dgPullSheet(true); }catch(e){} }, 4000);
+  }
   window.dgResetEnq=function(){
     if(!confirm('Go back to the original April–September data?')) return;
     try{ localStorage.removeItem(EKEY); }catch(e){}
@@ -3956,9 +4399,19 @@ document.addEventListener('DOMContentLoaded', initApp);
   };
   function enqStamp(){
     var live=false; try{ live=!!localStorage.getItem(EKEY); }catch(e){}
-    var M=ENQS.months.slice().sort();
-    return '<span class="help-text">Data: '+esc(mlabel(M[0]))+' to '+esc(mlabel(M[M.length-1]))
-      + (live?' &middot; <b style="color:#2bd47d">imported file</b>':' &middot; original export')+'</span>';
+    var s=null; try{ s=JSON.parse(localStorage.getItem(EKEY+'-src')||'null'); }catch(e){}
+    var M=ENQS.months.slice().sort(), tail;
+    if(!live) tail=' &middot; original export';
+    else if(s && s.how==='sheet'){
+      var mins=Math.round((Date.now()-(s.at||0))/60000), ago;
+      if(mins<2) ago='just now'; else if(mins<90) ago=mins+' min ago';
+      else if(mins<2160) ago=Math.round(mins/60)+' hr ago';
+      else ago=Math.round(mins/1440)+' days ago';
+      tail=' &middot; <b style="color:#2bd47d">live from the sheet</b>, '+ago;
+    }
+    else if(s && s.how==='file') tail=' &middot; <b style="color:#2bd47d">file</b> '+esc(String(s.name||'').slice(0,40));
+    else tail=' &middot; <b style="color:#2bd47d">imported</b>';
+    return '<span class="help-text">Data: '+esc(mlabel(M[0]))+' to '+esc(mlabel(M[M.length-1]))+tail+'</span>';
   }
 
   /* ---------------- nav + view ---------------- */
@@ -3984,7 +4437,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     if(n==='digital'){ setTimeout(function(){ if(ensure()) render(); },60); }
     return r;
   };
-  document.addEventListener('DOMContentLoaded',function(){ setTimeout(ensure,1000); });
+  document.addEventListener('DOMContentLoaded',function(){ setTimeout(function(){ ensure(); dgAutoPull(); },1000); });
 })();
 </script>
 
