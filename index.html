@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v48 &middot; 15 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v49 &middot; 15 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -4158,7 +4158,33 @@ document.addEventListener('DOMContentLoaded', initApp);
        "Last Followup Date"  — the Enquiry Follow Up report (blank = never)
      The follow-up report has no Won/Lost column, so a cube built from it is
      marked outcome:false and is only trusted for the chase list. */
-  function dgBuild(aoa){
+  /* From the follow-up report, the set of enquiry numbers that have since been
+     contacted. Used as an overlay on the register rather than as a replacement
+     for it: the follow-up export is usually a filtered slice (digital only, a
+     shorter date window), so letting it stand in for the whole register would
+     quietly shrink the chase list to whatever that slice happens to contain. */
+  function dgContacted(aoa){
+    var head=(aoa[0]||[]).map(function(x){ return String(x==null?'':x).trim().toLowerCase(); });
+    function col(){ for(var i=0;i<arguments.length;i++){ var j=head.indexOf(String(arguments[i]).toLowerCase()); if(j>=0) return j; } return -1; }
+    var no=col('Enquiry No','Enquiry Number'),
+        lf=col('Last Followup Date','Last Follow Up Date','Last Followup Dt'),
+        fc=col('Follow Ups Count');
+    if(no<0 || (lf<0&&fc<0)) return null;
+    var set={}, n=0, seen=0;
+    aoa.slice(1).forEach(function(r){
+      if(!r) return;
+      var k=String(r[no]==null?'':r[no]).trim(); if(!k) return;
+      seen++;
+      var done;
+      if(lf>=0){ var v=String(r[lf]==null?'':r[lf]).trim();
+                 done = !!v && v!=='.' && v.toLowerCase()!=='unspecified'; }
+      else     { done = (parseInt(r[fc],10)||0) > 0; }
+      if(done){ set[k]=1; n++; }
+    });
+    return {set:set, done:n, seen:seen};
+  }
+
+  function dgBuild(aoa,opts){
     var head=(aoa[0]||[]).map(function(x){ return String(x==null?'':x).trim().toLowerCase(); });
     function col(){ for(var i=0;i<arguments.length;i++){ var j=head.indexOf(String(arguments[i]).toLowerCase()); if(j>=0) return j; } return -1; }
     var c={src:col('Enquiry Source'), dt:col('Date','Open Dt'), sub:col('Sub Model','Model'),
@@ -4190,6 +4216,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     /* blank, "Unspecified" and a bare dot all mean "nothing recorded" in DMS */
     function blank(v){ var s=String(v||'').trim(); return !s || s==='.' || s.toLowerCase()==='unspecified'; }
 
+    var CONTACTED=(opts&&opts.contacted)||null, overlaid=0;
     var cube={}, wi={}, dcube={}, fub={}, chase=[], n=0, nwalk=0, won=0, lost=0;
     aoa.slice(1).forEach(function(r){
       if(!r || (c.no>=0 && !g(r,c.no))) return;
@@ -4202,6 +4229,10 @@ document.addEventListener('DOMContentLoaded', initApp);
       var fuN;
       if(c.fu>=0){ fuN=parseInt(g(r,c.fu)||'0',10); if(!isFinite(fuN)) fuN=0; }
       else { fuN = blank(r[c.lfu]) ? 0 : 1; }
+      /* the follow-up report is newer than the register, so a lead it says has
+         been contacted counts as contacted even if the register still says 0 */
+      var flipped=false;
+      if(fuN===0 && CONTACTED && c.no>=0 && CONTACTED[g(r,c.no)]){ fuN=1; flipped=true; }
 
       var vida=eIsVida(g(r,c.sub))?1:0;
 
@@ -4211,6 +4242,9 @@ document.addEventListener('DOMContentLoaded', initApp);
         nwalk++; return;
       }
       n++;
+      /* only count the overlay where it actually took someone off the work
+         list — a walk-in or an already-closed lead was never on it */
+      if(flipped && out==='Open') overlaid++;
       var mi=ix(months,ym), si=ix(sources,src), di=ix(dses,g(r,c.dse)||'(none)');
       var k=mi+'|'+si+'|'+vida, a=cube[k]||(cube[k]=[mi,si,vida,0,0,0,0,0]);
       a[3]++; if(out==='Won') a[4]++; else if(out==='Lost') a[5]++; else a[6]++;
@@ -4243,7 +4277,7 @@ document.addEventListener('DOMContentLoaded', initApp);
         dse:Object.keys(dcube).map(function(k){ return dcube[k]; }),
         fu:Object.keys(fub).map(function(k){ return fub[k]; }),
         chase:chase},
-      n:n, nwalk:nwalk, chase:chase.length,
+      n:n, nwalk:nwalk, chase:chase.length, overlaid:overlaid,
       /* the follow-up report reports every lead as "Open"; without a single
          Won or Lost anywhere, its conversion numbers are meaningless */
       outcome:(won+lost)>0,
@@ -4341,34 +4375,34 @@ document.addEventListener('DOMContentLoaded', initApp);
         return Promise.all(jobs);
       })
       .then(function(res){
-        var enq=res[0], fup=res[1], main=null, from='', note=[];
+        var enq=res[0], fup=res[1], main=null, from='', note=[], ov=null;
+
+        /* Read the follow-up report as an OVERLAY of who has since been
+           contacted, not as a replacement register. It is usually a filtered
+           slice — digital only, a shorter window — so swapping it in wholesale
+           would shrink the chase list to whatever that slice covers and quietly
+           hide everyone else. */
+        if(fup){
+          ov=dgContacted([fup.cols].concat(fup.rows));
+          if(ov && ov.seen) note.push('Follow-up tab: '+ov.seen+' leads, '+ov.done+' now carry a follow-up date.');
+        }
 
         if(enq){
-          var a=dgBuild([enq.cols].concat(enq.rows));
-          if(a.err) note.push('ENQ tab: '+a.err); else { main=a; from='ENQ'; }
+          var a=dgBuild([enq.cols].concat(enq.rows), ov?{contacted:ov.set}:null);
+          if(a.err) note.push('ENQ tab: '+a.err);
+          else {
+            main=a; from='ENQ';
+            if(a.overlaid) note.push(a.overlaid+' of those were still on the work list — now cleared from it.');
+          }
         }
         if(!main && fup){
           var b=dgBuild([fup.cols].concat(fup.rows));
           if(b.err) note.push('Follow-up tab: '+b.err);
           else { main=b; from='FOLLOWUP';
-                 note.push('No usable ENQ tab, so conversion % is not available — only the chase list.'); }
+                 note.push('No usable ENQ tab, so this is the follow-up slice only \u2014 conversion % '
+                   +'is unavailable and the chase list covers just that slice.'); }
         }
         if(!main) throw new Error(note.join('\n') || 'Nothing readable in either tab.');
-
-        /* The follow-up report is the fresher view of who has been contacted,
-           so when both are present its chase list wins. */
-        if(from==='ENQ' && fup){
-          var f=dgBuild([fup.cols].concat(fup.rows));
-          if(!f.err){
-            main.built.chase=f.built.chase;
-            main.built.sources=f.built.sources;
-            main.built.dses=f.built.dses;
-            var g2={}; main.built.sources.forEach(function(s){ g2[s]=ESRC2GRP[s]||'Other'; });
-            main.built.grp=g2;
-            main.chase=f.chase;
-            note.push('Chase list from the follow-up tab ('+f.chase+' never contacted); everything else from ENQ.');
-          }
-        }
 
         try{ localStorage.setItem(EKEY+'-src',JSON.stringify({how:'sheet',feed:from,at:Date.now()})); }catch(e){}
         var msg='Pulled from the sheet: '+main.n+' non walk-in enquiries, '
