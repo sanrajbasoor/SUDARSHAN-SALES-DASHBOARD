@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v50 &middot; 15 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v52 &middot; 16 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -2590,17 +2590,21 @@ document.addEventListener('DOMContentLoaded', initApp);
      Day-by-day retail entry for each festive phase, in the same shape as the
      dealership's own Ganesh Chaturthi sheet: one row per day, one column per
      counter, with LY / TARGET / ACHIEVED footers underneath.
-     Attaches itself under the existing Festival 100 view; nothing there is
-     modified, so the F100 planner keeps working exactly as before.
+     Sits directly under the ICE daily tracker inside Festival 100. Four counters
+     only - VIDA has no Other and no network billing.
      ========================================================================= -->
 <script>
 (function(){
   "use strict";
   var KEY='hero-vidadaily-v1';
   var PH=[{"p":"Phase 1","n":"Pre-Ganesh Chaturthi","a":"2026-09-01","b":"2026-09-13","ev":null},{"p":"Phase 1","n":"Ganesh Chaturthi","a":"2026-09-14","b":"2026-09-25","ev":"GANESH"},{"p":"Phase 1","n":"Post Ganesh to Pre Navratri","a":"2026-09-26","b":"2026-10-10","ev":null},{"p":"Phase 2","n":"Navratri","a":"2026-10-11","b":"2026-10-21","ev":"NAVRATRI"},{"p":"Phase 2","n":"Pre Dhanteras","a":"2026-10-22","b":"2026-11-05","ev":null},{"p":"Phase 2","n":"Dhanteras","a":"2026-11-06","b":"2026-11-06","ev":null},{"p":"Phase 2","n":"Choti Diwali","a":"2026-11-07","b":"2026-11-07","ev":null},{"p":"Phase 2","n":"Diwali","a":"2026-11-08","b":"2026-11-08","ev":null},{"p":"Phase 2","n":"Post Diwali","a":"2026-11-09","b":"2026-11-11","ev":null},{"p":"Phase 3","n":"Post-festive run","a":"2026-11-12","b":"2026-12-09","ev":null}];
-  /* columns: HO (Napier Town), MML, DN, AT (Adhartal), OT (Other), NET (network) */
-  var COLS=[['PRM','Premia'],['HUB','VIDA Hub'],['DN','DN'],['AT','Adhartal'],
-            ['OT','Other'],['NET','Network']];
+  /* VIDA sells from four points only. There is no Other and no Network column:
+     e-scooters are not billed to the sub-dealer network, so a network row here
+     would always read zero and invite someone to type a number into it. */
+  var COLS=[['PRM','Premia'],['HUB','VIDA Hub'],['DN','DN'],['AT','Adhartal']];
+  /* Bookings live under the same day key with a B- prefix. Keeping them in the
+     same record means one save per day and nothing already typed shifts. */
+  function bk(key){ return 'B-'+key; }
 
   var st; try{ st=Object.assign({phase:1,day:{},tgt:{},ly:{}},JSON.parse(localStorage.getItem(KEY))||{}); }
           catch(e){ st={phase:1,day:{},tgt:{},ly:{}}; }
@@ -2670,24 +2674,27 @@ document.addEventListener('DOMContentLoaded', initApp);
   };
 
   function build(i){
-    var days=daysOf(i), tot=[0,0,0,0,0,0], filled=0, today=iso(new Date());
+    var days=daysOf(i), tot=COLS.map(function(){ return 0; }),
+        btot=COLS.map(function(){ return 0; }), filled=0, today=iso(new Date());
     days.forEach(function(dd){
       var any=false;
       COLS.forEach(function(c,ci){ var v=cell(i,dd.iso,c[0]); if(v!=null){ tot[ci]+=v; any=true; } });
-      dd.entered=any; if(any) filled++;
+      dd.entered=any;
       dd.past = dd.iso <= today;
-      dd.counter = COLS.slice(0,5).reduce(function(a,c){ var v=cell(i,dd.iso,c[0]); return a+(v||0); },0);
-      dd.total = dd.counter + (cell(i,dd.iso,'NET')||0);
+      dd.total = COLS.reduce(function(a,c){ var v=cell(i,dd.iso,c[0]); return a+(v||0); },0);
+      dd.btotal = COLS.reduce(function(a,c){ var v=cell(i,dd.iso,bk(c[0])); return a+(v||0); },0);
+      COLS.forEach(function(c,ci){ var v=cell(i,dd.iso,bk(c[0])); if(v!=null){ btot[ci]+=v; dd.entered=true; } });
+      if(dd.btotal && !dd.entered) dd.entered=true;
     });
+    days.forEach(function(dd){ if(dd.entered) filled++; });
     var tgt=COLS.map(function(_,ci){ return target(i,ci); });
-    var ctrAch=tot[0]+tot[1]+tot[2]+tot[3]+tot[4];
-    var ctrLy=[0,1,2,3,4].reduce(function(a,ci){ return a+lastYear(i,ci); },0);
-    var ctrTgt=tgt.slice(0,5).reduce(function(a,b){return a+b;},0);
+    var sum=function(a,b){ return a+b; };
     var elapsed=days.filter(function(d){ return d.past; }).length;
-    return {days:days,tot:tot,tgt:tgt,filled:filled,elapsed:elapsed,
-            ach:{ctr:ctrAch,net:tot[5],all:ctrAch+tot[5]},
-            ly:{ctr:ctrLy,net:lastYear(i,5),all:ctrLy+lastYear(i,5)},
-            tg:{ctr:ctrTgt,net:tgt[5],all:ctrTgt+tgt[5]}};
+    return {days:days,tot:tot,btot:btot,tgt:tgt,filled:filled,elapsed:elapsed,
+            ach:{all:tot.reduce(sum,0)},
+            bk:{all:btot.reduce(sum,0)},
+            ly:{all:COLS.map(function(_,ci){ return lastYear(i,ci); }).reduce(sum,0)},
+            tg:{all:tgt.reduce(sum,0)}};
   }
 
   function render(){
@@ -2697,7 +2704,10 @@ document.addEventListener('DOMContentLoaded', initApp);
 
     h+='<div class="card" style="margin-top:18px"><h3>&#9889; VIDA &mdash; daily festive retail</h3>'
       +'<p class="help-text">Enter each day\'s retail as it happens, counter by counter, in the same shape as the festive sheet. '
-      +'<b>Dealership</b> and <b>Total</b> are calculated. LY and TARGET are both yours to type &mdash; there is no VIDA festive plan in the dashboard to default them from, so an empty row means nobody has set it yet.</p>';
+      +'<b>Retail</b> on the left, <b>bookings</b> on the right, both counter by counter. Totals are calculated, and '
+      +'<b>Pending</b> is bookings less retail &mdash; orders taken but not yet billed. LY and TARGET are retail figures and '
+      +'both yours to type: there is no VIDA festive plan in the dashboard to default them from, so an empty row means '
+      +'nobody has set it yet.</p>';
 
     h+='<div style="margin:10px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:center">'
       +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Phase'
@@ -2711,12 +2721,17 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'<button class="btn btn-sm" onclick="vdClear('+i+')">Clear phase</button></span></div>';
 
     /* ---- the grid ---- */
-    h+='<div style="overflow-x:auto"><table class="table" style="min-width:760px"><thead><tr>'
-      +'<th>Date</th><th>Event</th><th>Day</th>'
-      + COLS.slice(0,5).map(function(c){ var L={PRM:'Premia',HUB:'VIDA Hub',DN:'DN',AT:'Adhartal',OT:'Other'}; return '<th style="text-align:center">'+(L[c[0]]||c[0])+'</th>'; }).join('')
-      +'<th style="text-align:right">Dealership</th>'
-      +'<th style="text-align:center">Network</th>'
-      +'<th style="text-align:right">Total</th></tr></thead><tbody>';
+    h+='<div style="overflow-x:auto"><table class="table" style="min-width:1020px"><thead>'
+      +'<tr><th colspan="3"></th>'
+      +'<th colspan="'+(COLS.length+1)+'" style="text-align:center;color:#2bd47d;border-bottom:2px solid #2bd47d">RETAIL</th>'
+      +'<th colspan="'+(COLS.length+1)+'" style="text-align:center;color:#00d0ff;border-bottom:2px solid #00d0ff">BOOKING</th>'
+      +'<th></th></tr>'
+      +'<tr><th>Date</th><th>Event</th><th>Day</th>'
+      + COLS.map(function(c){ return '<th style="text-align:center">'+esc(c[1])+'</th>'; }).join('')
+      +'<th style="text-align:right">Total</th>'
+      + COLS.map(function(c){ return '<th style="text-align:center">'+esc(c[1])+'</th>'; }).join('')
+      +'<th style="text-align:right">Total</th>'
+      +'<th style="text-align:right">Pending</th></tr></thead><tbody>';
 
     B.days.forEach(function(dd){
       var miss = dd.past && !dd.entered;
@@ -2724,87 +2739,98 @@ document.addEventListener('DOMContentLoaded', initApp);
         +'<td style="white-space:nowrap"><b>'+esc(pretty(dd.d))+'</b></td>'
         +'<td style="font-size:12px;color:var(--muted)">'+esc(dd.ev)+'</td>'
         +'<td style="font-size:12px">'+esc(dd.day)+'</td>';
-      COLS.slice(0,5).forEach(function(c){
+      COLS.forEach(function(c){
         var v=cell(i,dd.iso,c[0]);
         h+='<td style="text-align:center"><input type="number" min="0" value="'+(v==null?'':v)+'"'
           +' onchange="vdSet('+i+',\''+dd.iso+'\',\''+c[0]+'\',this.value)"'
           +' style="width:52px;text-align:center;background:var(--panel);border:1px solid var(--line);'
           +'color:var(--text);border-radius:6px;padding:3px 4px;font-size:13px"></td>';
       });
-      h+='<td style="text-align:right"><b>'+(dd.counter||'&mdash;')+'</b></td>';
-      var nv=cell(i,dd.iso,'NET');
-      h+='<td style="text-align:center"><input type="number" min="0" value="'+(nv==null?'':nv)+'"'
-        +' onchange="vdSet('+i+',\''+dd.iso+'\',\'NET\',this.value)"'
-        +' style="width:56px;text-align:center;background:var(--panel);border:1px solid var(--line);'
-        +'color:var(--text);border-radius:6px;padding:3px 4px;font-size:13px"></td>';
-      h+='<td style="text-align:right"><b style="color:'+(dd.total?'#2bd47d':'var(--muted)')+'">'+(dd.total||'&mdash;')+'</b></td>';
+      h+='<td style="text-align:right;border-right:1px solid var(--line)"><b style="color:'
+        +(dd.total?'#2bd47d':'var(--muted)')+'">'+(dd.total||'&mdash;')+'</b></td>';
+      COLS.forEach(function(c){
+        var v=cell(i,dd.iso,bk(c[0]));
+        h+='<td style="text-align:center"><input type="number" min="0" value="'+(v==null?'':v)+'"'
+          +' onchange="vdSet('+i+',\''+dd.iso+'\',\''+bk(c[0])+'\',this.value)"'
+          +' style="width:52px;text-align:center;background:var(--panel);border:1px solid rgba(0,208,255,0.35);'
+          +'color:#00d0ff;border-radius:6px;padding:3px 4px;font-size:13px"></td>';
+      });
+      h+='<td style="text-align:right"><b style="color:'+(dd.btotal?'#00d0ff':'var(--muted)')+'">'+(dd.btotal||'&mdash;')+'</b></td>';
+      var pend=dd.btotal-dd.total;
+      h+='<td style="text-align:right"><b style="color:'+(pend>0?'#ffb02e':'var(--muted)')+'">'
+        +(pend?((pend>0?'+':'')+pend):'&mdash;')+'</b></td>';
       h+='</tr>';
     });
 
     /* ---- footers ---- */
-    function foot(label,vals,ctr,net,all,colour,extra){
+    /* `bvals` fills the booking half; pass null to leave it blank (LY and
+       TARGET are retail-only figures, and inventing booking equivalents for
+       them would imply a plan nobody wrote). */
+    function foot(label,vals,all,colour,extra,bvals,ball,pend){
       var r='<tr style="border-top:2px solid var(--line)">'
         +'<td colspan="3"><b'+(colour?(' style="color:'+colour+'"'):'')+'>'+label+'</b>'
         +(extra?('<div class="help-text" style="font-size:11px">'+extra+'</div>'):'')+'</td>';
-      vals.slice(0,5).forEach(function(v){ r+='<td style="text-align:center"><b>'+num(v)+'</b></td>'; });
-      r+='<td style="text-align:right"><b>'+num(ctr)+'</b></td>'
-        +'<td style="text-align:center"><b>'+num(net)+'</b></td>'
-        +'<td style="text-align:right"><b'+(colour?(' style="color:'+colour+'"'):'')+'>'+num(all)+'</b></td></tr>';
-      return r;
+      vals.forEach(function(v){ r+='<td style="text-align:center"><b>'+num(v)+'</b></td>'; });
+      r+='<td style="text-align:right;border-right:1px solid var(--line)"><b'
+        +(colour?(' style="color:'+colour+'"'):'')+'>'+num(all)+'</b></td>';
+      if(bvals){
+        bvals.forEach(function(v){ r+='<td style="text-align:center"><b style="color:#00d0ff">'+num(v)+'</b></td>'; });
+        r+='<td style="text-align:right"><b style="color:#00d0ff">'+num(ball)+'</b></td>';
+        r+='<td style="text-align:right"><b style="color:'+((pend||0)>0?'#ffb02e':'var(--muted)')+'">'
+          +((pend||0)?(((pend>0)?'+':'')+num(pend)):'&mdash;')+'</b></td>';
+      } else {
+        r+='<td colspan="'+(COLS.length+2)+'"></td>';
+      }
+      return r+'</tr>';
     }
-    h+=foot('ACHIEVED',B.tot,B.ach.ctr,B.ach.net,B.ach.all,'#2bd47d',
-            B.elapsed+' of '+B.days.length+' days elapsed');
+    h+=foot('ACHIEVED',B.tot,B.ach.all,'#2bd47d',
+            B.elapsed+' of '+B.days.length+' days elapsed',
+            B.btot,B.bk.all,B.bk.all-B.ach.all);
     h+='<tr><td colspan="3"><b style="color:#94a0c8">LY</b>'
       +'<div class="help-text" style="font-size:11px">type last year\'s phase total</div></td>';
-    COLS.slice(0,5).forEach(function(c,ci){
+    COLS.forEach(function(c,ci){
       var lv=(st.ly&&st.ly[i]&&st.ly[i][c[0]]!=null)?st.ly[i][c[0]]:'';
       h+='<td style="text-align:center"><input type="number" min="0" value="'+lv+'"'
         +' onchange="vdLy('+i+',\''+c[0]+'\',this.value)"'
         +' style="width:52px;text-align:center;background:var(--panel);border:1px solid var(--line);'
         +'color:#94a0c8;border-radius:6px;padding:3px 4px;font-size:13px"></td>';
     });
-    var lnv=(st.ly&&st.ly[i]&&st.ly[i].NET!=null)?st.ly[i].NET:'';
-    h+='<td style="text-align:right"><b style="color:#94a0c8">'+num(B.ly.ctr)+'</b></td>'
-      +'<td style="text-align:center"><input type="number" min="0" value="'+lnv+'"'
-      +' onchange="vdLy('+i+',\'NET\',this.value)"'
-      +' style="width:56px;text-align:center;background:var(--panel);border:1px solid var(--line);'
-      +'color:#94a0c8;border-radius:6px;padding:3px 4px;font-size:13px"></td>'
-      +'<td style="text-align:right"><b style="color:#94a0c8">'+num(B.ly.all)+'</b></td></tr>';
+    h+='<td style="text-align:right;border-right:1px solid var(--line)"><b style="color:#94a0c8">'+num(B.ly.all)+'</b></td>'
+      +'<td colspan="'+(COLS.length+2)+'"></td></tr>';
 
     /* target row is editable */
     h+='<tr><td colspan="3"><b style="color:#ffb02e">TARGET</b>'
       +'<div class="help-text" style="font-size:11px">type the phase target</div></td>';
-    COLS.slice(0,5).forEach(function(c,ci){
+    COLS.forEach(function(c,ci){
       h+='<td style="text-align:center"><input type="number" min="0" value="'+target(i,ci)+'"'
         +' onchange="vdTgt('+i+',\''+c[0]+'\',this.value)"'
         +' style="width:52px;text-align:center;background:var(--panel);border:1px solid #ffb02e;'
         +'color:#ffb02e;border-radius:6px;padding:3px 4px;font-size:13px;font-weight:700"></td>';
     });
-    h+='<td style="text-align:right"><b style="color:#ffb02e">'+num(B.tg.ctr)+'</b></td>'
-      +'<td style="text-align:center"><input type="number" min="0" value="'+target(i,5)+'"'
-      +' onchange="vdTgt('+i+',\'NET\',this.value)"'
-      +' style="width:56px;text-align:center;background:var(--panel);border:1px solid #ffb02e;'
-      +'color:#ffb02e;border-radius:6px;padding:3px 4px;font-size:13px;font-weight:700"></td>'
-      +'<td style="text-align:right"><b style="color:#ffb02e">'+num(B.tg.all)+'</b></td></tr>';
+    h+='<td style="text-align:right;border-right:1px solid var(--line)"><b style="color:#ffb02e">'+num(B.tg.all)+'</b></td>'
+      +'<td colspan="'+(COLS.length+2)+'"></td></tr>';
 
     /* gap row */
     var gaps=B.tot.map(function(v,ci){ return v-target(i,ci); });
     h+='<tr><td colspan="3"><b>vs TARGET</b></td>';
-    gaps.slice(0,5).forEach(function(g){
+    gaps.forEach(function(g){
       h+='<td style="text-align:center"><b style="color:'+(g>=0?'#2bd47d':'#ff5c5c')+'">'+sgn(g)+'</b></td>';
     });
-    var gc=B.ach.ctr-B.tg.ctr, gn=B.ach.net-B.tg.net, ga=B.ach.all-B.tg.all;
-    h+='<td style="text-align:right"><b style="color:'+(gc>=0?'#2bd47d':'#ff5c5c')+'">'+sgn(gc)+'</b></td>'
-      +'<td style="text-align:center"><b style="color:'+(gn>=0?'#2bd47d':'#ff5c5c')+'">'+sgn(gn)+'</b></td>'
-      +'<td style="text-align:right"><b style="color:'+(ga>=0?'#2bd47d':'#ff5c5c')+'">'+sgn(ga)+'</b></td></tr>';
+    var ga=B.ach.all-B.tg.all;
+    h+='<td style="text-align:right;border-right:1px solid var(--line)"><b style="color:'
+      +(ga>=0?'#2bd47d':'#ff5c5c')+'">'+sgn(ga)+'</b></td>'
+      +'<td colspan="'+(COLS.length+2)+'"></td></tr>';
     h+='</tbody></table></div>';
 
     /* ---- pace ---- */
     var left=B.days.length-B.elapsed, need=Math.max(0,B.tg.all-B.ach.all);
     var pace=B.elapsed? (B.ach.all/B.elapsed) : 0;
     var req = left? (need/left) : 0;
+    var pendAll=B.bk.all-B.ach.all;
     h+='<div class="grid grid-4" style="margin-top:14px">'
-      +kpi(num(B.ach.all),'Achieved so far','#2bd47d',B.elapsed+' days in')
+      +kpi(num(B.ach.all),'Retailed so far','#2bd47d',B.elapsed+' days in')
+      +kpi(num(B.bk.all),'Booked so far','#00d0ff',
+           pendAll>0?(num(pendAll)+' still to bill'):(pendAll<0?(num(-pendAll)+' billed from earlier bookings'):'all billed'))
       +kpi(num(B.tg.all),'Phase target','#ffb02e',B.days.length+' days total')
       +kpi((Math.round(pace*10)/10),'Running at / day',pace>=req?'#2bd47d':'#ffb02e','average so far')
       +kpi(left?(Math.round(req*10)/10):'&mdash;','Needed / day for the rest',req>pace?'#ff5c5c':'#2bd47d',
@@ -2828,16 +2854,20 @@ document.addEventListener('DOMContentLoaded', initApp);
   window.vdExport=function(){
     var i=st.phase|0, B=build(i), p=PH[i];
     var out=[['Phase',p.p+' - '+p.n],[],
-      ['Date','Event','Day','Premia','VIDA Hub','DN','Adhartal','Other','Dealership','Network','Total']];
+      ['Date','Event','Day']
+        .concat(COLS.map(function(c){ return 'Retail - '+c[1]; })).concat(['Retail total'])
+        .concat(COLS.map(function(c){ return 'Booking - '+c[1]; })).concat(['Booking total','Pending'])];
     B.days.forEach(function(dd){
-      out.push([dd.iso,dd.ev,dd.day].concat(COLS.slice(0,5).map(function(c){ var v=cell(i,dd.iso,c[0]); return v==null?'':v; }))
-        .concat([dd.counter, (cell(i,dd.iso,'NET')==null?'':cell(i,dd.iso,'NET')), dd.total]));
+      out.push([dd.iso,dd.ev,dd.day]
+        .concat(COLS.map(function(c){ var v=cell(i,dd.iso,c[0]); return v==null?'':v; })).concat([dd.total])
+        .concat(COLS.map(function(c){ var v=cell(i,dd.iso,bk(c[0])); return v==null?'':v; }))
+        .concat([dd.btotal, dd.btotal-dd.total]));
     });
+    var blanks=COLS.map(function(){ return ''; });
     out.push([]);
-    out.push(['ACHIEVED','','' ].concat(B.tot.slice(0,5)).concat([B.ach.ctr,B.ach.net,B.ach.all]));
-    out.push(['LY','','' ].concat([0,1,2,3,4].map(function(ci){ return lastYear(i,ci); })).concat([B.ly.ctr,B.ly.net,B.ly.all]));
-    out.push(['TARGET','','' ].concat(COLS.slice(0,5).map(function(_,ci){ return target(i,ci); }))
-      .concat([B.tg.ctr,B.tg.net,B.tg.all]));
+    out.push(['ACHIEVED','',''].concat(B.tot).concat([B.ach.all]).concat(B.btot).concat([B.bk.all,B.bk.all-B.ach.all]));
+    out.push(['LY','',''].concat(COLS.map(function(_,ci){ return lastYear(i,ci); })).concat([B.ly.all]).concat(blanks).concat(['','']));
+    out.push(['TARGET','',''].concat(COLS.map(function(_,ci){ return target(i,ci); })).concat([B.tg.all]).concat(blanks).concat(['','']));
     var csv=out.map(function(r){ return r.map(function(c){ var s=String(c==null?'':c);
       return /[",\n]/.test(s)?('"'+s.replace(/"/g,'""')+'"'):s; }).join(','); }).join('\n');
     var a=document.createElement('a');
@@ -2848,22 +2878,27 @@ document.addEventListener('DOMContentLoaded', initApp);
 
   /* ---- attach under the existing Festival 100 view ---- */
   function ensure(){
-    var view=document.getElementById('view-vidabk'); if(!view) return false;
-    if(!document.getElementById('vida-daily')){
-      var d=document.createElement('div'); d.id='vida-daily';
-      view.appendChild(d);          // sibling of #f100-root, so F100's own render never clears it
-    }
+    var view=document.getElementById('view-f100'); if(!view) return false;
+    var d=document.getElementById('vida-daily');
+    if(!d){ d=document.createElement('div'); d.id='vida-daily'; }
+    /* sit directly after the ICE tracker when it exists, otherwise at the end of
+       the view - either way a sibling of #f100-root, so F100's own render never
+       clears it */
+    var ice=document.getElementById('f100-daily');
+    if(ice && ice.parentNode){
+      if(d.previousElementSibling!==ice) ice.parentNode.insertBefore(d, ice.nextSibling);
+    } else if(d.parentNode!==view){ view.appendChild(d); }
     return true;
   }
   var prev=window.setView;
   window.setView=function(n){
     var r=prev.apply(this,arguments);
-    if(n==='vidabk'){ setTimeout(function(){ if(ensure()) render(); },120); }
+    if(n==='f100'){ setTimeout(function(){ if(ensure()) render(); },160); }
     return r;
   };
   document.addEventListener('DOMContentLoaded',function(){
     setTimeout(function(){ try{ var a=document.querySelector('.nav-item.active');
-      if(a&&a.dataset.view==='vidabk'&&ensure()) render(); }catch(e){} },1200);
+      if(a&&a.dataset.view==='f100'&&ensure()) render(); }catch(e){} },1300);
   });
 })();
 </script>
