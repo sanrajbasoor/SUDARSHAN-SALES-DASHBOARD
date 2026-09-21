@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v53 &middot; 21 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v55 &middot; 21 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -6082,8 +6082,25 @@ document.addEventListener('DOMContentLoaded', initApp);
     var o=null; try{ o=window.__OPS__&&window.__OPS__(); }catch(e){}
     if(!o) o=jget('hero-ops-v1',{})||{};
     var reg=o.stockRegister; if(!reg||!reg.units||!reg.units.length) return null;
+    /* the old register has model + colour but no SKU code. Rebuild the code from
+       the sales history: same model, same colour code or colour name, and where
+       a model sells that colour in several variants take the best seller. */
+    var byMC={};
+    try{ var M=window.__ICE_MIX__;
+      M.r.forEach(function(a){
+        var mo=nk(M.m[a[3]]), sku=M.v[a[4]]+M.c[a[5]][0];
+        [nk(M.c[a[5]][0]), nk(M.c[a[5]][1])].forEach(function(ck){
+          var key=mo+'|'+ck, e=byMC[key]||(byMC[key]={});
+          e[sku]=(e[sku]||0)+a[6];
+        });
+      });
+    }catch(e){}
+    function skuFor(mo,c){
+      var e=byMC[nk(mo)+'|'+nk(c)]; if(!e) return '';
+      return Object.keys(e).sort(function(a,b){ return e[b]-e[a]; })[0]||'';
+    }
     return reg.units.map(function(u){
-      var sku=String(u.sku||'').toUpperCase();
+      var sku=String(u.sku||'').toUpperCase() || skuFor(u.mo,u.c);
       return {sku:sku||(nk(u.mo)+'-'+nk(u.c)), model:String(u.mo||'').toUpperCase(), variant:sku?sku.slice(0,11):'',
               desc:String(u.c||''), loc:isTransit(u.loc,u.st)?'TR':locOf(u.loc), age:+u.age||0, dlp:+u.dlp||0,
               tr:isTransit(u.loc,u.st)?1:0};
@@ -6175,7 +6192,11 @@ document.addEventListener('DOMContentLoaded', initApp);
       })
       .then(function(res){
         var a=parseStock(res[0],false); if(a.err) throw new Error('STOCK tab: '+a.err);
-        var t=[]; if(res[1]){ var b=parseStock(res[1],true); if(!b.err) t=b.units; }
+        /* If the DMS export already carries in-transit VINs, trust those and
+           skip the hand-kept Stock Monitoring column - adding both would count
+           the same vehicles twice. */
+        var hasTr=a.units.some(function(u){ return u.tr; });
+        var t=[]; if(res[1] && !hasTr){ var b=parseStock(res[1],true); if(!b.err) t=b.units; }
         var onHand=a.units.filter(function(u){ return !u.tr; }).length, tr=a.units.length-onHand+t.length;
         store(a.units,t,'sheet','STOCK tab');
         var msg='Stock pulled from the sheet: '+onHand+' on hand, '+tr+' in transit.';
@@ -6522,6 +6543,21 @@ document.addEventListener('DOMContentLoaded', initApp);
       + sourceBar(S)
       +'</div></div>';
 
+    /* If most of the stock sits in SKUs the festive mix has never heard of, the
+       two sides are not talking about the same SKU codes - say so, rather than
+       show every segment as fully short. */
+    var inStock=0, orphan=0;
+    B.rows.forEach(function(r){ inStock+=r.stock; if(!r.demand) orphan+=r.stock; });
+    if(S.how==='register' || (inStock && orphan/inStock>0.4)){
+      h+='<div class="card" style="margin-top:12px;border-left:4px solid #ff5c5c"><p class="help-text" style="margin:0">'
+        +(orphan? ('<b style="color:#ff5c5c">'+num(orphan)+' of '+num(inStock)+' units in stock did not match any SKU in the festival mix.</b> ') : '')
+        +(S.how==='register'
+          ? 'Stock here is from the old register, which has no SKU codes, so SKUs were rebuilt from model + colour. '
+            +'Press <b>Refresh from sheet</b> to load the real SKU-level stock.'
+          : 'Check that the stock export carries the full SKU code (e.g. HDLHCDRSCFIBLK).')
+        +'</p></div>';
+    }
+
     /* segment mix, editable */
     var segs=SEGORD.filter(function(s){ return D.SW.w[s]!=null; });
     var wsum=0; segs.forEach(function(s){ wsum+=D.SW.w[s]||0; });
@@ -6531,7 +6567,9 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'<th style="text-align:right">In stock</th><th style="text-align:right">In transit</th><th style="text-align:right">Short for season</th></tr></thead><tbody>';
     segs.forEach(function(sg){
       var r=B.rows.filter(function(x){ return x.seg===sg; }), st=0,tr=0,bal=0;
-      r.forEach(function(x){ st+=x.stock; tr+=x.transit; bal+=x.balance; });
+      r.forEach(function(x){ st+=x.stock; tr+=x.transit; });
+      /* netted at segment level: vehicles required less what the segment already holds */
+      bal=Math.max(0,(D.segQ[sg]||0)-st-tr);
       var ov=dp.segov[ch][sg];
       h+='<tr><td><b>'+sg+'</b>'+(sg==='Entry'?'<div class="help-text" style="font-size:11px">HF Dlx All Blk pinned below</div>':'')+'</td>'
         +'<td style="text-align:right;color:var(--muted)">'+(Math.round((D.SW.base[sg]||0)*10)/10)+'%</td>'
@@ -6558,7 +6596,7 @@ document.addEventListener('DOMContentLoaded', initApp);
       + k(num(T.transit),'In transit','#ffb02e',Math.round(B.share*100)+'% share')
       + k((Math.round(cov*10)/10)+'d','Days of cover',(cov<dp.hold*0.8?'#ff5c5c':'#2bd47d'),'target '+dp.hold+' days')
       + k(num(T.indent),'Indent now','#a05bff','to reach '+dp.hold+' days')
-      + k(num(T.balance),'Still to procure','#ff5c5c','for the whole festival')
+      + k(num(Math.max(0,T.demand-T.stock-T.transit)),'Still to procure','#ff5c5c','demand less stock and transit')
       +'</div>';
     h+='<div class="card" style="margin-top:12px;display:flex;gap:16px;flex-wrap:wrap">'
       +['short','ok','excess','dead'].map(function(s){ return '<div><b style="color:'+ST[s][1]+'">'+cnt[s]+'</b> <span style="color:var(--muted)">'+ST[s][0].toLowerCase()+'</span></div>'; }).join('')
