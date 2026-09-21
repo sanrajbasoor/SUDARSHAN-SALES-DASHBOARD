@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v52 &middot; 16 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v53 &middot; 21 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -2170,7 +2170,19 @@ document.addEventListener('DOMContentLoaded', initApp);
   function save(){ try{ localStorage.setItem(KEY,JSON.stringify(st)); }catch(e){} }
   /* published so the indent planner can cross-reference the retail target
      without re-deriving it from the seed and drifting out of step */
-  try{ window.__F100__=function(){ return {total:st.total, netPct:st.netPct, cover:st.cover, seed:F100, counters:COUNTERS}; }; }catch(e){}
+  try{ window.__F100__=function(){
+    /* segPct = the segment mix shown on the Festival 100 page: festive LY share
+       per segment, with any % the user typed there taking over */
+    var segPct={};
+    try{
+      var T=segTree(), tot=0; Object.keys(T).forEach(function(k){ tot+=T[k].u; });
+      Object.keys(T).forEach(function(sg){
+        var ov=st.segov&&st.segov[sg];
+        segPct[sg]=(ov!=null&&ov!=='')? Math.max(0,parseFloat(ov)||0) : (tot? T[sg].u/tot*100 : 0);
+      });
+    }catch(e){}
+    return {total:st.total, netPct:st.netPct, cover:st.cover, seed:F100, counters:COUNTERS, segPct:segPct};
+  }; }catch(e){}
   function esc(x){ return String(x==null?'':x).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
   function nf(n){ return (Number(n)||0).toLocaleString('en-IN'); }
   function pc(n,d){ return d? Math.round(n/d*1000)/10 : 0; }
@@ -5922,6 +5934,727 @@ document.addEventListener('DOMContentLoaded', initApp);
           window.setView.__idWrapped=true;
         }
         try{ var a=document.querySelector('.nav-item.active'); if(a && a.dataset.view==='orderplan') render(); }catch(e){}
+        return;
+      }
+      if(++tries<40) setTimeout(wait,250);
+    })();
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot); else boot();
+})();
+</script>
+
+<!-- ===== SKU x LOCATION STOCK + FESTIVAL 100 STOCK vs DEMAND (additive) =========
+     Two panels inside the Stock tab, both fed from one SKU-level stock source:
+
+       1. SKU x location matrix, laid out like the "Stock Monitoring" sheet:
+          segment -> model -> SKU / colour, one column per location, then
+          Net stock (everything except DC), In transit, Total, DC.
+          Each segment collapses to a single line.
+
+       2. Festival 100 stock on hand vs demand, Counter and Network separately.
+          Counter demand defaults to 2,100 vehicles; the segment mix comes from
+          the Festival 100 page; Entry is pinned so HF Deluxe All Black carries
+          a set share (default 67.5%) of Entry retail.
+
+     Stock source, best first:
+       a) the STOCK tab on the Google Sheet, via the web app's ?feed=STOCK
+       b) a DMS VIN stock export loaded from file
+       c) the VIN register the old sync delivered (ops.stockRegister.units)
+================================================================================ -->
+<script>
+(function(){
+  "use strict";
+  var SKEY='hero-skustock-v1', MPK='hero-skumatrix-prefs-v1', DPK='hero-f100sd-prefs-v1';
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function num(n){ return (Math.round(n)||0).toLocaleString('en-IN'); }
+  function nk(s){ return String(s==null?'':s).toUpperCase().replace(/[^A-Z0-9]/g,''); }
+  function jget(k,d){ try{ var v=JSON.parse(localStorage.getItem(k)); return v==null?d:v; }catch(e){ return d; } }
+  function jset(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); return true; }catch(e){ return false; } }
+  function dash(v){ return v? num(v) : '<span style="color:var(--muted)">&middot;</span>'; }
+  function toast(m){ try{ if(typeof showToast==='function') showToast(m); }catch(e){} }
+  function lr(weights,total){
+    var keys=Object.keys(weights), sum=0; keys.forEach(function(k){ sum+=Math.max(0,weights[k]||0); });
+    var out={}; keys.forEach(function(k){ out[k]=0; });
+    if(!sum||!total) return out;
+    var raw=keys.map(function(k){ return [k,Math.max(0,weights[k]||0)/sum*total]; });
+    var given=0; raw.forEach(function(r){ out[r[0]]=Math.floor(r[1]); given+=out[r[0]]; });
+    raw.sort(function(a,b){ return (b[1]-Math.floor(b[1]))-(a[1]-Math.floor(a[1])); });
+    for(var i=0;i<total-given;i++) out[raw[i%raw.length][0]]++;
+    return out;
+  }
+  function dl(name,rows){
+    var csv=rows.map(function(r){ return r.map(function(c){
+      var t=String(c==null?'':c).replace(/<[^>]*>/g,'').replace(/&middot;/g,'').replace(/&mdash;/g,'').trim();
+      return /[",\n]/.test(t)?('"'+t.replace(/"/g,'""')+'"'):t; }).join(','); }).join('\n');
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8;'}));
+    a.download=name+'_'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },100);
+  }
+
+  /* ---------------- locations ---------------- */
+  /* DMS writes short codes (NT, MM, ADRTL, GODWON); older sheets write the
+     full names. Both land on the same column. DC is stock already challaned to
+     the network, so it is kept out of Net stock - exactly as the sheet does. */
+  var LOCS=[
+    ['NT','Napier Town',/^(NT|NAPIER.*)$/],
+    ['MM','MML',/^(MM|MML.*|MADAN.*)$/],
+    ['DN','DN',/^(DN|DAMOH.*)$/],
+    ['AT','Adhartal',/^(ADRTL|AT|ADHAR.*|ADARTAL)$/],
+    ['GD','Godown',/^(GODWON|GODOWN|GODWN|GD)$/],
+    ['DC','DC',/^(DC|FESTIVAL.*DC|.*COUNTER-?DC|NETWORK-?DC)$/],
+    ['HUB','VIDA Hub',/^(HUB|VIDA.*HUB|VIDAHUB)$/],
+    ['PRM','Premia',/^(PREMIA|PRM)$/]
+  ];
+  function locOf(raw){
+    var s=String(raw==null?'':raw).trim().toUpperCase();
+    if(!s) return 'NA';
+    for(var i=0;i<LOCS.length;i++) if(LOCS[i][2].test(s)) return LOCS[i][0];
+    return 'OTH';
+  }
+  var LOCNAME={}; LOCS.forEach(function(l){ LOCNAME[l[0]]=l[1]; }); LOCNAME.OTH='Other'; LOCNAME.NA='No location';
+
+  /* ---------------- segments ---------------- */
+  var SEGORD=['Scooter','Entry','Deluxe','125cc','Premium','VIDA','Other'];
+  var MIXSEG={'100cc':'Deluxe','125cc':'125cc','Entry':'Entry','Premium':'Premium','Scooter':'Scooter'};
+  var modelSeg=null;
+  function segOf(model){
+    var m=String(model||'').toUpperCase().trim();
+    if(/VIDA|VX2|^V[12]\b/.test(m)) return 'VIDA';
+    if(!modelSeg){
+      modelSeg={};
+      try{ var M=window.__ICE_MIX__; M.r.forEach(function(a){ modelSeg[nk(M.m[a[3]])]=MIXSEG[M.s[a[2]]]||M.s[a[2]]; }); }catch(e){}
+    }
+    if(modelSeg[nk(m)]) return modelSeg[nk(m)];
+    if(/^HF|^HF DELUXE/.test(m)) return 'Entry';
+    if(/SUPER SPLENDOR|GLAMOUR|XTREME 125/.test(m)) return '125cc';
+    if(/SPLENDOR|PASSION/.test(m)) return 'Deluxe';
+    if(/DESTINI|PLEASURE|MAESTRO|XOOM 1[12]/.test(m)) return 'Scooter';
+    if(/XTREME|XPULSE|MAVRICK|KARIZMA|XOOM 160|X440|HARLEY|440/.test(m)) return 'Premium';
+    return 'Other';
+  }
+
+  /* ---------------- the stock source ---------------- */
+  function isTransit(){
+    for(var i=0;i<arguments.length;i++) if(/transit/i.test(String(arguments[i]||''))) return true;
+    return false;
+  }
+  /* Accepts either DMS layout:
+       VIN | SKU | ... | Inventory Location | Model | Variant | Color | ... | SKU Description | ... | DLP | Vehicle Age
+       Sr | Inventory Location | Age | VIN | Engine# | Model | SKU
+     and a plain transit list (SKU, optional Qty). */
+  function parseStock(aoa, forceTransit){
+    var hi=-1;
+    for(var r=0;r<Math.min(aoa.length,15);r++){
+      var row=(aoa[r]||[]).map(function(x){ return String(x==null?'':x).trim().toLowerCase(); });
+      if(row.indexOf('sku')>=0 || row.indexOf('sku code')>=0){ hi=r; break; }
+    }
+    if(hi<0) return {err:'No "SKU" column found. Export the DMS VIN stock report with the SKU column in it.'};
+    var head=aoa[hi].map(function(x){ return String(x==null?'':x).trim().toLowerCase(); });
+    function col(){ for(var i=0;i<arguments.length;i++){ var j=head.indexOf(arguments[i]); if(j>=0) return j; } return -1; }
+    var c={vin:col('vin','vin number','chassis no'), sku:col('sku','sku code'), loc:col('inventory location','location'),
+           model:col('model','model name'), variant:col('variant'), colour:col('color','colour'),
+           desc:col('sku description','description','colours'), age:col('vehicle age (in days)','age','age (days)'),
+           dlp:col('dlp'), stn:col('stn status','status'), phys:col('vin physical status'),
+           qty:col('qty','quantity','in transit','units')};
+    var units=[];
+    aoa.slice(hi+1).forEach(function(r){
+      if(!r) return;
+      var sku=String(r[c.sku]==null?'':r[c.sku]).trim().toUpperCase();
+      if(!sku || !/^[A-Z0-9]{8,}$/.test(sku)) return;
+      var n=1;
+      if(c.qty>=0 && c.vin<0){ n=parseInt(r[c.qty],10)||0; if(n<=0) return; }
+      var locRaw=c.loc>=0? r[c.loc] : '';
+      var tr=forceTransit || isTransit(locRaw, c.stn>=0?r[c.stn]:'', c.phys>=0?r[c.phys]:'');
+      var dlp=0; if(c.dlp>=0){ var m=String(r[c.dlp]||'').match(/(\d[\d,]*(?:\.\d+)?)/); if(m) dlp=Math.round(parseFloat(m[1].replace(/,/g,''))); }
+      var u={sku:sku, model:String(c.model>=0?r[c.model]:'').trim().toUpperCase(),
+             variant:String(c.variant>=0?r[c.variant]:'').trim()||sku.slice(0,11),
+             desc:String(c.desc>=0?r[c.desc]:'').trim(),
+             loc:tr?'TR':locOf(locRaw), age:parseInt(c.age>=0?r[c.age]:0,10)||0, dlp:dlp, tr:tr?1:0};
+      for(var k=0;k<n;k++) units.push(u);
+    });
+    if(!units.length) return {err:'Found the SKU column but no vehicle rows under it.'};
+    return {units:units};
+  }
+
+  function fromRegister(){
+    var o=null; try{ o=window.__OPS__&&window.__OPS__(); }catch(e){}
+    if(!o) o=jget('hero-ops-v1',{})||{};
+    var reg=o.stockRegister; if(!reg||!reg.units||!reg.units.length) return null;
+    return reg.units.map(function(u){
+      var sku=String(u.sku||'').toUpperCase();
+      return {sku:sku||(nk(u.mo)+'-'+nk(u.c)), model:String(u.mo||'').toUpperCase(), variant:sku?sku.slice(0,11):'',
+              desc:String(u.c||''), loc:isTransit(u.loc,u.st)?'TR':locOf(u.loc), age:+u.age||0, dlp:+u.dlp||0,
+              tr:isTransit(u.loc,u.st)?1:0};
+    });
+  }
+
+  /* model name for a SKU when the export has none: borrow it from the sales
+     history, which knows every SKU the dealership has ever retailed */
+  var skuModel=null;
+  function modelForSku(sku){
+    if(!skuModel){ skuModel={};
+      try{ var M=window.__ICE_MIX__; M.r.forEach(function(a){ skuModel[M.v[a[4]]+M.c[a[5]][0]]=M.m[a[3]]; }); }catch(e){} }
+    return skuModel[sku]||'';
+  }
+
+  function SOURCE(){
+    var s=jget(SKEY,null);
+    var units=null, how='none', at=0, name='';
+    if(s && s.units && s.units.length){ units=s.units; how=s.how; at=s.at; name=s.name||''; }
+    else { var r=fromRegister(); if(r){ units=r; how='register'; } }
+    var transit=(s&&s.transit)||[];
+    /* a transit list usually carries only SKU and qty - borrow the model name
+       from the stock rows first, then from the sales history */
+    var known={}; (units||[]).forEach(function(u){ if(u.model) known[u.sku]=u.model; });
+    function fill(u){ if(!u.model) u.model=String(known[u.sku]||modelForSku(u.sku)||u.sku.slice(0,11)).toUpperCase(); }
+    (units||[]).forEach(fill); transit.forEach(fill);
+    return {units:units||[], how:how, at:at, name:name, transitFromFile:!!transit.length, transit:transit};
+  }
+
+  /* one index both panels read: sku -> {loc counts, transit, model, desc...} */
+  function INDEX(){
+    var S=SOURCE(), by={}, locsSeen={};
+    function slot(u){
+      var k=u.sku, e=by[k];
+      if(!e){ e=by[k]={sku:k, model:u.model, variant:u.variant||k.slice(0,11), desc:u.desc||'',
+                       seg:segOf(u.model), loc:{}, transit:0, oldest:0, value:0}; }
+      if(!e.desc && u.desc) e.desc=u.desc;
+      return e;
+    }
+    S.units.forEach(function(u){
+      var e=slot(u);
+      if(u.tr){ e.transit++; return; }
+      e.loc[u.loc]=(e.loc[u.loc]||0)+1; locsSeen[u.loc]=1;
+      if(u.age>e.oldest) e.oldest=u.age; e.value+=u.dlp||0;
+    });
+    S.transit.forEach(function(u){ slot(u).transit++; });
+    Object.keys(by).forEach(function(k){
+      var e=by[k], net=0, dc=e.loc.DC||0;
+      Object.keys(e.loc).forEach(function(l){ if(l!=='DC') net+=e.loc[l]; });
+      e.net=net; e.dc=dc; e.total=net+e.transit;
+    });
+    var cols=LOCS.map(function(l){ return l[0]; }).filter(function(l){ return locsSeen[l]; });
+    ['OTH','NA'].forEach(function(l){ if(locsSeen[l]) cols.push(l); });
+    return {by:by, cols:cols, S:S};
+  }
+  window.__SKUSTOCK__=INDEX;
+
+  /* ---------------- loading ---------------- */
+  function url(){ var u=''; try{ u=(config&&config.script&&config.script.url)||''; }catch(e){} return u; }
+  function fetchFeed(feed){
+    var U=url(), rows=[], cols=null;
+    function step(from){
+      return fetch(U+'?feed='+feed+'&from='+from+'&t='+Date.now(),{cache:'no-cache',redirect:'follow'})
+        .then(function(r){ return r.json(); })
+        .then(function(j){
+          if(!j||j.ok!==true) throw new Error((j&&j.error)||('The '+feed+' feed did not answer.'));
+          if(!cols) cols=j.cols||[]; rows=rows.concat(j.rows||[]);
+          toast(feed+': '+rows.length+' / '+(j.total||0));
+          if(j.more && j.rows && j.rows.length) return step(from+j.rows.length);
+          return [cols].concat(rows);
+        });
+    }
+    return step(0);
+  }
+  function store(units,transit,how,name){
+    var ok=jset(SKEY,{units:units,transit:transit||[],how:how,name:name||'',at:Date.now()});
+    modelSeg=null; renderAll();
+    return ok;
+  }
+  window.skPull=function(silent){
+    if(!url()){ if(!silent) alert('No Apps Script URL saved (Settings → Live Team Sync).'); return Promise.resolve(false); }
+    return fetch(url()+'?feed=list&t='+Date.now(),{cache:'no-cache',redirect:'follow'})
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        if(!j||j.ok!==true) throw new Error('The web app is not serving feeds yet. Paste the updated Feeds.gs and deploy a NEW VERSION.');
+        var have={}; (j.feeds||[]).forEach(function(f){ if(f.present&&f.rows>0) have[f.feed]=f; });
+        if(!have.STOCK) throw new Error('No STOCK tab found in the sheet (or it is empty). Import the DMS VIN stock export into a tab named STOCK.');
+        return Promise.all([fetchFeed('STOCK'), have.TRANSIT? fetchFeed('TRANSIT') : Promise.resolve(null)]);
+      })
+      .then(function(res){
+        var a=parseStock(res[0],false); if(a.err) throw new Error('STOCK tab: '+a.err);
+        var t=[]; if(res[1]){ var b=parseStock(res[1],true); if(!b.err) t=b.units; }
+        var onHand=a.units.filter(function(u){ return !u.tr; }).length, tr=a.units.length-onHand+t.length;
+        store(a.units,t,'sheet','STOCK tab');
+        var msg='Stock pulled from the sheet: '+onHand+' on hand, '+tr+' in transit.';
+        if(silent) toast(msg); else alert(msg);
+        return true;
+      })
+      .catch(function(err){ if(!silent) alert('Could not read stock from the sheet.\n\n'+err.message); return false; });
+  };
+  function readFile(cb){
+    var inp=document.createElement('input'); inp.type='file'; inp.accept='.xlsx,.xls,.csv';
+    inp.onchange=function(){
+      var f=inp.files&&inp.files[0]; if(!f) return;
+      (function load(){
+        if(window.XLSX) return Promise.resolve(window.XLSX);
+        return new Promise(function(res,rej){ var s=document.createElement('script');
+          s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+          s.onload=function(){ res(window.XLSX); }; s.onerror=function(){ rej(new Error('Could not load the spreadsheet reader.')); };
+          document.head.appendChild(s); });
+      })().then(function(X){
+        var fr=new FileReader();
+        fr.onload=function(){
+          try{ var wb=X.read(new Uint8Array(fr.result),{type:'array'});
+               cb(X.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:false}), f.name); }
+          catch(e){ alert('Could not read that file: '+e.message); }
+        };
+        fr.readAsArrayBuffer(f);
+      }).catch(function(e){ alert(e.message); });
+    };
+    inp.click();
+  }
+  window.skImport=function(){
+    readFile(function(aoa,name){
+      var a=parseStock(aoa,false); if(a.err){ alert(a.err); return; }
+      var S=jget(SKEY,{})||{};
+      store(a.units,S.transit||[],'file',name);
+      var onHand=a.units.filter(function(u){ return !u.tr; }).length;
+      alert('Loaded '+onHand+' vehicles on hand'+(a.units.length>onHand?(' and '+(a.units.length-onHand)+' in transit'):'')+' from '+name+'.');
+    });
+  };
+  window.skImportTransit=function(){
+    readFile(function(aoa,name){
+      var a=parseStock(aoa,true); if(a.err){ alert(a.err); return; }
+      var S=jget(SKEY,null);
+      if(!S||!S.units){ alert('Load the stock file first, then the in-transit file.'); return; }
+      S.transit=a.units; S.at=Date.now(); jset(SKEY,S); renderAll();
+      alert('Loaded '+a.units.length+' vehicles in transit from '+name+'.');
+    });
+  };
+  window.skReset=function(){
+    if(!confirm('Forget the loaded SKU stock and fall back to the synced register?')) return;
+    try{ localStorage.removeItem(SKEY); }catch(e){} renderAll();
+  };
+
+  function stamp(S){
+    if(S.how==='none') return '<b style="color:#ff5c5c">No SKU-level stock loaded.</b> Pull it from the sheet or load the DMS VIN stock export.';
+    var when='';
+    if(S.at){ var m=Math.round((Date.now()-S.at)/60000);
+      when = m<2?'just now':(m<90?(m+' min ago'):(m<2160?(Math.round(m/60)+' hr ago'):(Math.round(m/1440)+' days ago'))); }
+    var src={sheet:'live from the sheet',file:'file '+esc(S.name),register:'VIN register from the last sync'}[S.how]||S.how;
+    return 'Stock: <b style="color:#2bd47d">'+src+'</b>'+(when?(', '+when):'')
+      +(S.how==='register'?' &mdash; <span style="color:#ffb02e">no transit at SKU level in this source</span>':'');
+  }
+  function sourceBar(S){
+    return '<span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">'
+      +'<button class="btn btn-sm btn-primary" onclick="skPull()">&#128260; Refresh from sheet</button>'
+      +'<button class="btn btn-sm" onclick="skImport()">&#128228; Stock file</button>'
+      +'<button class="btn btn-sm" onclick="skImportTransit()">&#128667; Transit file</button>'
+      +(S.how==='sheet'||S.how==='file'?'<button class="btn btn-sm" onclick="skReset()">Reset</button>':'')
+      +'</span>';
+  }
+
+  /* ================= 1. SKU x LOCATION MATRIX ================= */
+  var mp=Object.assign({seg:'',q:'',hide:true,view:'sku',closed:{}}, jget(MPK,{})||{});
+  function saveM(){ jset(MPK,mp); }
+  window.skSet=function(k,v){ mp[k]=(v==='true')?true:(v==='false'?false:v); saveM(); renderMatrix(); };
+  window.skToggle=function(seg){ mp.closed[seg]=!mp.closed[seg]; saveM(); renderMatrix(); };
+  window.skAll=function(open){ SEGORD.forEach(function(s){ mp.closed[s]=!open; }); saveM(); renderMatrix(); };
+
+  function groups(I){
+    var q=String(mp.q||'').trim().toUpperCase(), G={};
+    Object.keys(I.by).forEach(function(k){
+      var e=I.by[k];
+      if(mp.seg && e.seg!==mp.seg) return;
+      if(q && (e.sku+' '+e.model+' '+e.desc).toUpperCase().indexOf(q)<0) return;
+      if(mp.hide && !e.net && !e.transit && !e.dc) return;
+      var g=G[e.seg]||(G[e.seg]={seg:e.seg,models:{}});
+      (g.models[e.model]=g.models[e.model]||[]).push(e);
+    });
+    return SEGORD.filter(function(s){ return G[s]; }).map(function(s){
+      var g=G[s];
+      g.list=Object.keys(g.models).sort().map(function(m){
+        var skus=g.models[m].sort(function(a,b){ return b.total-a.total || (a.sku<b.sku?-1:1); });
+        return {model:m, skus:skus, sum:sumOf(skus,I.cols)};
+      });
+      g.sum=sumOf([].concat.apply([],g.list.map(function(x){ return x.skus; })),I.cols);
+      return g;
+    });
+  }
+  function sumOf(list,cols){
+    var s={loc:{},net:0,transit:0,total:0,dc:0};
+    cols.forEach(function(c){ s.loc[c]=0; });
+    list.forEach(function(e){ cols.forEach(function(c){ s.loc[c]+=e.loc[c]||0; });
+      s.net+=e.net; s.transit+=e.transit; s.total+=e.total; s.dc+=e.dc; });
+    return s;
+  }
+  function numCells(s,cols,bold,colour){
+    var b=function(v){ return bold?('<b'+(colour?(' style="color:'+colour+'"'):'')+'>'+num(v)+'</b>'):dash(v); };
+    return cols.map(function(c){ return '<td style="text-align:center">'+(bold?b(s.loc[c]||0):dash(s.loc[c]||0))+'</td>'; }).join('')
+      +'<td style="text-align:center;background:rgba(43,212,125,.08)"><b>'+num(s.net)+'</b></td>'
+      +'<td style="text-align:center;background:rgba(255,176,46,.08);color:#ffb02e">'+(s.transit?('<b>'+num(s.transit)+'</b>'):dash(0))+'</td>'
+      +'<td style="text-align:center;background:rgba(91,158,255,.10)"><b>'+num(s.total)+'</b></td>';
+  }
+
+  function renderMatrix(){
+    var root=document.getElementById('skuloc-root'); if(!root) return;
+    var I=INDEX(), S=I.S, cols=I.cols.filter(function(c){ return c!=='DC'; }).concat(I.cols.indexOf('DC')>=0?['DC']:[]);
+    var G=groups(I);
+    var all=sumOf(Object.keys(I.by).map(function(k){ return I.by[k]; }),cols);
+
+    var h='<div class="card" style="border-left:4px solid #2bd47d">'
+      +'<h3>&#127991;&#65039; Stock by SKU &times; location</h3>'
+      +'<p class="help-text">Laid out like the Stock Monitoring sheet: segment &rarr; model &rarr; each SKU and colour, with a column for every location. '
+      +'<b>Net stock</b> is everything on hand except DC (already challaned to the network); <b>Total</b> is net plus in transit. '
+      +'Click a segment bar to fold it to one line. '+stamp(S)+'</p>'
+      +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px">'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Segment'
+      +'<select class="filter-select" onchange="skSet(\'seg\',this.value)"><option value="">All segments</option>'
+      + SEGORD.filter(function(s){ return Object.keys(I.by).some(function(k){ return I.by[k].seg===s; }); })
+          .map(function(s){ return '<option'+(mp.seg===s?' selected':'')+'>'+s+'</option>'; }).join('')
+      +'</select></label>'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Show'
+      +'<select class="filter-select" onchange="skSet(\'view\',this.value)">'
+      +'<option value="sku"'+(mp.view==='sku'?' selected':'')+'>Every SKU</option>'
+      +'<option value="model"'+(mp.view==='model'?' selected':'')+'>Model totals only</option></select></label>'
+      +'<input class="filter-select" style="width:170px" placeholder="Search SKU / model / colour" value="'+esc(mp.q)+'" onchange="skSet(\'q\',this.value)">'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">'
+      +'<input type="checkbox" '+(mp.hide?'checked':'')+' onchange="skSet(\'hide\',this.checked?\'true\':\'false\')"> Hide empty SKUs</label>'
+      +'<button class="btn btn-sm" onclick="skAll(true)">Expand all</button>'
+      +'<button class="btn btn-sm" onclick="skAll(false)">Fold all</button>'
+      +'<button class="btn btn-sm" onclick="skExport()">&#11015;&#65039; Export</button>'
+      + sourceBar(S)
+      +'</div></div>';
+
+    if(!Object.keys(I.by).length){ root.innerHTML=h; return; }
+
+    /* segment summary, like the header block on the sheet */
+    h+='<div class="card" style="margin-top:12px"><div style="overflow-x:auto"><table class="table"><thead><tr><th>Segment</th>'
+      + cols.map(function(c){ return '<th style="text-align:center">'+esc(LOCNAME[c])+'</th>'; }).join('')
+      +'<th style="text-align:center">Net stock</th><th style="text-align:center">In transit</th><th style="text-align:center">Total</th></tr></thead><tbody>';
+    SEGORD.forEach(function(sg){
+      var L=Object.keys(I.by).map(function(k){ return I.by[k]; }).filter(function(e){ return e.seg===sg; });
+      if(!L.length) return;
+      var s=sumOf(L,cols);
+      h+='<tr style="cursor:pointer" onclick="skSet(\'seg\',\''+(mp.seg===sg?'':sg)+'\')"><td><b>'+sg+'</b></td>'+numCells(s,cols,true)+'</tr>';
+    });
+    h+='<tr style="border-top:2px solid var(--line)"><td><b>Two wheeler</b></td>'+numCells(all,cols,true,'#2bd47d')+'</tr>';
+    h+='</tbody></table></div></div>';
+
+    /* the matrix */
+    var span=4+cols.length+3;
+    h+='<div class="card" style="margin-top:12px"><div style="overflow-x:auto"><table class="table" style="min-width:'+(640+cols.length*62)+'px"><thead><tr>'
+      +'<th>Model</th><th>Variant</th><th>SKU</th><th>Colour</th>'
+      + cols.map(function(c){ return '<th style="text-align:center">'+esc(LOCNAME[c])+'</th>'; }).join('')
+      +'<th style="text-align:center">Net stock</th><th style="text-align:center">In transit</th><th style="text-align:center">Total</th></tr></thead><tbody>';
+    G.forEach(function(g){
+      var shut=!!mp.closed[g.seg];
+      h+='<tr style="background:rgba(255,214,0,.13);cursor:pointer" onclick="skToggle(\''+g.seg+'\')">'
+        +'<td colspan="4"><b style="color:#ffd600">'+(shut?'&#9656; ':'&#9662; ')+esc(g.seg)+' segment</b>'
+        +' <span style="color:var(--muted);font-size:12px">'+g.list.length+' models</span></td>'
+        + numCells(g.sum,cols,true,'#ffd600')+'</tr>';
+      if(shut) return;
+      g.list.forEach(function(m){
+        h+='<tr style="border-top:1px solid var(--line)"><td colspan="4"><b>'+esc(m.model)+'</b></td>'+numCells(m.sum,cols,true)+'</tr>';
+        if(mp.view==='model') return;
+        m.skus.forEach(function(e){
+          h+='<tr><td></td><td style="font-size:12px;color:var(--muted)">'+esc(e.variant)+'</td>'
+            +'<td style="font-size:12px">'+esc(e.sku)+'</td>'
+            +'<td style="font-size:12px">'+esc(e.desc||'')+'</td>'
+            + numCells(e,cols,false)+'</tr>';
+        });
+      });
+    });
+    h+='</tbody></table></div></div>';
+    root.innerHTML=h;
+  }
+  window.skExport=function(){
+    var I=INDEX(), cols=I.cols.filter(function(c){ return c!=='DC'; }).concat(I.cols.indexOf('DC')>=0?['DC']:[]);
+    var out=[['Segment','Model','Variant','SKU','Colour'].concat(cols.map(function(c){ return LOCNAME[c]; }))
+      .concat(['Net stock','In transit','Total','Oldest (days)'])];
+    groups(I).forEach(function(g){ g.list.forEach(function(m){ m.skus.forEach(function(e){
+      out.push([g.seg,m.model,e.variant,e.sku,e.desc].concat(cols.map(function(c){ return e.loc[c]||0; }))
+        .concat([e.net,e.transit,e.total,e.oldest||'']));
+    }); }); });
+    dl('stock_sku_by_location',out);
+  };
+
+  /* ================= 2. FESTIVAL 100 STOCK vs DEMAND ================= */
+  var DDEF={ch:'Counter', ctr:2100, net:null, hf:67.5, days:100, hold:21, godown:'split',
+            seg:'', status:'', q:'', view:'sku', segov:{Counter:{},Network:{}}};
+  var dp=Object.assign({},DDEF,jget(DPK,{})||{});
+  if(!dp.segov||typeof dp.segov!=='object') dp.segov={Counter:{},Network:{}};
+  dp.segov.Counter=dp.segov.Counter||{}; dp.segov.Network=dp.segov.Network||{};
+  function saveD(){ jset(DPK,dp); }
+  window.sdSet=function(k,v){
+    if(['ctr','net','hf','days','hold'].indexOf(k)>=0){ v=(v===''||v==null)?null:Math.max(0,parseFloat(v)||0); if(k==='net'&&v===null){ dp.net=null; saveD(); renderDemand(); return; } }
+    dp[k]=v; saveD(); renderDemand();
+  };
+  window.sdSeg=function(ch,sg,v){ if(v===''||v==null) delete dp.segov[ch][sg]; else dp.segov[ch][sg]=Math.max(0,parseFloat(v)||0); saveD(); renderDemand(); };
+  window.sdSegReset=function(ch){ dp.segov[ch]={}; saveD(); renderDemand(); };
+
+  var HFSKU='HDLHCDRSCFIBLK';
+
+  function F100(){ var f=null; try{ f=window.__F100__&&window.__F100__(); }catch(e){} return f||{total:3800,netPct:44.5,segPct:{}}; }
+  function mixFor(ch){
+    var M=null; try{ M=window.__ICE_MIX__; }catch(e){}
+    var T={}; if(!M) return T;
+    M.r.forEach(function(a){
+      if(M.p[a[0]]!=='festive' || M.ch[a[1]]!==ch) return;
+      var sg=MIXSEG[M.s[a[2]]]||M.s[a[2]], mo=M.m[a[3]], sku=M.v[a[4]]+M.c[a[5]][0];
+      var g=T[sg]||(T[sg]={u:0,skus:{}}); g.u+=a[6];
+      var k=g.skus[sku]||(g.skus[sku]={sku:sku,model:mo,variant:M.v[a[4]],colour:M.c[a[5]][1],u:0}); k.u+=a[6];
+    });
+    return T;
+  }
+  /* segment %: Counter starts from the Festival 100 page's mix; Network starts
+     from its own festive history. Either can be typed over here. */
+  function segWeights(ch,T){
+    var base={};
+    if(ch==='Counter'){
+      var sp=F100().segPct||{};
+      Object.keys(sp).forEach(function(k){ base[MIXSEG[k]||k]=sp[k]; });
+    }
+    if(!Object.keys(base).length){
+      var tot=0; Object.keys(T).forEach(function(k){ tot+=T[k].u; });
+      Object.keys(T).forEach(function(k){ base[k]=tot?T[k].u/tot*100:0; });
+    }
+    var w={}; Object.keys(base).forEach(function(k){
+      var o=dp.segov[ch][k]; w[k]=(o!=null&&o!=='')?o:base[k]; });
+    return {w:w, base:base};
+  }
+  function channelTotal(ch){
+    var F=F100();
+    if(ch==='Counter') return Math.round(dp.ctr||0);
+    if(dp.net!=null) return Math.round(dp.net);
+    return Math.round((F.total||0)*(+F.netPct||0)/100);
+  }
+  function demandFor(ch){
+    var T=mixFor(ch), SW=segWeights(ch,T), total=channelTotal(ch);
+    var segQ=lr(SW.w,total), rows=[], hfHist=0, entryHist=0;
+    Object.keys(segQ).forEach(function(sg){
+      var q=segQ[sg]||0, g=T[sg]; if(!g||!q) return;
+      var w={}; Object.keys(g.skus).forEach(function(k){ w[k]=g.skus[k].u; });
+      var alloc;
+      if(sg==='Entry'){
+        entryHist=g.u; hfHist=(g.skus[HFSKU]||{}).u||0;
+        /* HF Deluxe All Black is pinned to a fixed share of Entry; the rest of
+           Entry keeps its historical proportions among the other SKUs */
+        var hfQ=Math.round(q*Math.min(100,dp.hf||0)/100), rest={};
+        Object.keys(w).forEach(function(k){ if(k!==HFSKU) rest[k]=w[k]; });
+        alloc=lr(rest,q-hfQ); alloc[HFSKU]=hfQ;
+        if(!g.skus[HFSKU]) g.skus[HFSKU]={sku:HFSKU,model:'HF DELUXE',variant:'HDLHCDRSCFI',colour:'BLACK (All Blk)',u:0};
+      } else alloc=lr(w,q);
+      Object.keys(alloc).forEach(function(k){
+        var x=g.skus[k]; rows.push({seg:sg,sku:k,model:x.model,variant:x.variant,colour:x.colour,demand:alloc[k]||0});
+      });
+    });
+    return {rows:rows, segQ:segQ, SW:SW, total:total, hfHist:entryHist?hfHist/entryHist*100:0};
+  }
+
+  function buildDemand(){
+    var ch=dp.ch, I=INDEX();
+    var D=demandFor(ch), other=demandFor(ch==='Counter'?'Network':'Counter');
+    var share = (D.total+other.total)? D.total/(D.total+other.total) : 0;
+    var COUNTER_LOCS=['NT','MM','DN','AT','OTH','NA'];
+    var by={};
+    D.rows.forEach(function(r){ by[r.sku]=Object.assign({},r); });
+    /* any SKU in stock with no festive demand still has to appear - it is
+       exactly the stock that is sitting */
+    Object.keys(I.by).forEach(function(k){
+      var e=I.by[k]; if(e.seg==='VIDA') return;
+      if(!by[k]) by[k]={seg:e.seg,sku:k,model:e.model,variant:e.variant,colour:e.desc,demand:0};
+    });
+    var days=dp.days||100;
+    Object.keys(by).forEach(function(k){
+      var r=by[k], e=I.by[k]||{loc:{},transit:0,desc:''};
+      if(e.desc) r.colour=e.desc;
+      var showroom=0; COUNTER_LOCS.forEach(function(l){ showroom+=e.loc[l]||0; });
+      var gd=e.loc.GD||0, dc=e.loc.DC||0;
+      var gdShare = dp.godown==='counter'?(ch==='Counter'?1:0) : dp.godown==='network'?(ch==='Network'?1:0) : share;
+      r.stock = Math.round((ch==='Counter'?showroom:dc) + gd*gdShare);
+      r.transit = Math.round((e.transit||0)*share);
+      r.pipe = r.stock+r.transit;
+      r.rate = r.demand/days;
+      r.cover = r.rate>0 ? r.pipe/r.rate : (r.pipe>0?9999:0);
+      r.balance = Math.max(0, r.demand-r.pipe);
+      r.surplus = Math.max(0, r.pipe-r.demand);
+      r.indent = Math.max(0, Math.round(r.rate*dp.hold) - r.pipe);
+      r.status = (!r.demand && !r.pipe) ? 'none'
+               : (!r.demand ? 'dead'
+               : (r.cover < dp.hold*0.8 ? 'short'
+               : (r.pipe > r.demand ? 'excess' : 'ok')));
+    });
+    return {rows:Object.keys(by).map(function(k){ return by[k]; }), D:D, share:share, I:I};
+  }
+  var ST={short:['Understocked','#ff5c5c'], ok:['Balanced','#2bd47d'], excess:['More than season','#ffb02e'],
+          dead:['No festive demand','#a05bff'], none:['&mdash;','var(--muted)']};
+
+  function renderDemand(){
+    var root=document.getElementById('f100sd-root'); if(!root) return;
+    var B=buildDemand(), D=B.D, ch=dp.ch, S=B.I.S;
+    var rows=B.rows.filter(function(r){
+      if(dp.seg && r.seg!==dp.seg) return false;
+      if(dp.status && r.status!==dp.status) return false;
+      if(dp.q && (r.sku+' '+r.model+' '+r.colour).toUpperCase().indexOf(String(dp.q).toUpperCase())<0) return false;
+      return r.demand>0 || r.pipe>0;
+    }).sort(function(a,b){ return SEGORD.indexOf(a.seg)-SEGORD.indexOf(b.seg) || b.demand-a.demand || b.pipe-a.pipe; });
+    var T={demand:0,stock:0,transit:0,balance:0,indent:0,surplus:0};
+    B.rows.forEach(function(r){ T.demand+=r.demand; T.stock+=r.stock; T.transit+=r.transit; T.balance+=r.balance; T.indent+=r.indent; T.surplus+=r.surplus; });
+    var cnt={short:0,ok:0,excess:0,dead:0}; B.rows.forEach(function(r){ if(cnt[r.status]!=null) cnt[r.status]++; });
+    var rate=T.demand/(dp.days||100), cov=rate? (T.stock+T.transit)/rate : 0;
+
+    var h='<div class="card" style="border-left:4px solid #5b9eff">'
+      +'<h3>&#127881; Festival 100 &mdash; stock on hand vs demand</h3>'
+      +'<p class="help-text">Festival demand broken down to SKU and set against stock and transit, <b>counter and network separately</b>. '
+      +'Counter stock is the four showrooms; network stock is DC; godown and transit are shared as set below. '
+      +'The segment mix starts from the Festival 100 page and every % is editable. '+stamp(S)+'</p>'
+      +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px">'
+      + ['Counter','Network'].map(function(c){ return '<button class="btn btn-sm'+(ch===c?' btn-primary':'')+'" onclick="sdSet(\'ch\',\''+c+'\')">'
+          +c+' &middot; '+num(channelTotal(c))+'</button>'; }).join('')
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Counter demand'
+      +'<input class="filter-select" style="width:76px" type="number" min="0" value="'+(dp.ctr||0)+'" onchange="sdSet(\'ctr\',this.value)"></label>'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Network demand'
+      +'<input class="filter-select" style="width:76px" type="number" min="0" placeholder="'+channelTotal('Network')+'" value="'+(dp.net==null?'':dp.net)
+      +'" onchange="sdSet(\'net\',this.value)"></label>'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Festival days'
+      +'<input class="filter-select" style="width:56px" type="number" min="1" value="'+dp.days+'" onchange="sdSet(\'days\',this.value)"></label>'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Hold'
+      +'<input class="filter-select" style="width:52px" type="number" min="1" value="'+dp.hold+'" onchange="sdSet(\'hold\',this.value)"> days</label>'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Godown serves'
+      +'<select class="filter-select" onchange="sdSet(\'godown\',this.value)">'
+      + [['split','Both, by demand share'],['counter','Counter only'],['network','Network only']]
+          .map(function(o){ return '<option value="'+o[0]+'"'+(dp.godown===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join('')
+      +'</select></label>'
+      + sourceBar(S)
+      +'</div></div>';
+
+    /* segment mix, editable */
+    var segs=SEGORD.filter(function(s){ return D.SW.w[s]!=null; });
+    var wsum=0; segs.forEach(function(s){ wsum+=D.SW.w[s]||0; });
+    h+='<div class="card" style="margin-top:12px"><h3>'+ch+' segment mix &mdash; '+num(D.total)+' vehicles</h3>'
+      +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Segment</th><th style="text-align:right">'
+      +(ch==='Counter'?'Festival 100 page':'Network festive LY')+'</th><th style="text-align:right">Using %</th><th style="text-align:right">Vehicles</th>'
+      +'<th style="text-align:right">In stock</th><th style="text-align:right">In transit</th><th style="text-align:right">Short for season</th></tr></thead><tbody>';
+    segs.forEach(function(sg){
+      var r=B.rows.filter(function(x){ return x.seg===sg; }), st=0,tr=0,bal=0;
+      r.forEach(function(x){ st+=x.stock; tr+=x.transit; bal+=x.balance; });
+      var ov=dp.segov[ch][sg];
+      h+='<tr><td><b>'+sg+'</b>'+(sg==='Entry'?'<div class="help-text" style="font-size:11px">HF Dlx All Blk pinned below</div>':'')+'</td>'
+        +'<td style="text-align:right;color:var(--muted)">'+(Math.round((D.SW.base[sg]||0)*10)/10)+'%</td>'
+        +'<td style="text-align:right"><input type="number" min="0" step="0.5" style="width:66px;text-align:right" class="filter-select"'
+        +' value="'+(ov!=null?ov:Math.round((D.SW.w[sg]||0)*10)/10)+'" onchange="sdSeg(\''+ch+'\',\''+sg+'\',this.value)"'
+        +(ov!=null?' title="typed"':'')+'></td>'
+        +'<td style="text-align:right"><b>'+num(D.segQ[sg]||0)+'</b></td>'
+        +'<td style="text-align:right">'+num(st)+'</td><td style="text-align:right;color:#ffb02e">'+num(tr)+'</td>'
+        +'<td style="text-align:right"><b style="color:'+(bal?'#ff5c5c':'#2bd47d')+'">'+num(bal)+'</b></td></tr>';
+    });
+    h+='</tbody></table></div>'
+      +'<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:8px">'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">HF Deluxe All Black share of Entry'
+      +'<input class="filter-select" style="width:60px" type="number" min="0" max="100" step="0.5" value="'+dp.hf+'" onchange="sdSet(\'hf\',this.value)"> %</label>'
+      +'<span class="help-text">festive history had it at '+(Math.round(D.hfHist*10)/10)+'% of '+ch.toLowerCase()+' Entry</span>'
+      +(Object.keys(dp.segov[ch]).length?'<button class="btn btn-sm" onclick="sdSegReset(\''+ch+'\')">Reset mix</button>':'')
+      +(Math.abs(wsum-100)>0.6?'<span style="color:#ffb02e;font-size:12px">Typed %s add to '+(Math.round(wsum*10)/10)+' &mdash; scaled to 100</span>':'')
+      +'</div></div>';
+
+    function k(v,l,c,s){ return '<div class="card kpi"><h3>'+l+'</h3><div class="kpi-value" style="color:'+c+'">'+v+'</div><div class="kpi-trend">'+(s||'&nbsp;')+'</div></div>'; }
+    h+='<div class="kpi-grid" style="margin-top:12px">'
+      + k(num(T.demand),ch+' festival demand','#5b9eff',(Math.round(rate*10)/10)+' / day over '+dp.days+' days')
+      + k(num(T.stock),'Stock on hand','#2bd47d',ch==='Counter'?'showrooms + godown share':'DC + godown share')
+      + k(num(T.transit),'In transit','#ffb02e',Math.round(B.share*100)+'% share')
+      + k((Math.round(cov*10)/10)+'d','Days of cover',(cov<dp.hold*0.8?'#ff5c5c':'#2bd47d'),'target '+dp.hold+' days')
+      + k(num(T.indent),'Indent now','#a05bff','to reach '+dp.hold+' days')
+      + k(num(T.balance),'Still to procure','#ff5c5c','for the whole festival')
+      +'</div>';
+    h+='<div class="card" style="margin-top:12px;display:flex;gap:16px;flex-wrap:wrap">'
+      +['short','ok','excess','dead'].map(function(s){ return '<div><b style="color:'+ST[s][1]+'">'+cnt[s]+'</b> <span style="color:var(--muted)">'+ST[s][0].toLowerCase()+'</span></div>'; }).join('')
+      +'</div>';
+
+    /* filters */
+    h+='<div class="card" style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Segment'
+      +'<select class="filter-select" onchange="sdSet(\'seg\',this.value)"><option value="">All</option>'
+      + segs.concat(B.rows.some(function(r){return r.seg==='Premium'&&segs.indexOf('Premium')<0;})?['Premium']:[])
+          .map(function(s){ return '<option'+(dp.seg===s?' selected':'')+'>'+s+'</option>'; }).join('')
+      +'</select></label>'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Status'
+      +'<select class="filter-select" onchange="sdSet(\'status\',this.value)"><option value="">All</option>'
+      + ['short','ok','excess','dead'].map(function(s){ return '<option value="'+s+'"'+(dp.status===s?' selected':'')+'>'+ST[s][0]+'</option>'; }).join('')
+      +'</select></label>'
+      +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Show'
+      +'<select class="filter-select" onchange="sdSet(\'view\',this.value)">'
+      +'<option value="sku"'+(dp.view==='sku'?' selected':'')+'>SKU</option><option value="model"'+(dp.view==='model'?' selected':'')+'>Model</option></select></label>'
+      +'<input class="filter-select" style="width:160px" placeholder="Search" value="'+esc(dp.q)+'" onchange="sdSet(\'q\',this.value)">'
+      +'<span style="margin-left:auto"><button class="btn btn-sm btn-primary" onclick="sdExport()">&#11015;&#65039; Export '+ch.toLowerCase()+'</button></span>'
+      +'</div>';
+
+    var list=rows;
+    if(dp.view==='model'){
+      var m={};
+      rows.forEach(function(r){ var x=m[r.seg+'|'+r.model]||(m[r.seg+'|'+r.model]={seg:r.seg,model:r.model,sku:'',colour:'',demand:0,stock:0,transit:0,pipe:0,balance:0,indent:0,rate:0});
+        ['demand','stock','transit','pipe','balance','indent','rate'].forEach(function(f){ x[f]+=r[f]; }); });
+      list=Object.keys(m).map(function(k){ var x=m[k];
+        x.cover=x.rate>0?x.pipe/x.rate:(x.pipe>0?9999:0);
+        x.status=(!x.demand&&!x.pipe)?'none':(!x.demand?'dead':(x.cover<dp.hold*0.8?'short':(x.pipe>x.demand?'excess':'ok')));
+        return x; }).sort(function(a,b){ return SEGORD.indexOf(a.seg)-SEGORD.indexOf(b.seg) || b.demand-a.demand; });
+    }
+    h+='<div class="card" style="margin-top:12px"><div style="overflow-x:auto"><table class="table"><thead><tr>'
+      +'<th>Segment</th><th>Model</th>'+(dp.view==='sku'?'<th>SKU</th><th>Colour</th>':'')
+      +'<th style="text-align:right">Festival demand</th><th style="text-align:right">In stock</th><th style="text-align:right">In transit</th>'
+      +'<th style="text-align:right">Days of cover</th><th>Status</th><th style="text-align:right">Indent now</th><th style="text-align:right">Short for season</th></tr></thead><tbody>'
+      + list.slice(0,500).map(function(r){
+          var s=ST[r.status], cv=r.cover>=9999?'&infin;':(r.demand?(Math.round(r.cover)+'d'):'&mdash;');
+          return '<tr><td>'+esc(r.seg)+'</td><td><b'+(r.sku===HFSKU?' style="color:#00d0ff"':'')+'>'+esc(r.model)+'</b></td>'
+            +(dp.view==='sku'?('<td style="font-size:12px">'+esc(r.sku)+'</td><td style="font-size:12px">'+esc(r.colour)+'</td>'):'')
+            +'<td style="text-align:right"><b>'+num(r.demand)+'</b></td>'
+            +'<td style="text-align:right">'+dash(r.stock)+'</td>'
+            +'<td style="text-align:right;color:#ffb02e">'+dash(r.transit)+'</td>'
+            +'<td style="text-align:right;color:'+s[1]+'">'+cv+'</td>'
+            +'<td><b style="color:'+s[1]+'">'+s[0]+'</b></td>'
+            +'<td style="text-align:right">'+(r.indent?('<b style="color:#a05bff">'+num(r.indent)+'</b>'):dash(0))+'</td>'
+            +'<td style="text-align:right">'+(r.balance?('<b style="color:#ff5c5c">'+num(r.balance)+'</b>'):dash(0))+'</td></tr>';
+        }).join('')
+      +'</tbody></table></div>'
+      +(list.length>500?'<p class="help-text">First 500 shown. Export for all.</p>':'')
+      +'<p class="help-text" style="margin-top:10px"><b>Indent now</b> tops each SKU up to '+dp.hold+' days of its festival run rate. '
+      +'<b>Short for season</b> is what the whole festival still needs after stock and transit. '
+      +'<b>More than season</b> means stock plus transit already exceeds everything the festival is expected to sell of that SKU.</p></div>';
+    root.innerHTML=h;
+  }
+  window.sdExport=function(){
+    var B=buildDemand(), out=[['Channel','Segment','Model','SKU','Colour','Festival demand','Per day','In stock','In transit','Days of cover','Status','Indent now','Short for season','Surplus over season']];
+    B.rows.filter(function(r){ return r.demand||r.pipe; })
+     .sort(function(a,b){ return SEGORD.indexOf(a.seg)-SEGORD.indexOf(b.seg) || b.demand-a.demand; })
+     .forEach(function(r){ out.push([dp.ch,r.seg,r.model,r.sku,r.colour,r.demand,Math.round(r.rate*100)/100,r.stock,r.transit,
+        r.cover>=9999?'':Math.round(r.cover),ST[r.status][0].replace('&mdash;',''),r.indent,r.balance,r.surplus]); });
+    dl('f100_stock_vs_demand_'+dp.ch.toLowerCase(),out);
+  };
+
+  /* ---------------- mount ---------------- */
+  function renderAll(){ try{ renderMatrix(); }catch(e){ console.warn('[skuloc]',e); } try{ renderDemand(); }catch(e){ console.warn('[f100sd]',e); } }
+  function mount(){
+    var view=document.getElementById('view-stock'); if(!view) return false;
+    /* order: ops root -> SKU matrix -> F100 demand, all siblings so
+       renderStock() (which only rewrites #ops-stock-root) never wipes them */
+    var prev=document.getElementById('ops-stock-root');
+    ['skuloc-root','f100sd-root'].forEach(function(id){
+      var d=document.getElementById(id);
+      if(!d){ d=document.createElement('div'); d.id=id; d.style.marginTop='14px'; }
+      if(prev && prev.parentNode===view){ if(d.previousElementSibling!==prev) view.insertBefore(d, prev.nextSibling); }
+      else if(!d.parentNode) view.appendChild(d);
+      prev=d;
+    });
+    return true;
+  }
+  function boot(){
+    var tries=0;
+    (function wait(){
+      if(mount()){
+        var orig=window.setView;
+        if(typeof orig==='function' && !orig.__skWrapped){
+          window.setView=function(n){ var r=orig.apply(this,arguments);
+            if(n==='stock') setTimeout(function(){ mount(); renderAll(); },80); return r; };
+          for(var k in orig) if(Object.prototype.hasOwnProperty.call(orig,k)) window.setView[k]=orig[k];
+          window.setView.__skWrapped=true;
+        }
+        try{ var a=document.querySelector('.nav-item.active'); if(a&&a.dataset.view==='stock') renderAll(); }catch(e){}
+        /* quiet refresh once every 6 hours when a web app URL is saved */
+        try{ var S=jget(SKEY,null); if(url() && (!S || S.how==='sheet') && (!S || Date.now()-S.at>6*3600e3))
+               setTimeout(function(){ window.skPull(true); },5000); }catch(e){}
         return;
       }
       if(++tries<40) setTimeout(wait,250);
