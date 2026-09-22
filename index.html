@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v61 &middot; 22 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v62 &middot; 22 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -6690,11 +6690,14 @@ document.addEventListener('DOMContentLoaded', initApp);
   };
 
   /* ================= 2. FESTIVAL 100 STOCK vs DEMAND ================= */
-  var DDEF={ch:'Counter', ctr:2100, net:null, hf:67.5, days:100, hold:21, godown:'split',
+  var DDEF={ch:'Counter', ctr:2100, net:null, hf:67.5, days:100, hold:21, godown:'counter',
             seg:'', status:'', q:'', view:'sku', segov:{Counter:{},Network:{}}};
   var dp=Object.assign({},DDEF,jget(DPK,{})||{});
   if(!dp.segov||typeof dp.segov!=='object') dp.segov={Counter:{},Network:{}};
   dp.segov.Counter=dp.segov.Counter||{}; dp.segov.Network=dp.segov.Network||{};
+  /* Stock Monitoring treats Net stock (everything except DC) as the counter's and
+     DC as the network's, so godown and transit now default to counter - once. */
+  if(!dp.gdV2){ dp.godown='counter'; dp.gdV2=1; try{ localStorage.setItem(DPK,JSON.stringify(dp)); }catch(e){} }
   function saveD(){ jset(DPK,dp); }
   window.sdSet=function(k,v){
     if(['ctr','net','hf','days','hold'].indexOf(k)>=0){ v=(v===''||v==null)?null:Math.max(0,parseFloat(v)||0); if(k==='net'&&v===null){ dp.net=null; saveD(); renderDemand(); return; } }
@@ -6735,11 +6738,20 @@ document.addEventListener('DOMContentLoaded', initApp);
   }
   function channelTotal(ch){
     var F=F100();
+    if(ch==='Combined') return channelTotal('Counter')+channelTotal('Network');
     if(ch==='Counter') return Math.round(dp.ctr||0);
     if(dp.net!=null) return Math.round(dp.net);
     return Math.round((F.total||0)*(+F.netPct||0)/100);
   }
   function demandFor(ch){
+    if(ch==='Combined'){
+      /* both channels together: each keeps its own mix, then they are added up */
+      var a=demandFor('Counter'), b=demandFor('Network'), by={}, segQ={}, base={}, w={};
+      a.rows.concat(b.rows).forEach(function(r){ var x=by[r.sku]||(by[r.sku]=Object.assign({},r,{demand:0})); x.demand+=r.demand; });
+      [a,b].forEach(function(d){ Object.keys(d.segQ).forEach(function(k){ segQ[k]=(segQ[k]||0)+(d.segQ[k]||0); }); });
+      var tot=a.total+b.total; Object.keys(segQ).forEach(function(k){ base[k]=w[k]=tot?segQ[k]/tot*100:0; });
+      return {rows:Object.keys(by).map(function(k){ return by[k]; }), segQ:segQ, SW:{w:w,base:base}, total:tot, hfHist:a.hfHist, combined:true};
+    }
     var T=mixFor(ch), SW=segWeights(ch,T), total=channelTotal(ch);
     var segQ=lr(SW.w,total), rows=[], hfHist=0, entryHist=0;
     Object.keys(segQ).forEach(function(sg){
@@ -6764,8 +6776,8 @@ document.addEventListener('DOMContentLoaded', initApp);
 
   function buildDemand(){
     var ch=dp.ch, I=INDEX();
-    var D=demandFor(ch), other=demandFor(ch==='Counter'?'Network':'Counter');
-    var share = (D.total+other.total)? D.total/(D.total+other.total) : 0;
+    var D=demandFor(ch), other=ch==='Combined'?{total:0}:demandFor(ch==='Counter'?'Network':'Counter');
+    var share = ch==='Combined'? 1 : ((D.total+other.total)? D.total/(D.total+other.total) : 0);
     var COUNTER_LOCS=['NT','MM','DN','AT','OTH','NA'];
     var by={};
     D.rows.forEach(function(r){ by[r.sku]=Object.assign({},r); });
@@ -6781,11 +6793,15 @@ document.addEventListener('DOMContentLoaded', initApp);
       if(e.desc) r.colour=e.desc;
       var showroom=0; COUNTER_LOCS.forEach(function(l){ showroom+=e.loc[l]||0; });
       var gd=e.loc.GD||0, dc=e.loc.DC||0;
-      var gdShare = dp.godown==='counter'?(ch==='Counter'?1:0) : dp.godown==='network'?(ch==='Network'?1:0) : share;
-      r.stock = Math.round((ch==='Counter'?showroom:dc) + gd*gdShare);
-      r.own = (ch==='Counter'?showroom:dc); r.gdPart = Math.round(gd*gdShare);
+      /* godown and transit follow the same rule: all to one channel, or split
+         by demand share. Transit lands at the godown, so it goes where godown goes. */
+      var gdShare = ch==='Combined'? 1
+                  : dp.godown==='counter'?(ch==='Counter'?1:0) : dp.godown==='network'?(ch==='Network'?1:0) : share;
+      var own = ch==='Combined'? (showroom+dc) : (ch==='Counter'?showroom:dc);
+      r.stock = Math.round(own + gd*gdShare);
+      r.own = own; r.gdPart = Math.round(gd*gdShare);
       r.allStock = showroom + gd + dc;             // every location, both channels
-      r.transit = Math.round((e.transit||0)*share);
+      r.transit = Math.round((e.transit||0)*gdShare);
       r.pipe = r.stock+r.transit;
       r.rate = r.demand/days;
       r.cover = r.rate>0 ? r.pipe/r.rate : (r.pipe>0?9999:0);
@@ -6822,8 +6838,8 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'Counter stock is the four showrooms; network stock is DC; godown and transit are shared as set below. '
       +'The segment mix starts from the Festival 100 page and every % is editable. '+stamp(S)+'</p>'
       +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px">'
-      + ['Counter','Network'].map(function(c){ return '<button class="btn btn-sm'+(ch===c?' btn-primary':'')+'" onclick="sdSet(\'ch\',\''+c+'\')">'
-          +c+' &middot; '+num(channelTotal(c))+'</button>'; }).join('')
+      + ['Counter','Network','Combined'].map(function(c){ return '<button class="btn btn-sm'+(ch===c?' btn-primary':'')+'" onclick="sdSet(\'ch\',\''+c+'\')">'
+          +(c==='Combined'?'Both together':c)+' &middot; '+num(channelTotal(c))+'</button>'; }).join('')
       +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Counter demand'
       +'<input class="filter-select" style="width:76px" type="number" min="0" value="'+(dp.ctr||0)+'" onchange="sdSet(\'ctr\',this.value)"></label>'
       +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Network demand'
@@ -6835,7 +6851,7 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'<input class="filter-select" style="width:52px" type="number" min="1" value="'+dp.hold+'" onchange="sdSet(\'hold\',this.value)"> days</label>'
       +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Godown serves'
       +'<select class="filter-select" onchange="sdSet(\'godown\',this.value)">'
-      + [['split','Both, by demand share'],['counter','Counter only'],['network','Network only']]
+      + [['counter','Counter (like Stock Monitoring)'],['split','Both, by demand share'],['network','Network only']]
           .map(function(o){ return '<option value="'+o[0]+'"'+(dp.godown===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join('')
       +'</select></label>'
       + sourceBar(S)
@@ -6869,7 +6885,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     function cells(o,veh,bold){
       return '<td style="text-align:right">'+(bold?'<b>':'')+num(veh)+(bold?'</b>':'')+'</td>'
         +'<td style="text-align:right">'+(bold?'<b>':'')+num(o.st)+(bold?'</b>':'')
-        +'<div class="help-text" style="font-size:11px">'+(ch==='Counter'?'showrooms ':'DC ')+num(o.own)+' + godown '+num(o.gd)+'</div></td>'
+        +'<div class="help-text" style="font-size:11px">'+(ch==='Counter'?'showrooms ':(ch==='Network'?'DC ':'showrooms + DC '))+num(o.own)+' + godown '+num(o.gd)+'</div></td>'
         +'<td style="text-align:right;color:var(--muted)">'+num(o.all)+'</td>'
         +'<td style="text-align:right;color:#ffb02e">'+num(o.tr)+'</td>'
         +'<td style="text-align:right"><b style="color:'+(o.bal?'#ff5c5c':'#2bd47d')+'">'+num(o.bal)+'</b></td>';
@@ -6877,12 +6893,14 @@ document.addEventListener('DOMContentLoaded', initApp);
     segs.forEach(function(sg){
       var list=B.rows.filter(function(x){ return x.seg===sg; }), o=agg(list);
       o.bal=Math.max(0,(D.segQ[sg]||0)-o.st-o.tr);   // vehicles required less what the segment holds
-      var ov=dp.segov[ch][sg];
+      var ov=(dp.segov[ch]||{})[sg];
       h+='<tr><td><b>'+sg+'</b></td>'
         +'<td style="text-align:right;color:var(--muted)">'+(Math.round((D.SW.base[sg]||0)*10)/10)+'%</td>'
-        +'<td style="text-align:right"><input type="number" min="0" step="0.5" style="width:66px;text-align:right" class="filter-select"'
-        +' value="'+(ov!=null?ov:Math.round((D.SW.w[sg]||0)*10)/10)+'" onchange="sdSeg(\''+ch+'\',\''+sg+'\',this.value)"'
-        +(ov!=null?' title="typed"':'')+'></td>'
+        +(ch==='Combined'
+          ? '<td style="text-align:right;color:var(--muted)">'+(Math.round((D.SW.w[sg]||0)*10)/10)+'</td>'
+          : '<td style="text-align:right"><input type="number" min="0" step="0.5" style="width:66px;text-align:right" class="filter-select"'
+            +' value="'+(ov!=null?ov:Math.round((D.SW.w[sg]||0)*10)/10)+'" onchange="sdSeg(\''+ch+'\',\''+sg+'\',this.value)"'
+            +(ov!=null?' title="typed"':'')+'></td>')
         + cells(o,D.segQ[sg]||0,true)+'</tr>';
       if(sg==='Entry'){
         /* the pinned SKU gets its own line under Entry, with its share typed right there */
@@ -6904,18 +6922,21 @@ document.addEventListener('DOMContentLoaded', initApp);
     });
     h+='</tbody></table></div>'
       +'<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:8px">'
-      +'<span class="help-text"><b>In stock</b> is this channel&rsquo;s share: '+(ch==='Counter'?'the four showrooms':'DC')
-      +' plus '+(dp.godown==='split'?(Math.round(B.share*100)+'% of godown'):(dp.godown===ch.toLowerCase()?'all of godown':'none of godown'))
-      +'. <b>All locations</b> is every unit on hand, both channels together.</span>'
-      +(Object.keys(dp.segov[ch]).length?'<button class="btn btn-sm" onclick="sdSegReset(\''+ch+'\')">Reset mix</button>':'')
+      +(ch==='Combined'
+        ? '<span class="help-text"><b>Both together</b>: counter and network demand added up, against every unit on hand and all of transit. '
+          +'Segment % here is the result of the two channels&rsquo; mixes &mdash; change them on the Counter or Network tab.</span>'
+        : '<span class="help-text"><b>In stock</b> is this channel&rsquo;s share: '+(ch==='Counter'?'the four showrooms':'DC')
+          +' plus '+(dp.godown==='split'?(Math.round(B.share*100)+'% of godown and of transit'):(dp.godown===ch.toLowerCase()?'all of godown and transit':'none of godown or transit'))
+          +'. <b>All locations</b> is every unit on hand, both channels together. For the whole pool against total demand, use <b>Both together</b>.</span>')
+      +(Object.keys(dp.segov[ch]||{}).length?'<button class="btn btn-sm" onclick="sdSegReset(\''+ch+'\')">Reset mix</button>':'')
       +(Math.abs(wsum-100)>0.6?'<span style="color:#ffb02e;font-size:12px">Typed %s add to '+(Math.round(wsum*10)/10)+' &mdash; scaled to 100</span>':'')
       +'</div></div>';
 
     function k(v,l,c,s){ return '<div class="card kpi"><h3>'+l+'</h3><div class="kpi-value" style="color:'+c+'">'+v+'</div><div class="kpi-trend">'+(s||'&nbsp;')+'</div></div>'; }
     h+='<div class="kpi-grid" style="margin-top:12px">'
       + k(num(T.demand),ch+' festival demand','#5b9eff',(Math.round(rate*10)/10)+' / day over '+dp.days+' days')
-      + k(num(T.stock),'Stock on hand','#2bd47d',ch==='Counter'?'showrooms + godown share':'DC + godown share')
-      + k(num(T.transit),'In transit','#ffb02e',Math.round(B.share*100)+'% share')
+      + k(num(T.stock),'Stock on hand','#2bd47d',ch==='Counter'?'showrooms + godown share':(ch==='Network'?'DC + godown share':'every location'))
+      + k(num(T.transit),'In transit','#ffb02e',ch==='Combined'?'all of it':(dp.godown==='split'?(Math.round(B.share*100)+'% share'):(dp.godown===ch.toLowerCase()?'all of it':'none')))
       + k((Math.round(cov*10)/10)+'d','Days of cover',(cov<dp.hold*0.8?'#ff5c5c':'#2bd47d'),'target '+dp.hold+' days')
       + k(num(T.indent),'Indent now','#a05bff','to reach '+dp.hold+' days')
       + k(num(Math.max(0,T.demand-T.stock-T.transit)),'Still to procure','#ff5c5c','demand less stock and transit')
