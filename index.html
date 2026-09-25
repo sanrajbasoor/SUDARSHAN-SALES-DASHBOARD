@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v62 &middot; 22 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v63 &middot; 25 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -5159,10 +5159,37 @@ document.addEventListener('DOMContentLoaded', initApp);
     return {rows:rows, counts:counts, todo:todo, dses:Object.keys(dmap).sort(function(a,b){ return dmap[b]-dmap[a]; }).map(function(k){ return [k,dmap[k]]; })};
   }
 
+  /* Nothing in this module refreshes itself unless it is told to, so say out
+     loud how old each input is - a stale booking file looks exactly like a
+     quiet week. */
+  function freshness(B){
+    var D=B.D, days=function(n){ return n==null?null:Math.round((Date.now()-(epochMs(D)+n*MS))/MS); };
+    var lastBill=null, lastBook=null;
+    D.bill.forEach(function(b){ if(b[2]!=null && (lastBill==null||b[2]>lastBill)) lastBill=b[2]; });
+    D.book.forEach(function(k){ if(k[1]!=null && (lastBook==null||k[1]>lastBook)) lastBook=k[1]; });
+    var regAt=''; try{ REG().forEach(function(P){ if(P.at>regAt) regAt=P.at; }); }catch(e){}
+    function chip(label,iso,age){
+      var c = age==null?'var(--muted)' : (age<=3?'#2bd47d' : age<=10?'#ffb02e' : '#ff5c5c');
+      return '<span style="display:inline-block;margin-right:14px">'+label+': <b style="color:'+c+'">'+(iso||'never')+'</b>'
+        +(age==null?'':' <span class="help-text">('+(age<=0?'today':age+'d old')+')</span>')+'</span>';
+    }
+    var pulled=0; try{ pulled=+localStorage.getItem(KEY+'-at')||0; }catch(e){}
+    return '<p class="help-text" style="margin:8px 0 0;padding-top:8px;border-top:1px solid var(--line)">'
+      + chip('Billing to',lastBill==null?'':d2iso(D,lastBill),days(lastBill))
+      + chip('Bookings to',lastBook==null?'':d2iso(D,lastBook),days(lastBook))
+      + chip('Counter sheets',regAt,regAt?Math.round((Date.now()-Date.parse(regAt+'T00:00:00'))/MS):null)
+      + (pulled?('<span style="color:var(--muted)">last sheet pull '+new Date(pulled).toLocaleString('en-IN')+'</span>')
+              :'<span style="color:#ffb02e">never pulled from the sheet &mdash; these are the files that were loaded by hand</span>')
+      +'</p>';
+  }
+
   function newVsOld(B){
     var D=B.D, E=enqMap(), useE=!!(E&&E.m);
     /* quiet refresh of first-contact dates, twice a day at most */
     if(scriptUrl() && (!E || Date.now()-E.at>12*3600e3)) setTimeout(function(){ window.vcEnqPull(true); },1500);
+    /* and keep bookings / billing current on their own */
+    var lastPull=0; try{ lastPull=+localStorage.getItem(KEY+'-at')||0; }catch(e){}
+    if(scriptUrl() && Date.now()-lastPull>6*3600e3) setTimeout(function(){ window.vcPull(true); },3000);
 
     var live=D.bill.filter(function(b){ return b[3]===0 && b[1]!=null && b[2]!=null && /VIDA/i.test(D.models[b[4]]||''); });
     if(prefs.counter) live=live.filter(function(b){ return low(D.counters[b[7]])===low(prefs.counter); });
@@ -5259,7 +5286,8 @@ document.addEventListener('DOMContentLoaded', initApp);
     h+='<div class="card" style="margin-bottom:14px"><h2 style="margin:0 0 4px">&#9889; VIDA &mdash; enquiry to delivery</h2>'
       +'<p class="help-text">Booking report cross-referenced with DMS billing on <b>Order Number</b>, and with the enquiry register on <b>mobile number</b>. '
       +'A <b>fresh conversion</b> is an order billed within <b>'+B.T+' day'+(B.T===1?'':'s')+'</b> of being booked &mdash; the DSE created and closed it. '
-      +'A <b>carry-over delivery</b> is an invoice against a booking made earlier.</p></div>';
+      +'A <b>carry-over delivery</b> is an invoice against a booking made earlier.</p>'
+      + freshness(B) +'</div>';
 
     /* controls */
     h+='<div class="card" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">'
@@ -5280,9 +5308,11 @@ document.addEventListener('DOMContentLoaded', initApp);
       + D.dses.slice().sort().map(function(c){ return '<option value="'+esc(c)+'"'+(prefs.dse===c?' selected':'')+'>'+esc(c)+'</option>'; }).join('')
       +'</select></label>'
       +'<button class="btn btn-sm" onclick="vcSet(\'month\',\'\');vcSet(\'counter\',\'\');vcSet(\'dse\',\'\')">Clear</button>'
-      +'<span style="margin-left:auto;display:flex;gap:8px">'
-      +'<button class="btn btn-sm" onclick="vcImport(\'book\')">&#128228; Update bookings</button>'
-      +'<button class="btn btn-sm" onclick="vcImport(\'bill\')">&#128228; Update billing</button>'
+      +'<span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">'
+      +'<button class="btn btn-sm btn-primary" onclick="vcPull()">&#128260; Refresh from sheet</button>'
+      +'<button class="btn btn-sm" onclick="vcImport(\'book\')">&#128228; Bookings file</button>'
+      +'<button class="btn btn-sm" onclick="vcImport(\'bill\')">&#128228; Billing file</button>'
+      +'<button class="btn btn-sm" onclick="vcRegImport()">&#128228; Counter sheets</button>'
       +'</span></div>';
 
     /* ---- the plain answer: of what we sold each month, how much was new
@@ -5452,6 +5482,65 @@ document.addEventListener('DOMContentLoaded', initApp);
     for(var i=0;i<cands.length;i++){ for(var j=0;j<h.length;j++){ if(low(h[j]).indexOf(cands[i])===0||low(h[j])===cands[i]) return j; } }
     return -1;
   }
+  /* one parser for both routes: a file the user picks, or the VIDA_BOOKING /
+     VIDA_BILLING tabs pulled off the sheet */
+  function vcBuild(kind, aoa){
+    try{
+            var head=(aoa[0]||[]).map(function(x){ return String(x==null?'':x).trim(); });
+      var D=JSON.parse(JSON.stringify(DATA()));
+      var ep=epochMs(D);
+      function dayOf(v){
+        if(v instanceof Date) return Math.floor((Date.UTC(v.getFullYear(),v.getMonth(),v.getDate())-ep)/MS);
+        var t=Date.parse(String(v||'')); return isNaN(t)?null:Math.floor((t-ep)/MS);
+      }
+      function mobOf(v){ var d=String(v==null?'':v).replace(/\D/g,''); return d.length>=10?d.slice(-10):''; }
+      /* 'Rs.116,489.20' -> 116489; stripping every non-digit leaves a leading
+         dot from 'Rs.' and parseFloat then returns NaN, zeroing every amount. */
+      function moneyOf(v){ var m=String(v==null?'':v).match(/(\d[\d,]*(?:\.\d+)?)/); if(!m) return 0; var n=parseFloat(m[1].replace(/,/g,'')); return isFinite(n)?Math.round(n):0; }
+      function ordOf(v){ var s=String(v==null?'':v).trim(); return s.indexOf('10348-')===0?s.slice(6):s; }
+      function ix(list,v){ var i=list.indexOf(v); if(i<0){ list.push(v); i=list.length-1; } return i; }
+      var n=0;
+      if(kind==='book'){
+        var c={o:pickCol(head,['order number','order #','order no']),d:pickCol(head,['booking date']),
+               m:pickCol(head,['model']),p:pickCol(head,['contact mobile','mobile']),
+               nm:pickCol(head,['contact full name','name']),b:pickCol(head,['contact cr'])};
+        if(c.o<0||c.d<0){ return err('That file does not look like the booking report - no Order Number / Booking Date column found.'); }
+        var out=[];
+        aoa.slice(1).forEach(function(r){ if(!r||r[c.o]==null) return;
+          out.push([ordOf(r[c.o]),dayOf(r[c.d]),ix(D.models,String(r[c.m]||'').trim()),mobOf(r[c.p]),
+                    String(r[c.nm]||'').trim().toUpperCase(),moneyOf(r[c.b])]); });
+        if(!out.length){ return err('No booking rows found in that file.'); }
+        D.book=out; n=out.length;
+      } else {
+        var q={o:pickCol(head,['order #','order number']),od:pickCol(head,['order date']),
+               iv:pickCol(head,['invoice date']),st:pickCol(head,['status']),
+               m:pickCol(head,['model']),cl:pickCol(head,['color','colour']),
+               ds:pickCol(head,['dse']),p:pickCol(head,['mobile']),
+               f:pickCol(head,['contact first']),l:pickCol(head,['contact last']),
+               c:pickCol(head,['total cost']),i:pickCol(head,['invoice #','invoice no']),
+               es:pickCol(head,['enquiry source']),cr:pickCol(head,['contact cr bal','contact cr'])};
+        D.sources=D.sources||[];
+        if(q.o<0||q.iv<0){ return err('That file does not look like the billing export - no Order # / Invoice Date column found.'); }
+        var ob=[];
+        aoa.slice(1).forEach(function(r){ if(!r||r[q.o]==null) return;
+          var raw=String(r[q.ds]||'').trim(), cn=canon(raw)||'(no DSE)';
+          ob.push([ordOf(r[q.o]),dayOf(r[q.od]),dayOf(r[q.iv]),
+            /cancel/i.test(String(r[q.st]||''))?1:0,
+            ix(D.models,String(r[q.m]||'').trim()),ix(D.colours,String(r[q.cl]||'').trim()),
+            ix(D.dses,cn),ix(D.counters,ctrOf(cn)),mobOf(r[q.p]),
+            (String(r[q.f]||'')+' '+String(r[q.l]||'')).replace(/\s+/g,' ').trim().toUpperCase(),
+            moneyOf(r[q.c]),String(r[q.i]||'').trim(),
+            ix(D.sources,(q.es>=0?String(r[q.es]||'').trim():'')||'(blank)'),
+            q.cr>=0?moneyOf(r[q.cr]):0]); });
+        if(!ob.length){ return err('No billing rows found in that file.'); }
+        D.bill=ob; n=ob.length;
+      }
+
+      return {D:D,n:n};
+    }catch(e){ return {err:e.message}; }
+    function err(m){ return {err:m}; }
+  }
+
   window.vcImport=function(kind){
     var inp=document.createElement('input'); inp.type='file'; inp.accept='.xlsx,.xls,.csv';
     inp.onchange=function(){
@@ -5462,63 +5551,60 @@ document.addEventListener('DOMContentLoaded', initApp);
           try{
             var wb=XLSX.read(new Uint8Array(fr.result),{type:'array',cellDates:true});
             var aoa=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true});
-            var head=(aoa[0]||[]).map(function(x){ return String(x==null?'':x).trim(); });
-            var D=JSON.parse(JSON.stringify(DATA()));
-            var ep=epochMs(D);
-            function dayOf(v){
-              if(v instanceof Date) return Math.floor((Date.UTC(v.getFullYear(),v.getMonth(),v.getDate())-ep)/MS);
-              var t=Date.parse(String(v||'')); return isNaN(t)?null:Math.floor((t-ep)/MS);
-            }
-            function mobOf(v){ var d=String(v==null?'':v).replace(/\D/g,''); return d.length>=10?d.slice(-10):''; }
-            /* 'Rs.116,489.20' -> 116489; stripping every non-digit leaves a leading
-               dot from 'Rs.' and parseFloat then returns NaN, zeroing every amount. */
-            function moneyOf(v){ var m=String(v==null?'':v).match(/(\d[\d,]*(?:\.\d+)?)/); if(!m) return 0; var n=parseFloat(m[1].replace(/,/g,'')); return isFinite(n)?Math.round(n):0; }
-            function ordOf(v){ var s=String(v==null?'':v).trim(); return s.indexOf('10348-')===0?s.slice(6):s; }
-            function ix(list,v){ var i=list.indexOf(v); if(i<0){ list.push(v); i=list.length-1; } return i; }
-            var n=0;
-            if(kind==='book'){
-              var c={o:pickCol(head,['order number','order #','order no']),d:pickCol(head,['booking date']),
-                     m:pickCol(head,['model']),p:pickCol(head,['contact mobile','mobile']),
-                     nm:pickCol(head,['contact full name','name']),b:pickCol(head,['contact cr'])};
-              if(c.o<0||c.d<0){ alert('That file does not look like the booking report - no Order Number / Booking Date column found.'); return; }
-              var out=[];
-              aoa.slice(1).forEach(function(r){ if(!r||r[c.o]==null) return;
-                out.push([ordOf(r[c.o]),dayOf(r[c.d]),ix(D.models,String(r[c.m]||'').trim()),mobOf(r[c.p]),
-                          String(r[c.nm]||'').trim().toUpperCase(),moneyOf(r[c.b])]); });
-              if(!out.length){ alert('No booking rows found in that file.'); return; }
-              D.book=out; n=out.length;
-            } else {
-              var q={o:pickCol(head,['order #','order number']),od:pickCol(head,['order date']),
-                     iv:pickCol(head,['invoice date']),st:pickCol(head,['status']),
-                     m:pickCol(head,['model']),cl:pickCol(head,['color','colour']),
-                     ds:pickCol(head,['dse']),p:pickCol(head,['mobile']),
-                     f:pickCol(head,['contact first']),l:pickCol(head,['contact last']),
-                     c:pickCol(head,['total cost']),i:pickCol(head,['invoice #','invoice no']),
-                     es:pickCol(head,['enquiry source']),cr:pickCol(head,['contact cr bal','contact cr'])};
-              D.sources=D.sources||[];
-              if(q.o<0||q.iv<0){ alert('That file does not look like the billing export - no Order # / Invoice Date column found.'); return; }
-              var ob=[];
-              aoa.slice(1).forEach(function(r){ if(!r||r[q.o]==null) return;
-                var raw=String(r[q.ds]||'').trim(), cn=canon(raw)||'(no DSE)';
-                ob.push([ordOf(r[q.o]),dayOf(r[q.od]),dayOf(r[q.iv]),
-                  /cancel/i.test(String(r[q.st]||''))?1:0,
-                  ix(D.models,String(r[q.m]||'').trim()),ix(D.colours,String(r[q.cl]||'').trim()),
-                  ix(D.dses,cn),ix(D.counters,ctrOf(cn)),mobOf(r[q.p]),
-                  (String(r[q.f]||'')+' '+String(r[q.l]||'')).replace(/\s+/g,' ').trim().toUpperCase(),
-                  moneyOf(r[q.c]),String(r[q.i]||'').trim(),
-                  ix(D.sources,(q.es>=0?String(r[q.es]||'').trim():'')||'(blank)'),
-                  q.cr>=0?moneyOf(r[q.cr]):0]); });
-              if(!ob.length){ alert('No billing rows found in that file.'); return; }
-              D.bill=ob; n=ob.length;
-            }
-            saveData(D); render();
-            alert('Loaded '+n+' '+(kind==='book'?'bookings':'invoices')+'. The module now uses this file.');
+            var res=vcBuild(kind,aoa);
+            if(res.err){ alert(res.err); return; }
+            saveData(res.D); render();
+            alert('Loaded '+res.n+' '+(kind==='book'?'bookings':'invoices')+'. The module now uses this file.');
           }catch(err){ alert('Could not read that file: '+err.message); }
         };
         fr.readAsArrayBuffer(f);
       }).catch(function(err){ alert(err.message); });
     };
     inp.click();
+  };
+
+  /* ---- pull bookings and billing straight off the sheet ----
+     Needs the VIDA_BOOKING and VIDA_BILLING tabs (Dashboard Inbox -> VIDA
+     Booking / VIDA Billing feeds those) and a deployed Feeds.gs. */
+  var vcBusy=false;
+  window.vcPull=function(silent){
+    var U=scriptUrl();
+    if(!U){ if(!silent) alert('No Apps Script URL saved (Settings \u2192 Live Team Sync).'); return; }
+    if(vcBusy) return; vcBusy=true;
+    function feed(name){
+      var rows=[], cols=null;
+      function step(from){
+        return fetch(U+'?feed='+name+'&from='+from+'&t='+Date.now(),{cache:'no-cache',redirect:'follow'})
+          .then(function(r){ return r.json(); }).then(function(j){
+            if(!j||j.ok!==true) throw new Error((j&&j.error)||(name+' did not answer.'));
+            if(!cols) cols=j.cols||[]; rows=rows.concat(j.rows||[]);
+            if(j.more&&j.rows&&j.rows.length) return step(from+j.rows.length);
+            return rows.length?[cols].concat(rows):null;
+          });
+      }
+      return step(0);
+    }
+    fetch(U+'?feed=list&t='+Date.now(),{cache:'no-cache',redirect:'follow'})
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        if(!j||j.ok!==true) throw new Error('The web app is not serving feeds. Paste the latest Feeds.gs and deploy a NEW VERSION.');
+        var have={}; (j.feeds||[]).forEach(function(f){ if(f.present&&f.rows>0) have[f.feed]=1; });
+        if(!have.VIDA_BILLING && !have.VIDA_BOOKING)
+          throw new Error('Neither a VIDA_BILLING nor a VIDA_BOOKING tab has any rows yet.\n\n'
+            +'Drop the DMS exports into Dashboard Inbox \u2192 VIDA Billing and VIDA Booking in Drive, '
+            +'or import them here with the two buttons above.');
+        return Promise.all([have.VIDA_BILLING?feed('VIDA_BILLING'):null, have.VIDA_BOOKING?feed('VIDA_BOOKING'):null]);
+      })
+      .then(function(res){
+        var msg=[], any=false;
+        if(res[0]){ var a=vcBuild('bill',res[0]); if(a.err) msg.push('Billing: '+a.err); else { saveData(a.D); msg.push(a.n+' invoices'); any=true; } }
+        if(res[1]){ var b=vcBuild('book',res[1]); if(b.err) msg.push('Bookings: '+b.err); else { saveData(b.D); msg.push(b.n+' bookings'); any=true; } }
+        if(any){ try{ localStorage.setItem(KEY+'-at',String(Date.now())); }catch(e){} }
+        vcBusy=false; render();
+        if(!silent) alert(any?('Pulled from the sheet: '+msg.join(', ')+'.'):msg.join('\n'));
+        else if(any && typeof showToast==='function') showToast('VIDA bookings and billing refreshed');
+      })
+      .catch(function(err){ vcBusy=false; if(!silent) alert('Could not read VIDA data from the sheet.\n\n'+err.message); });
   };
   var CTR={'Safiya, Beby':'VIDA Hub','Rajak, Amit':'VIDA Hub','Sameer':'VIDA Hub','Sahu, Karishma':'VIDA Hub','Israt Fatima':'VIDA Hub',
     'Ashish Agrawal':'Premia','Krish':'Premia','Rohit':'Premia','Kushwaha, Shruti':'Premia','Vedika Pandey':'Premia','Nandini':'Premia','Raj':'Premia',
