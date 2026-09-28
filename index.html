@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v65 &middot; 27 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v66 &middot; 28 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -7466,6 +7466,400 @@ document.addEventListener('DOMContentLoaded', initApp);
     })();
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot); else boot();
+})();
+</script>
+
+<!-- ===== FESTIVAL 100 — PHASE 2 STOCK CALCULATOR ==============================
+     Phase 2 is the 32 days from 11 Oct to 11 Nov 26: Navratri, Dussehra,
+     Dhanteras, Diwali and the three days after. Last year the same window did
+     2,217 vehicles - two thirds of the whole festive season - so this is the
+     one stretch where being out of stock costs real retail.
+
+     This panel answers one question per segment: given what we plan to sell in
+     those 32 days, what is standing in stock today, and how many more vehicles
+     have to be sourced. Counter and network are kept apart throughout, because
+     they are stocked from different places and their mixes differ.
+
+     It reads, and never writes, three things other modules already publish:
+        window.__F100__()     the festive plan, LY and TY, by counter and phase
+        window.__SKUSTOCK__() SKU-level stock on hand and in transit
+        window.__ICE_MIX__    festive sales history, for the network mix
+     plus the daily tracker's own entries, to measure how this season is
+     actually running against last year.
+     ========================================================================= -->
+<script>
+(function(){
+  var PKEY='hero-f100p2-v1', DKEY='hero-f100daily-v1';
+  var MS=86400000;
+
+  /* the same phase rows, in the same order, as the daily tracker - the tracker
+     keys its entries by phase index, so these must line up */
+  var PH=[
+    {p:1,a:'2026-09-01',b:'2026-09-13'},{p:1,a:'2026-09-14',b:'2026-09-25'},
+    {p:1,a:'2026-09-26',b:'2026-10-10'},{p:2,a:'2026-10-11',b:'2026-10-21'},
+    {p:2,a:'2026-10-22',b:'2026-11-05'},{p:2,a:'2026-11-06',b:'2026-11-06'},
+    {p:2,a:'2026-11-07',b:'2026-11-07'},{p:2,a:'2026-11-08',b:'2026-11-08'},
+    {p:2,a:'2026-11-09',b:'2026-11-11'},{p:3,a:'2026-11-12',b:'2026-12-09'}
+  ];
+  /* tracker column key, F100 seed key, stock location code */
+  var COLS=[['HO','Napier Town','NT'],['MML','MML (ICE)','MM'],['DN','DN','DN'],
+            ['AT','Adhartal','AT'],['OT','Other','OTH'],['NET','Network','DC']];
+  var CTRKEYS=['Napier Town','MML (ICE)','DN','Adhartal','Other'];
+  var P2A='2026-10-11', P2B='2026-11-11';
+  var MIXSEG={'100cc':'Deluxe','125cc':'125cc','Entry':'Entry','Premium':'Premium','Scooter':'Scooter'};
+
+  var p={basis:'plan', ch:'Counter', godown:'counter', seg:'', trendOv:'', matrix:0};
+  try{ var s=JSON.parse(localStorage.getItem(PKEY)); if(s) for(var k in s) p[k]=s[k]; }catch(e){}
+  function save(){ try{ localStorage.setItem(PKEY,JSON.stringify(p)); }catch(e){} }
+
+  function esc(x){ return String(x==null?'':x).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function nf(n){ return (Math.round(n)||0).toLocaleString('en-IN'); }
+  function pct(a,b){ return b? Math.round(a/b*100) : 0; }
+  function parse(s){ var q=s.split('-'); return Date.UTC(+q[0],+q[1]-1,+q[2]); }
+  function daysBetween(a,b){ return Math.round((parse(b)-parse(a))/MS)+1; }
+  var P2DAYS=daysBetween(P2A,P2B);
+
+  /* largest remainder, so the segment split adds back to the target exactly */
+  function lr(w,total){
+    var keys=Object.keys(w), sw=0, out={}, raw={}, used=0;
+    keys.forEach(function(k){ sw+=w[k]; });
+    if(sw<=0||total<=0){ keys.forEach(function(k){ out[k]=0; }); return out; }
+    keys.forEach(function(k){ raw[k]=total*w[k]/sw; out[k]=Math.floor(raw[k]); used+=out[k]; });
+    var rem=total-used;
+    keys.sort(function(a,b){ return (raw[b]-out[b])-(raw[a]-out[a]); });
+    for(var i=0; rem>0; i++, rem--) out[keys[i%keys.length]]++;
+    return out;
+  }
+
+  function F100(){ try{ return window.__F100__ && window.__F100__(); }catch(e){ return null; } }
+  function seedRows(){ var f=F100(); return (f&&f.seed&&f.seed.rows)||[]; }
+
+  /* ---- Phase 2 targets, straight from the festive plan ------------------- */
+  function targets(){
+    var R=seedRows().filter(function(r){ return r.phase==='Phase 2'; });
+    var t={ly:{},ty:{}};
+    CTRKEYS.concat(['_counter','_network','_total']).forEach(function(k){ t.ly[k]=0; t.ty[k]=0; });
+    R.forEach(function(r){
+      CTRKEYS.concat(['_counter','_network','_total']).forEach(function(k){
+        if(r[k]){ t.ly[k]+=r[k].ly||0; t.ty[k]+=r[k].ty||0; }
+      });
+    });
+    t.rows=R;
+    return t;
+  }
+
+  /* ---- how this season is actually running against last year ------------- */
+  function trend(){
+    var st=null; try{ st=JSON.parse(localStorage.getItem(DKEY)); }catch(e){}
+    var day=(st&&st.day)||{}, today=Date.now();
+    var ach=0, lyExpected=0, entered=0, pi=-1;
+    var rows=seedRows().filter(function(r){ return r.phase==='Phase 1'; });
+    PH.forEach(function(ph,i){
+      if(ph.p!==1) return;
+      var r=rows[++pi]; if(!r) return;
+      var n=daysBetween(ph.a,ph.b), elapsed=0;
+      for(var t=parse(ph.a); t<=parse(ph.b); t+=MS) if(t<=today) elapsed++;
+      if(!elapsed) return;
+      COLS.forEach(function(c){
+        var key=c[1]==='Network'?'_network':c[1];
+        var ly=(r[key]||{}).ly||0;
+        lyExpected += ly*elapsed/n;
+        for(var t=parse(ph.a); t<=parse(ph.b); t+=MS){
+          if(t>today) break;
+          var d=new Date(t), iso=d.getUTCFullYear()+'-'+('0'+(d.getUTCMonth()+1)).slice(-2)+'-'+('0'+d.getUTCDate()).slice(-2);
+          var e=day[i+'|'+iso];
+          if(e && e[c[0]]!=null && e[c[0]]!==''){ ach+=+e[c[0]]; entered++; }
+        }
+      });
+    });
+    return {ach:ach, ly:lyExpected, f:lyExpected? ach/lyExpected : 0, entered:entered};
+  }
+  function trendFactor(){
+    if(p.trendOv!==''&&p.trendOv!=null) return Math.max(0,parseFloat(p.trendOv)||0)/100;
+    /* with no daily entries yet there is no trend to read, so fall back to
+       repeating last year rather than planning for nothing */
+    var t=trend();
+    return (t.entered && t.f>0)? t.f : 1;
+  }
+
+  /* what we are planning to sell in the 32 days, for one channel */
+  function needTotal(ch){
+    var T=targets();
+    if(ch==='Both') return needTotal('Counter')+needTotal('Network');
+    var key = ch==='Counter'?'_counter':'_network';
+    if(p.basis==='ly')   return T.ly[key];
+    if(p.basis==='trend') return Math.round(T.ly[key]*trendFactor());
+    return T.ty[key];
+  }
+  function needByCounter(){
+    var T=targets(), out={}, f=trendFactor();
+    CTRKEYS.forEach(function(k){
+      out[k] = p.basis==='ly'? T.ly[k] : p.basis==='trend'? Math.round(T.ly[k]*f) : T.ty[k];
+    });
+    return out;
+  }
+
+  /* ---- segment mix ------------------------------------------------------- */
+  function mixFromHistory(ch){
+    var M=null; try{ M=window.__ICE_MIX__; }catch(e){}
+    var T={}; if(!M) return T;
+    M.r.forEach(function(a){
+      if(M.p[a[0]]!=='festive' || M.ch[a[1]]!==ch) return;
+      var sg=MIXSEG[M.s[a[2]]]||M.s[a[2]];
+      T[sg]=(T[sg]||0)+a[6];
+    });
+    return T;
+  }
+  function segMix(ch){
+    if(ch==='Counter'){
+      var sp=(F100()||{}).segPct||{}, w={}, any=0;
+      Object.keys(sp).forEach(function(k){ var s=MIXSEG[k]||k; w[s]=(w[s]||0)+(+sp[k]||0); any+=+sp[k]||0; });
+      if(any>0) return w;
+    }
+    return mixFromHistory(ch);
+  }
+
+  /* ---- stock, by segment and by counter ---------------------------------- */
+  function stock(){
+    var I=null; try{ I=window.__SKUSTOCK__ && window.__SKUSTOCK__(); }catch(e){}
+    var out={seg:{}, ctr:{}, any:false};
+    if(!I||!I.by) return out;
+    var T=targets(), share={}, tot=0;
+    CTRKEYS.forEach(function(k){ tot+=T.ty[k]||0; });
+    CTRKEYS.forEach(function(k){ share[k]=tot?(T.ty[k]||0)/tot:0; });
+    var ctrTY=T.ty._counter||0, netTY=T.ty._network||0, both=ctrTY+netTY;
+    var gdToCounter = p.godown==='counter'?1 : p.godown==='network'?0 : (both?ctrTY/both:1);
+
+    Object.keys(I.by).forEach(function(k){
+      var e=I.by[k]; if(e.seg==='VIDA') return;
+      out.any=true;
+      var g=out.seg[e.seg]||(out.seg[e.seg]={Counter:{s:0,t:0},Network:{s:0,t:0}});
+      var showroom=0;
+      ['NT','MM','DN','AT','OTH','NA'].forEach(function(l){ showroom+=e.loc[l]||0; });
+      var gd=e.loc.GD||0, dc=e.loc.DC||0, tr=e.transit||0;
+      g.Counter.s += showroom + gd*gdToCounter;
+      g.Network.s += dc + gd*(1-gdToCounter);
+      g.Counter.t += tr*gdToCounter;
+      g.Network.t += tr*(1-gdToCounter);
+      CTRKEYS.forEach(function(c){
+        var code=(COLS.filter(function(x){ return x[1]===c; })[0]||[])[2];
+        var n=code? (e.loc[code]||0) : 0;
+        if(c==='Other') n=(e.loc.OTH||0)+(e.loc.NA||0);
+        var cc=out.ctr[c]||(out.ctr[c]={s:0,t:0});
+        cc.s += n + gd*gdToCounter*share[c];
+        cc.t += tr*gdToCounter*share[c];
+      });
+    });
+    return out;
+  }
+
+  /* ---- the table ---------------------------------------------------------- */
+  function build(){
+    var ch=p.ch, S=stock(), T=targets();
+    var chans = ch==='Both'?['Counter','Network']:[ch];
+    var segs={}, rows=[];
+    chans.forEach(function(c){
+      var w=segMix(c), total=needTotal(c), q=lr(w,total);
+      Object.keys(q).forEach(function(sg){ segs[sg]=segs[sg]||{need:0,ly:0,s:0,t:0}; segs[sg].need+=q[sg]; });
+    });
+    /* last year's same-window split uses the same mix - the seed keeps LY by
+       counter, not by segment, so the segment share is the best we have */
+    chans.forEach(function(c){
+      var w=segMix(c), lyTot=T.ly[c==='Counter'?'_counter':'_network']||0, q=lr(w,lyTot);
+      Object.keys(q).forEach(function(sg){ if(segs[sg]) segs[sg].ly+=q[sg]; });
+    });
+    Object.keys(S.seg).forEach(function(sg){
+      chans.forEach(function(c){
+        segs[sg]=segs[sg]||{need:0,ly:0,s:0,t:0};
+        segs[sg].s += S.seg[sg][c].s; segs[sg].t += S.seg[sg][c].t;
+      });
+    });
+    Object.keys(segs).forEach(function(sg){
+      var r=segs[sg]; r.seg=sg;
+      r.s=Math.round(r.s); r.t=Math.round(r.t);
+      r.avail=r.s+r.t;
+      r.bal=r.need-r.avail;
+      r.ratio=r.need? r.avail/r.need : (r.avail?9:0);
+      r.rate=r.need/P2DAYS;
+      r.cover=r.rate>0? r.avail/r.rate : (r.avail?999:0);
+      rows.push(r);
+    });
+    rows.sort(function(a,b){ return b.need-a.need; });
+    return {rows:rows, S:S, T:T};
+  }
+
+  window.p2Set=function(k,v){ p[k]=v; save(); render(); };
+  window.p2Trend=function(v){ p.trendOv=(v===''?'':Math.max(0,parseFloat(v)||0)); save(); render(); };
+  window.p2Export=function(){
+    var B=build(), head=['Segment','LY Navratri-Diwali','Phase 2 need','Share %','In stock','In transit','Available','Balance to source','Stock vs need %','Days of cover'];
+    var body=B.rows.map(function(r){ return [r.seg,r.ly,r.need,pct(r.need,needTotal(p.ch)),r.s,r.t,r.avail,r.bal,Math.round(r.ratio*100),Math.round(r.cover)]; });
+    try{ downloadCsv('festival100_phase2_'+p.ch.toLowerCase()+'.csv',head,body); }catch(e){ alert('Export failed: '+e.message); }
+  };
+
+  function render(){
+    var root=document.getElementById('f100p2-root'); if(!root) return;
+    var B=build(), T=B.T, ch=p.ch, tf=trendFactor(), tr=trend();
+    var need=needTotal(ch), ly=ch==='Both'?(T.ly._total||0):(T.ly[ch==='Counter'?'_counter':'_network']||0);
+    var today=Date.now(), toStart=Math.ceil((parse(P2A)-today)/MS);
+    var totAvail=0, totBal=0; B.rows.forEach(function(r){ totAvail+=r.avail; totBal+=Math.max(0,r.bal); });
+
+    function btn(k,v,lbl,t){ return '<button class="btn btn-sm'+(p[k]===v?' btn-primary':'')+'"'+(t?' title="'+esc(t)+'"':'')
+      +' onclick="p2Set(\''+k+'\',\''+v+'\')">'+lbl+'</button>'; }
+    function tile(v,l,c,s){ return '<div class="card kpi"><h3>'+l+'</h3><div class="kpi-value" style="color:'+c+'">'+v+'</div>'
+      +'<div class="kpi-trend">'+(s||'&nbsp;')+'</div></div>'; }
+
+    var h='<div class="card" style="margin-bottom:14px;border-left:4px solid #ff5c5c">'
+      +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:baseline">'
+      +'<h2 style="margin:0">&#127881; Phase 2 &mdash; 11 Oct to 11 Nov <span style="color:#ff5c5c">(the 32 days that decide the season)</span></h2>'
+      +'<span class="help-text" style="margin-left:auto">'
+      +(toStart>0? ('starts in <b>'+toStart+'</b> days') : (toStart>-P2DAYS? '<b>running now</b>' : 'finished'))
+      +'</span></div>'
+      +'<p class="help-text" style="margin-top:6px">Navratri, Dussehra, Dhanteras, Diwali and the three days after. '
+      +'Last year this window alone did <b>'+nf(T.ly._total)+'</b> of the '+nf((F100()||{}).total||0)+'-vehicle season &mdash; '
+      +pct(T.ly._total,(T.ly._counter+T.ly._network))+'% of it in 32 days. Everything below is for this window only.</p></div>';
+
+    /* headline numbers */
+    h+='<div class="kpi-grid" style="margin-bottom:14px">'
+      + tile(nf(T.ty._counter),'Counter target','#5b9eff','LY '+nf(T.ly._counter)+' &middot; '+(T.ly._counter?((T.ty._counter>=T.ly._counter?'+':'')+pct(T.ty._counter-T.ly._counter,T.ly._counter)+'%'):'&mdash;'))
+      + tile(nf(T.ty._network),'Network target','#a05bff','LY '+nf(T.ly._network)+' &middot; '+(T.ly._network?((T.ty._network>=T.ly._network?'+':'')+pct(T.ty._network-T.ly._network,T.ly._network)+'%'):'&mdash;'))
+      + tile(nf(T.ty._total),'Phase 2 total','#00d0ff','LY '+nf(T.ly._total))
+      + tile(nf(Math.round(need/P2DAYS)),'A day, '+esc(ch.toLowerCase()),'#ffb02e','to hit '+nf(need)+' in '+P2DAYS+' days')
+      + tile(nf(totBal),'Still to source','#ff5c5c', totBal? 'across '+B.rows.filter(function(r){return r.bal>0;}).length+' segments' : 'stock covers the plan')
+      +'</div>';
+
+    /* controls */
+    h+='<div class="card" style="margin-bottom:14px"><div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">'
+      +'<span><b>Plan on</b> &nbsp;'
+      + btn('basis','plan','TY target','What the festive plan commits to')
+      + btn('basis','ly','Last year','Repeat last year exactly')
+      + btn('basis','trend','Retail trend','Last year scaled by how this season is actually running')
+      +'</span>'
+      +'<span><b>Channel</b> &nbsp;'+btn('ch','Counter','Counter')+btn('ch','Network','Network')+btn('ch','Both','Both')+'</span>'
+      +'<span><b>Godown feeds</b> &nbsp;'+btn('godown','counter','Counter')+btn('godown','network','Network')+btn('godown','split','Split by target')+'</span>'
+      +'<span><b>Segment</b> &nbsp;<button class="btn btn-sm'+(p.seg?'':' btn-primary')+'" onclick="p2Set(\'seg\',\'\')">All</button>'
+      + B.rows.map(function(r){ return '<button class="btn btn-sm'+(p.seg===r.seg?' btn-primary':'')
+          +'" onclick="p2Set(\'seg\',\''+esc(r.seg)+'\')">'+esc(r.seg)+'</button>'; }).join('')+'</span>'
+      +'<span style="margin-left:auto"><button class="btn btn-sm" onclick="p2Export()">&#11015;&#65039; Export</button></span>'
+      +'</div>';
+    if(p.basis==='trend'){
+      h+='<p class="help-text" style="margin-top:10px">Season so far: <b>'+nf(tr.ach)+'</b> retailed against <b>'+nf(Math.round(tr.ly))+'</b> in the same days last year'
+        +(tr.entered? (' &mdash; running at <b style="color:'+(tr.f>=1?'#2bd47d':'#ff5c5c')+'">'+Math.round(tr.f*100)+'%</b> of last year.')
+                    : ' &mdash; <b style="color:#ffb02e">no daily entries yet</b>, so type the factor you want to plan on.')
+        +' &nbsp;Use <input type="number" step="1" style="width:74px" value="'+(p.trendOv===''?'':p.trendOv)+'" placeholder="'+Math.round((tr.f||1)*100)+'"'
+        +' onchange="p2Trend(this.value)"> % of last year.</p>';
+    }
+    h+='</div>';
+
+    /* segment calculator */
+    h+='<div class="card" style="margin-bottom:14px"><h3>Stock against Phase 2 &mdash; '+esc(ch==='Both'?'counter + network':ch.toLowerCase())+'</h3>';
+    if(!B.S.any){
+      h+='<p class="help-text">No stock loaded yet. Open the Stock page and pull or import the stock file, then come back &mdash; '
+        +'the targets above are still correct.</p>';
+    } else {
+      h+='<div style="overflow-x:auto"><table class="table"><thead><tr><th>Segment</th>'
+        +'<th style="text-align:right">LY same window</th><th style="text-align:right">Phase 2 need</th><th style="text-align:right">Share</th>'
+        +'<th style="text-align:right">In stock</th><th style="text-align:right">In transit</th><th style="text-align:right">Available</th>'
+        +'<th style="text-align:right">Balance to source</th><th style="text-align:right">Stock vs need</th><th style="text-align:right">Days of cover</th></tr></thead><tbody>';
+      B.rows.forEach(function(r){
+        if(p.seg && r.seg!==p.seg) return;
+        var col = r.ratio>=1? '#2bd47d' : r.ratio>=0.6? '#ffb02e' : '#ff5c5c';
+        h+='<tr><td><b>'+esc(r.seg)+'</b></td>'
+          +'<td style="text-align:right;color:var(--muted)">'+nf(r.ly)+'</td>'
+          +'<td style="text-align:right"><b>'+nf(r.need)+'</b></td>'
+          +'<td style="text-align:right;color:var(--muted)">'+pct(r.need,need)+'%</td>'
+          +'<td style="text-align:right">'+nf(r.s)+'</td>'
+          +'<td style="text-align:right;color:#5b9eff">'+nf(r.t)+'</td>'
+          +'<td style="text-align:right"><b>'+nf(r.avail)+'</b></td>'
+          +'<td style="text-align:right"><b style="color:'+(r.bal>0?'#ff5c5c':'#2bd47d')+'">'
+            +(r.bal>0? nf(r.bal) : ('+'+nf(-r.bal)+' spare'))+'</b></td>'
+          +'<td style="text-align:right;color:'+(r.need?col:'var(--muted)')+'"><b>'+(r.need?Math.round(r.ratio*100)+'%':'&mdash;')+'</b></td>'
+          +'<td style="text-align:right;color:'+(r.need?col:'var(--muted)')+'">'+(r.need?Math.round(r.cover):'&mdash;')+'</td></tr>';
+      });
+      var tN=0,tL=0,tS=0,tT=0,tB=0;
+      B.rows.forEach(function(r){ if(p.seg&&r.seg!==p.seg) return; tN+=r.need; tL+=r.ly; tS+=r.s; tT+=r.t; tB+=r.bal; });
+      h+='<tr style="border-top:2px solid var(--border)"><td><b>Total</b></td>'
+        +'<td style="text-align:right;color:var(--muted)"><b>'+nf(tL)+'</b></td><td style="text-align:right"><b>'+nf(tN)+'</b></td>'
+        +'<td style="text-align:right"></td><td style="text-align:right"><b>'+nf(tS)+'</b></td>'
+        +'<td style="text-align:right;color:#5b9eff"><b>'+nf(tT)+'</b></td><td style="text-align:right"><b>'+nf(tS+tT)+'</b></td>'
+        +'<td style="text-align:right"><b style="color:'+(tB>0?'#ff5c5c':'#2bd47d')+'">'+(tB>0?nf(tB):('+'+nf(-tB)+' spare'))+'</b></td>'
+        +'<td style="text-align:right"><b>'+pct(tS+tT,tN)+'%</b></td><td></td></tr>';
+      h+='</tbody></table></div>'
+        +'<p class="help-text" style="margin-top:8px"><b>Balance to source</b> is the Phase 2 need less everything you already hold, stock plus transit. '
+        +'<b>Stock vs need</b> is the same thing as a ratio &mdash; under 100% means the season outruns the stock. '
+        +'<b>Days of cover</b> is how far what you hold lasts at the retail rate this phase demands, against the '+P2DAYS+' days it has to last.</p>';
+    }
+    h+='</div>';
+
+    /* counter by counter */
+    var nbc=needByCounter();
+    h+='<div class="card" style="margin-bottom:14px"><h3>Counter by counter &mdash; Phase 2</h3>'
+      +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Counter</th>'
+      +'<th style="text-align:right">LY same window</th><th style="text-align:right">Phase 2 target</th>'
+      +'<th style="text-align:right">Growth</th><th style="text-align:right">A day</th>'
+      +'<th style="text-align:right">Stock there</th><th style="text-align:right">In transit</th>'
+      +'<th style="text-align:right">Balance to source</th><th style="text-align:right">Stock vs need</th></tr></thead><tbody>';
+    var gL=0,gT=0,gS=0,gTr=0;
+    CTRKEYS.forEach(function(c){
+      var lyv=T.ly[c]||0, tyv=nbc[c]||0, sc=B.S.ctr[c]||{s:0,t:0};
+      var av=Math.round(sc.s)+Math.round(sc.t), bal=tyv-av;
+      gL+=lyv; gT+=tyv; gS+=Math.round(sc.s); gTr+=Math.round(sc.t);
+      var gr=lyv? Math.round((tyv-lyv)/lyv*100) : 0;
+      h+='<tr><td><b>'+esc(c)+'</b></td>'
+        +'<td style="text-align:right;color:var(--muted)">'+nf(lyv)+'</td>'
+        +'<td style="text-align:right"><b>'+nf(tyv)+'</b></td>'
+        +'<td style="text-align:right;color:'+(gr>=0?'#2bd47d':'#ff5c5c')+'">'+(gr>0?'+':'')+gr+'%</td>'
+        +'<td style="text-align:right;color:#ffb02e">'+(Math.round(tyv/P2DAYS*10)/10)+'</td>'
+        +'<td style="text-align:right">'+nf(sc.s)+'</td>'
+        +'<td style="text-align:right;color:#5b9eff">'+nf(sc.t)+'</td>'
+        +'<td style="text-align:right"><b style="color:'+(bal>0?'#ff5c5c':'#2bd47d')+'">'+(bal>0?nf(bal):('+'+nf(-bal)+' spare'))+'</b></td>'
+        +'<td style="text-align:right">'+pct(av,tyv)+'%</td></tr>';
+    });
+    var netTY = p.basis==='ly'? T.ly._network : p.basis==='trend'? Math.round((T.ly._network||0)*tf) : T.ty._network;
+    var netS=0,netT=0; Object.keys(B.S.seg).forEach(function(sg){ netS+=B.S.seg[sg].Network.s; netT+=B.S.seg[sg].Network.t; });
+    var netAv=Math.round(netS)+Math.round(netT), netBal=netTY-netAv;
+    h+='<tr style="border-top:2px solid var(--border)"><td><b>Counter total</b></td>'
+      +'<td style="text-align:right"><b>'+nf(gL)+'</b></td><td style="text-align:right"><b>'+nf(gT)+'</b></td>'
+      +'<td></td><td style="text-align:right"><b>'+(Math.round(gT/P2DAYS*10)/10)+'</b></td>'
+      +'<td style="text-align:right"><b>'+nf(gS)+'</b></td><td style="text-align:right"><b>'+nf(gTr)+'</b></td>'
+      +'<td style="text-align:right"><b style="color:'+((gT-gS-gTr)>0?'#ff5c5c':'#2bd47d')+'">'+nf(Math.max(0,gT-gS-gTr))+'</b></td>'
+      +'<td style="text-align:right"><b>'+pct(gS+gTr,gT)+'%</b></td></tr>'
+      +'<tr style="background:rgba(160,91,255,.08)"><td><b>Network</b></td>'
+      +'<td style="text-align:right;color:var(--muted)">'+nf(T.ly._network)+'</td>'
+      +'<td style="text-align:right"><b>'+nf(netTY)+'</b></td>'
+      +'<td style="text-align:right;color:'+((netTY-(T.ly._network||0))>=0?'#2bd47d':'#ff5c5c')+'">'
+      +((netTY-(T.ly._network||0))>=0?'+':'')+pct(netTY-(T.ly._network||0),T.ly._network||1)+'%</td>'
+      +'<td style="text-align:right;color:#ffb02e">'+(Math.round(netTY/P2DAYS*10)/10)+'</td>'
+      +'<td style="text-align:right">'+nf(netS)+'</td><td style="text-align:right;color:#5b9eff">'+nf(netT)+'</td>'
+      +'<td style="text-align:right"><b style="color:'+(netBal>0?'#ff5c5c':'#2bd47d')+'">'+(netBal>0?nf(netBal):('+'+nf(-netBal)+' spare'))+'</b></td>'
+      +'<td style="text-align:right">'+pct(netAv,netTY)+'%</td></tr>';
+    h+='</tbody></table></div>'
+      +'<p class="help-text" style="margin-top:8px">Counter stock is what is standing at that showroom, plus its share of the godown. '
+      +'Network stock is the DC. Move the godown between the two with the buttons above &mdash; it changes who the balance belongs to, not the total.</p></div>';
+
+    root.innerHTML=h;
+  }
+
+  /* ---- mount as a sibling inside the Festival 100 view -------------------- */
+  function ensure(){
+    var view=document.getElementById('view-f100'); if(!view) return false;
+    var d=document.getElementById('f100p2-root');
+    if(!d){ d=document.createElement('div'); d.id='f100p2-root'; }
+    var anchor=document.getElementById('f100-root');
+    if(anchor && anchor.parentNode){
+      if(d.previousElementSibling!==anchor) anchor.parentNode.insertBefore(d, anchor.nextSibling);
+    } else if(d.parentNode!==view){ view.insertBefore(d, view.firstChild); }
+    return true;
+  }
+  var prev=window.setView;
+  window.setView=function(n){
+    var r=prev.apply(this,arguments);
+    if(n==='f100'){ setTimeout(function(){ if(ensure()) render(); },200); }
+    return r;
+  };
+  document.addEventListener('DOMContentLoaded',function(){
+    setTimeout(function(){ try{ var a=document.querySelector('.nav-item.active');
+      if(a&&a.dataset.view==='f100'&&ensure()) render(); }catch(e){} },1400);
+  });
 })();
 </script>
 
