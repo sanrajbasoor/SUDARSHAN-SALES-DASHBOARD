@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v68 &middot; 28 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v69 &middot; 28 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -12755,10 +12755,17 @@ document.addEventListener('DOMContentLoaded', initApp);
 
   /* ================= import / export / sync ================= */
   function split(t){ return t.split(/\r?\n/).map(function(l){ return l.split(/\t|,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(function(c){ return c.replace(/^"|"$/g,'').trim(); }); }).filter(function(r){ return r.join('').trim()!==''; }); }
-  window.netImport=function(kind){
-    var ta=document.getElementById('net-paste-'+kind); if(!ta) return;
-    var txt=(ta.value||'').trim(); if(!txt){ if(typeof showToast==='function') showToast('Paste some rows first'); return; }
-    var rs=split(txt);
+  /* rowsIn lets the feed reuse the very same parser the paste box uses, so a
+     synced sheet and a pasted table can never drift apart */
+  window.netImport=function(kind,rowsIn){
+    var ta=document.getElementById('net-paste-'+kind);
+    var rs;
+    if(rowsIn && rowsIn.length){ rs=rowsIn; }
+    else {
+      if(!ta) return;
+      var txt=(ta.value||'').trim(); if(!txt){ if(typeof showToast==='function') showToast('Paste some rows first'); return; }
+      rs=split(txt);
+    }
     try{
       if(kind==='paid'){
         var hi=-1, map={};
@@ -12781,10 +12788,20 @@ document.addEventListener('DOMContentLoaded', initApp);
           else if(/fund\s*gap/.test(t)) map.gap=ix;
         });
         if(map.name==null) throw new Error('NETWORK NAME column not found');
+        /* On the network sheet only NETWORK NAME and Status are actually typed
+           into the header row - the rest of the band is merged, so a CSV export
+           hands back blanks. The layout itself is fixed, so anything the header
+           did not name is read by position instead. Header labels always win,
+           so the day someone types them in this fallback stops being used. */
+        var NETCOLS={norm:3,o:5,d:6,r:7,c:8,target:9,debit:11,credit:12,
+                     creditVeh:15,shouldInvest:16,actualPaid:18,gap:19};
+        Object.keys(NETCOLS).forEach(function(f){ if(map[f]==null) map[f]=NETCOLS[f]; });
         var out=[];
         for(var j=hi+1;j<rs.length;j++){
           var r=rs[j], nm=(r[map.name]||'').trim();
-          if(!nm || /^(total|grand)/i.test(nm)) continue;
+          /* the sheet repeats its header band above the extension counters,
+             so the same "NETWORK NAME" row turns up again mid-table */
+          if(!nm || /^(total|grand)/i.test(nm) || /^network\s*name$/i.test(nm)) continue;
           var prev=net.networks.filter(function(x){ return nkey(x.name)===nkey(nm); })[0]||{};
           out.push({name:nm, type:prev.type||(/^\s*\d{4,6}\s*[-–]/.test(nm)?'Extension counter':'Sub-dealer'),
             status:(map.status!=null?r[map.status]:'')||'', norm:num(map.norm!=null?r[map.norm]:0),
@@ -12819,6 +12836,37 @@ document.addEventListener('DOMContentLoaded', initApp);
         }
         if(!drows.length) throw new Error('no SKU rows with demand found');
         net.demand={nets:netNm, rows:drows};
+      } else if(kind==='updater'){
+        /* Updater_Monitor is laid out as repeating pairs - "AWADHIYA SKU | QTY",
+           "ANAND SKU | QTY" and so on - one pair per network, with a trailing
+           "Update <date>" cell that says when the sheet was last worked. */
+        var uh=-1;
+        for(var u=0;u<Math.min(rs.length,6);u++){ if(rs[u].some(function(c){ return /\bsku$/i.test(String(c||'').trim()); })){ uh=u; break; } }
+        if(uh<0) throw new Error('could not find a "<network> SKU" header row');
+        var pairs=[], asOf='';
+        rs[uh].forEach(function(c,ix){
+          var t=String(c||'').trim();
+          var m=t.match(/^(.*?)\s*sku$/i);
+          if(m && m[1]) pairs.push({n:m[1].trim(), k:ix, q:ix+1});
+          var dm=t.match(/update\s*([0-9.\/-]{6,12})/i); if(dm) asOf=dm[1];
+        });
+        if(!pairs.length) throw new Error('no network columns found on the updater');
+        var agg={};
+        for(var v=uh+1;v<rs.length;v++){
+          var rr=rs[v]||[];
+          pairs.forEach(function(pr,pi){
+            var sku=String(rr[pr.k]||'').trim(); if(!sku || /^sku$/i.test(sku)) return;
+            var qty=num(rr[pr.q]); if(!qty) return;
+            var g=agg[sku]||(agg[sku]={k:sku, v:pairs.map(function(){ return 0; })});
+            g.v[pi]+=qty;
+          });
+        }
+        var urows=Object.keys(agg).map(function(k){
+          var g=agg[k];
+          return {s:'Updater', m:(typeof modelForSku==='function'?(modelForSku(k)||''):'')||k.slice(0,11), k:k, c:'', v:g.v};
+        });
+        if(!urows.length) throw new Error('no SKU quantities found on the updater');
+        net.demand={nets:pairs.map(function(x){ return x.n; }), rows:urows, asOf:asOf};
       } else if(kind==='vahan'){
         var vh=-1;
         for(var k=0;k<rs.length;k++){ if(rs[k].some(function(c){ return /^(apr|may|jun|jul|aug|sep|oct|nov|dec|jan|feb|mar)[-\s]?\d{2}$/i.test(c); })){ vh=k; break; } }
@@ -12835,16 +12883,39 @@ document.addEventListener('DOMContentLoaded', initApp);
         if(!mk.length) throw new Error('no maker rows found');
         net.vahan={rto:net.vahan.rto||'RTO', fy:net.vahan.fy||'FY 2025-26', months:mons, makers:mk};
       }
-      net.source='Sheet paste'; net.updatedAt=new Date().toLocaleString('en-IN'); store();
-      ta.value=''; render();
-      if(typeof showToast==='function') showToast(label(kind)+' updated');
+      net.source=rowsIn?'Network sheet':'Sheet paste'; net.updatedAt=new Date().toLocaleString('en-IN'); store();
+      if(ta) ta.value='';
+      if(!rowsIn){ render(); if(typeof showToast==='function') showToast(label(kind)+' updated'); }
     }catch(e){ if(typeof showToast==='function') showToast('Import error: '+e.message); }
   };
-  function label(k){ return k==='paid'?'Paid Check':'Vahan'; }
+  function label(k){ return k==='paid'?'Network master':k==='updater'?'Updater':'Vahan'; }
   window.netReset=function(){ if(!confirm('Reset network data to the sheet snapshot?')) return; net=seed(); store(); render(); };
+  /* Pull the network sheet's two working tabs straight off the web app. Each
+     one is handed to the same parser the paste box uses. */
+  function netFeed(url,name){
+    return fetch(url+'?feed='+name+'&t='+Date.now(),{cache:'no-cache',redirect:'follow'})
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        if(!j || !j.ok || !j.rows || !j.rows.length) return null;
+        return [j.cols||[]].concat(j.rows);
+      }).catch(function(){ return null; });
+  }
   window.netSync=function(silent){
     var url; try{ url=(config&&config.script&&config.script.url)||''; }catch(e){ url=''; }
     if(!url){ if(!silent&&typeof showToast==='function') showToast('No Apps Script URL saved (Settings)'); return; }
+    Promise.all([netFeed(url,'NET_PAID'), netFeed(url,'NET_UPDATER')]).then(function(res){
+      var hit=[];
+      if(res[0]){ try{ window.netImport('paid',res[0]); hit.push('paid check'); }catch(e){} }
+      if(res[1]){ try{ window.netImport('updater',res[1]); hit.push('updater'); }catch(e){} }
+      if(hit.length){
+        net.source='Network sheet'; net.updatedAt=new Date().toLocaleString('en-IN'); store(); render();
+        if(!silent&&typeof showToast==='function') showToast('Synced from the network sheet: '+hit.join(' + '));
+        return;
+      }
+      legacySync(silent,url);
+    });
+  };
+  function legacySync(silent,url){
     fetch(url+'?t='+Date.now(),{cache:'no-cache',redirect:'follow'}).then(function(r){return r.json();}).then(function(j){
       var got=false;
       if(j.networkPaid && j.networkPaid.length){ net.networks=j.networkPaid; got=true; }
@@ -12853,9 +12924,9 @@ document.addEventListener('DOMContentLoaded', initApp);
       if(j.networkDemand && j.networkDemand.rows){ net.demand=j.networkDemand; got=true; }
       if(got){ net.source='Apps Script'; net.updatedAt=new Date().toLocaleString('en-IN'); store(); render();
         if(!silent&&typeof showToast==='function') showToast('Network data synced'); }
-      else if(!silent&&typeof showToast==='function') showToast('Feed has no networkPaid / vahan keys yet');
+      else if(!silent&&typeof showToast==='function') showToast('The script has no NET_PAID feed yet - paste the latest Feeds.gs and deploy a new version');
     }).catch(function(e){ if(!silent&&typeof showToast==='function') showToast('Sync failed: '+e.message); });
-  };
+  }
   window.netExport=function(kind){
     function cell(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }
     var rowsOut=[];
