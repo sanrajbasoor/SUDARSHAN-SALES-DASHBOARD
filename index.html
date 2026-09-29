@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v71 &middot; 29 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v73 &middot; 29 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -355,6 +355,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn" onclick="exportCSV()">Download CSV</button>
           <button class="btn" onclick="exportJSON()">Download JSON Backup</button>
+          <button class="btn btn-primary" onclick="exportDiag()">&#129514; Diagnostic export</button>
           <button class="btn" onclick="redetectDates()">&#128260; Re-detect dates</button>
           <button class="btn" onclick="cleanJunkEnquiries()">&#129529; Clean junk rows</button>
           <button class="btn btn-danger" onclick="resetAllData()">Reset All Data</button>
@@ -1606,6 +1607,66 @@ function exportDseSummaryCSV() {
 function exportJSON(){
   const blob=new Blob([JSON.stringify({enquiries,config,exportedAt:new Date().toISOString()},null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='sudarshan_backup_'+todayISO()+'.json';a.click();
+}
+/* Everything the dashboard is actually holding, in one file. When a figure on
+   screen disagrees with DMS this is the only way to see WHY without guessing:
+   it carries the build, every stored key, and the same two September numbers
+   the Counters page derives, each from its own source. */
+function exportDiag(){
+  var out={ takenAt:new Date().toISOString(), build:'', href:location.href, period:(typeof currentPeriod!=='undefined'?currentPeriod:''), keys:{}, sizes:{}, summary:{} };
+  try{ out.build=document.querySelector('.brand').textContent.replace(/\s+/g,' ').trim(); }catch(e){}
+  /* every store the dashboard writes, apart from the call-detail dump which is
+     large and has nothing to do with retail or stock */
+  try{
+    for(var i=0;i<localStorage.length;i++){
+      var k=localStorage.key(i);
+      if(!/^hero-/.test(k)) continue;
+      var v=localStorage.getItem(k)||'';
+      out.sizes[k]=v.length;
+      if(k==='hero-iq-files-v1'){ out.keys[k]='(skipped - call records, '+v.length+' bytes)'; continue; }
+      try{ out.keys[k]=JSON.parse(v); }catch(e){ out.keys[k]=v.slice(0,20000); }
+    }
+  }catch(e){ out.keysError=String(e&&e.message||e); }
+  try{ out.enquiries=(enquiries||[]).length; out.config=config; }catch(e){}
+
+  /* the two September numbers, side by side, each from its own source */
+  try{
+    var p=(typeof currentPeriod!=='undefined'&&currentPeriod)?currentPeriod:'2026-09';
+    var coh={};
+    (enquiries||[]).forEach(function(e){
+      var k=''; try{ k=getMonthKey(e); }catch(_){}
+      if(k!==p) return;
+      var c=String(e.counter||'').trim()||'(none)';
+      var g=coh[c]||(coh[c]={enq:0,won:0}); g.enq++; if(e.stage==='Won') g.won++;
+    });
+    out.summary.month=p;
+    out.summary.enquiryCohort=coh;
+    var reg={}, o=null; try{ o=window.__OPS__&&window.__OPS__(); }catch(_){}
+    if(o&&o.salesRows){
+      o.salesRows.forEach(function(r){
+        if(r.m!==p) return;
+        var ch=String(r.t||'').toLowerCase();
+        var c=/sub-?dealer|network/.test(ch)?'(network)':((window.__DSETEAM__&&window.__DSETEAM__(r.dse))||'(dse not on roster)');
+        reg[c]=(reg[c]||0)+1;
+      });
+      out.summary.saleRegister=reg;
+      out.summary.saleRegisterMonths=o.salesMonths||[];
+      out.summary.saleRegisterRows=o.salesRows.length;
+    } else out.summary.saleRegister='no sale register loaded';
+    var I=null; try{ I=window.__SKUSTOCK__&&window.__SKUSTOCK__(); }catch(_){}
+    if(I&&I.by){
+      var onHand=0, tr=0, byLoc={};
+      Object.keys(I.by).forEach(function(k){ var e=I.by[k]; tr+=e.transit||0;
+        Object.keys(e.loc||{}).forEach(function(l){ onHand+=e.loc[l]; byLoc[l]=(byLoc[l]||0)+e.loc[l]; }); });
+      out.summary.stock={skus:Object.keys(I.by).length, onHand:onHand, inTransit:tr, byLocation:byLoc};
+    } else out.summary.stock='no SKU stock loaded';
+  }catch(e){ out.summary.error=String(e&&e.message||e); }
+
+  var blob=new Blob([JSON.stringify(out,null,1)],{type:'application/json'});
+  var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='sudarshan_diagnostic_'+todayISO()+'.json'; a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); },2000);
+  try{ showToast('Diagnostic file downloaded - send it over.'); }catch(e){}
 }
 function publishToTeam(){exportJSON();}
 async function pullFromServer(){
@@ -9758,6 +9819,129 @@ document.addEventListener('DOMContentLoaded', initApp);
   /* ---------- derived helpers ---------- */
   function stockTotal(){ return ops.stock.reduce(function(a,r){return a+(+r.qty||0);},0); }
   function byLocation(){ var m={}; LOCS().forEach(function(l){m[l]=0;}); ops.stock.forEach(function(r){ m[r.loc]=(m[r.loc]||0)+(+r.qty||0); }); return m; }
+
+  /* ---------- DMS stock, from the sheet's own stock monitoring tab ----------
+     The tiles above have always been built from the VIN register, which counts
+     every chassis the register still carries. The stock monitoring tab carries
+     the DMS figure the dealership actually works to, and the two do not agree.
+     This reads the DMS figure, shows the variance, and can switch the tiles
+     over to it. The trade is detail: DMS gives Net Stock, DC and Godown, with
+     no counter-by-counter split, so the location tiles collapse to three. */
+  function dmsParse(aoa){
+    if(!aoa||!aoa.length) return null;
+    var hi=-1;
+    for(var r=0;r<Math.min(aoa.length,20);r++){
+      var row=(aoa[r]||[]).map(function(x){ return String(x==null?'':x).trim().toLowerCase(); });
+      if(row.indexOf('sku')>=0 && row.some(function(v){ return /net\s*stock/.test(v); })){ hi=r; break; }
+    }
+    if(hi<0) return null;
+    var head=(aoa[hi]||[]).map(function(x){ return String(x==null?'':x).trim().toLowerCase(); });
+    function f(re){ for(var i=0;i<head.length;i++) if(re.test(head[i])) return i; return -1; }
+    var c={sku:head.indexOf('sku'), model:head.indexOf('model'),
+           net:f(/net\s*stock/), tr:f(/in\s*transit/), dc:f(/dc\s*stock/), gd:f(/godw?o?w?n/)};
+    if(c.sku<0||c.net<0) return null;
+    function q(row,i){ if(i<0) return 0; var v=String(row[i]==null?'':row[i]).replace(/[^0-9.\-]/g,'');
+      var n=parseFloat(v); return isFinite(n)&&n>0?Math.round(n):0; }
+    var last='', out={net:0,transit:0,dc:0,gd:0,skus:0,byModel:{}};
+    aoa.slice(hi+1).forEach(function(row){
+      if(!row) return;
+      var sku=String(row[c.sku]==null?'':row[c.sku]).trim().toUpperCase();
+      if(!/^[A-Z0-9]{8,}$/.test(sku)) return;
+      var mo=String(c.model>=0?(row[c.model]||''):'').trim().toUpperCase(); if(mo) last=mo; else mo=last||'(model not given)';
+      var n=q(row,c.net), t=q(row,c.tr), d=Math.min(q(row,c.dc),n), g=Math.min(q(row,c.gd),n-d);
+      out.net+=n; out.transit+=t; out.dc+=d; out.gd+=g; out.skus++;
+      var m=out.byModel[mo]||(out.byModel[mo]={show:0,gd:0,dc:0,tr:0});
+      m.show+=n-d-g; m.gd+=g; m.dc+=d; m.tr+=t;
+    });
+    return out.skus? out : null;
+  }
+  function dmsFetch(){
+    var U=''; try{ U=(config&&config.script&&config.script.url)||''; }catch(e){}
+    if(!U) return Promise.reject(new Error('No Apps Script URL saved (Settings).'));
+    var rows=[], cols=null;
+    function step(from){
+      return fetch(U+'?feed=STOCK_DMS&from='+from+'&t='+Date.now(),{cache:'no-cache',redirect:'follow'})
+        .then(function(r){ return r.json(); })
+        .then(function(j){
+          if(!j||j.ok!==true) throw new Error((j&&j.error)||'The STOCK_DMS feed did not answer. Paste the latest Feeds.gs and deploy a NEW VERSION.');
+          if(!cols) cols=j.cols||[]; rows=rows.concat(j.rows||[]);
+          if(j.more && j.rows && j.rows.length) return step(from+j.rows.length);
+          return [cols].concat(rows);
+        });
+    }
+    return step(0);
+  }
+  window.opsDmsCheck=function(){
+    showToast('Reading DMS stock...');
+    dmsFetch().then(function(aoa){
+      var D=dmsParse(aoa);
+      if(!D) throw new Error('Could not read the stock monitoring tab - no SKU / Net Stock columns.');
+      D.at=new Date().toLocaleString('en-IN');
+      ops.dms=Object.assign({on:(ops.dms&&ops.dms.on)||false},D);
+      if(ops.dms.on) applyDms();
+      save(); rerenderActiveOps();
+      showToast('DMS stock read: '+D.net+' on hand, '+D.transit+' in transit.');
+    }).catch(function(e){ showToast(e.message); });
+  };
+  function applyDms(){
+    var D=ops.dms; if(!D||!D.on||!D.byModel) return false;
+    var st=[], tr=[];
+    Object.keys(D.byModel).forEach(function(mo){
+      var m=D.byModel[mo];
+      if(m.show>0) st.push({model:mo,loc:'Showroom (DMS)',qty:m.show,inwardDate:''});
+      if(m.gd>0)   st.push({model:mo,loc:'Godown',qty:m.gd,inwardDate:''});
+      if(m.dc>0)   st.push({model:mo,loc:'Festival Counter-DC',qty:m.dc,inwardDate:''});
+      if(m.tr>0)   tr.push({model:mo,qty:m.tr});
+    });
+    if(!st.length) return false;
+    ops.stock=st; ops.transit=tr;
+    ops.finance=Object.assign(ops.finance||{},{stockInHand:D.net,transit:D.transit,
+      grossStock:D.net+D.transit,dcStock:D.dc,netStock:D.net-D.dc});
+    return true;
+  }
+  window.opsDmsMode=function(on){
+    ops.dms=ops.dms||{}; ops.dms.on=!!on;
+    if(on){
+      if(!ops.dms.byModel){ window.opsDmsCheck(); return; }
+      applyDms(); save(); rerenderActiveOps(); showToast('Tiles now show the DMS figure.');
+    } else { save(); showToast('Switched back to the VIN register - press Sync ops from Sheet to reload it.'); rerenderActiveOps(); }
+  };
+  function dmsCard(total,transitTot){
+    var D=ops.dms;
+    var h='<div class="card" style="margin-top:14px;border-left:4px solid '+(D&&D.on?'#2bd47d':'#ffb02e')+'">'
+      +'<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
+      +'<h3 style="margin:0">DMS stock check</h3>'
+      +'<span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">'
+      +'<button class="btn btn-sm" onclick="opsDmsCheck()">&#128260; Read DMS stock</button>'
+      +(D&&D.byModel? ('<button class="btn btn-sm'+(D.on?' btn-primary':'')+'" onclick="opsDmsMode('+(D.on?'false':'true')+')">'
+          +(D.on?'Showing DMS':'Switch tiles to DMS')+'</button>') : '')
+      +'</span></div>';
+    if(!D||!D.byModel){
+      h+='<p class="help-text" style="margin-top:8px">The tiles above are built from the <b>VIN register</b> &mdash; every chassis the register still carries. '
+        +'Your sheet also holds the <b>DMS</b> figure on its stock monitoring tab, and the two rarely agree. '
+        +'Press <b>Read DMS stock</b> to see both side by side.</p></div>';
+      return h;
+    }
+    var rows=[['VIN register (what the tiles show now)',total,transitTot,'&mdash;','&mdash;'],
+              ['DMS stock monitoring tab',D.net,D.transit,D.dc,D.gd]];
+    h+='<div style="overflow-x:auto;margin-top:10px"><table class="table"><thead><tr><th>Source</th>'
+      +'<th style="text-align:right">On hand</th><th style="text-align:right">In transit</th>'
+      +'<th style="text-align:right">DC</th><th style="text-align:right">Godown</th></tr></thead><tbody>';
+    rows.forEach(function(r){
+      h+='<tr><td><b>'+r[0]+'</b></td><td style="text-align:right"><b>'+r[1]+'</b></td>'
+        +'<td style="text-align:right">'+r[2]+'</td><td style="text-align:right">'+r[3]+'</td><td style="text-align:right">'+r[4]+'</td></tr>';
+    });
+    var dh=total-D.net, dt=transitTot-D.transit;
+    h+='<tr style="border-top:2px solid var(--line)"><td><b>Variance</b></td>'
+      +'<td style="text-align:right"><b style="color:'+(dh?'#ff5c5c':'#2bd47d')+'">'+(dh>0?'+':'')+dh+'</b></td>'
+      +'<td style="text-align:right;color:'+(dt?'#ffb02e':'var(--muted)')+'">'+(dt>0?'+':'')+dt+'</td>'
+      +'<td></td><td></td></tr></tbody></table></div>'
+      +'<p class="help-text" style="margin-top:8px">DMS read '+esc(D.at||'')+' from '+D.skus+' SKUs. '
+      +(D.on? 'The tiles are showing DMS. Location detail collapses to Showroom / Godown / Festival Counter-DC, because DMS does not split stock by counter.'
+            : 'Press <b>Switch tiles to DMS</b> to make every figure on this page match DMS. The counter-by-counter split is lost when you do, because DMS does not carry it.')
+      +'</p></div>';
+    return h;
+  }
   function byModel(){ var m={}; ops.stock.forEach(function(r){ m[r.model]=(m[r.model]||0)+(+r.qty||0); }); return m; }
   function norm(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
   function stockForEnquiryModel(model){
@@ -9811,6 +9995,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     h+=kpi((total+transitTot),'Gross stock','', 'in hand + transit');
     h+=kpi(f.netStock,'Net (excl. DC)','#2bd47d','less festival-DC stock');
     h+='</div>';
+    h+=dmsCard(total,transitTot);
 
     // location tiles
     h+='<div class="card" style="margin-top:14px"><h3>Stock by location</h3><div class="grid grid-3" style="gap:10px">';
@@ -10286,6 +10471,9 @@ document.addEventListener('DOMContentLoaded', initApp);
       }
       if(got){ try{ if(typeof refreshMonthOptions==='function') refreshMonthOptions(); }catch(e){} }
       if(got){ mergeSupp(); }
+      /* the auto-refresh replaces stock with the VIN register, so put the DMS
+         figure back when the user has chosen it */
+      if(got && ops.dms && ops.dms.on){ applyDms(); }
       if(got){ ops.source='Apps Script'; ops.updatedAt=new Date().toLocaleString('en-IN'); save(); rerenderActiveOps(); opsStamp(); if(!silent) showToast('Ops synced from Sheet'); }
       else if(!silent) showToast('Feed has no ops data yet (stock/finance/sales keys)');
     }).catch(function(e){ if(!silent) showToast('Sync failed: '+e.message); });
