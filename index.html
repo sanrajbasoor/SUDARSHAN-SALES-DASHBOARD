@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v70 &middot; 29 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v71 &middot; 29 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -6798,6 +6798,50 @@ document.addEventListener('DOMContentLoaded', initApp);
     return {units:units};
   }
 
+  /* ---- the DMS stock monitoring sheet ------------------------------------
+     A different shape from the VIN export: one row per SKU, with Net Stock,
+     In Transit, DC Stock and Godown as quantities rather than one row per
+     vehicle. Net Stock is the DMS figure the dealership works to, so it is
+     treated as the total on hand and the DC / Godown columns only say where
+     some of it is standing. Those two are kept by hand and do not always add
+     back to Net Stock, so they are capped at it - the total always matches
+     DMS, and whatever they do not account for is shown as showroom stock. */
+  function parseMonitor(aoa){
+    var hi=-1;
+    for(var r=0;r<Math.min(aoa.length,20);r++){
+      var row=(aoa[r]||[]).map(function(x){ return String(x==null?'':x).trim().toLowerCase(); });
+      if(row.indexOf('sku')>=0 && row.some(function(v){ return /net\s*stock/.test(v); })){ hi=r; break; }
+    }
+    if(hi<0) return {err:'This does not look like the stock monitoring sheet - no row with both a SKU and a Net Stock column.'};
+    var head=(aoa[hi]||[]).map(function(x){ return String(x==null?'':x).trim().toLowerCase(); });
+    function find(re){ for(var i=0;i<head.length;i++) if(re.test(head[i])) return i; return -1; }
+    var c={ sku:head.indexOf('sku'), model:head.indexOf('model'), variant:head.indexOf('variant'),
+            cat:head.indexOf('category'), desc:find(/colours?|description/),
+            net:find(/net\s*stock/), tr:find(/in\s*transit/), dc:find(/dc\s*stock/), gd:find(/godw?o?w?n|godown/) };
+    if(c.sku<0 || c.net<0) return {err:'Could not find the SKU and Net Stock columns.'};
+    function q(r,i){ if(i<0) return 0; var v=String(r[i]==null?'':r[i]).replace(/[^0-9.\-]/g,''); var n=parseFloat(v); return isFinite(n)&&n>0?Math.round(n):0; }
+    var units=[], transit=[], lastModel='', seen=0;
+    aoa.slice(hi+1).forEach(function(r){
+      if(!r) return;
+      var sku=String(r[c.sku]==null?'':r[c.sku]).trim().toUpperCase();
+      if(!/^[A-Z0-9]{8,}$/.test(sku)) return;
+      /* the model name is only typed on the first row of each model block */
+      var mo=String(c.model>=0?(r[c.model]||''):'').trim().toUpperCase();
+      if(mo) lastModel=mo; else mo=lastModel;
+      seen++;
+      var net=q(r,c.net), tr=q(r,c.tr), dc=Math.min(q(r,c.dc),net), gd=Math.min(q(r,c.gd),net-dc);
+      var base={sku:sku, model:mo, variant:String(c.variant>=0?(r[c.variant]||''):'').trim()||sku.slice(0,11),
+                desc:String(c.desc>=0?(r[c.desc]||''):'').trim(), age:0, dlp:0, tr:0};
+      function push(n,loc){ for(var i=0;i<n;i++) units.push({sku:base.sku,model:base.model,variant:base.variant,
+        desc:base.desc,loc:loc,age:0,dlp:0,tr:0}); }
+      push(net-dc-gd,'NA'); push(dc,'DC'); push(gd,'GD');
+      for(var t=0;t<tr;t++) transit.push({sku:base.sku,model:base.model,variant:base.variant,
+        desc:base.desc,loc:'TR',age:0,dlp:0,tr:1});
+    });
+    if(!seen) return {err:'Found the headings but no SKU rows underneath them.'};
+    return {units:units, transit:transit};
+  }
+
   function fromRegister(){
     var o=null; try{ o=window.__OPS__&&window.__OPS__(); }catch(e){}
     if(!o) o=jget('hero-ops-v1',{})||{};
@@ -6907,10 +6951,20 @@ document.addEventListener('DOMContentLoaded', initApp);
       .then(function(j){
         if(!j||j.ok!==true) throw new Error('The web app is not serving feeds yet. Paste the updated Feeds.gs and deploy a NEW VERSION.');
         var have={}; (j.feeds||[]).forEach(function(f){ if(f.present&&f.rows>0) have[f.feed]=f; });
-        if(!have.STOCK) throw new Error('No STOCK tab found in the sheet (or it is empty). Import the DMS VIN stock export into a tab named STOCK.');
+        /* the DMS monitoring tab is the figure the dealership works to, so it
+           wins over the VIN export whenever the sheet is serving it */
+        if(have.STOCK_DMS) return fetchFeed('STOCK_DMS').then(function(rows){ return {dms:rows}; });
+        if(!have.STOCK) throw new Error('No stock tab found in the sheet (or it is empty). Paste the updated Feeds.gs so it can serve STOCK_DMS, or import the DMS VIN stock export into a tab named STOCK.');
         return Promise.all([fetchFeed('STOCK'), have.TRANSIT? fetchFeed('TRANSIT') : Promise.resolve(null)]);
       })
       .then(function(res){
+        if(res && res.dms){
+          var m=parseMonitor(res.dms); if(m.err) throw new Error('stock monitoring tab: '+m.err);
+          store(m.units,m.transit,'sheet','DMS stock monitoring');
+          var msg2='Stock read from DMS: '+m.units.length+' on hand, '+m.transit.length+' in transit.';
+          if(silent) toast(msg2); else alert(msg2);
+          return true;
+        }
         var a=parseStock(res[0],false); if(a.err) throw new Error('STOCK tab: '+a.err);
         /* If the DMS export already carries in-transit VINs, trust those and
            skip the hand-kept Stock Monitoring column - adding both would count
@@ -6956,6 +7010,15 @@ document.addEventListener('DOMContentLoaded', initApp);
       alert('Loaded '+onHand+' vehicles on hand'+(a.units.length>onHand?(' and '+(a.units.length-onHand)+' in transit'):'')+' from '+name+'.');
     });
   };
+  /* one click: the DMS stock monitoring export, quantities and all */
+  window.skImportDms=function(){
+    readFile(function(aoa,name){
+      var a=parseMonitor(aoa); if(a.err){ alert(a.err); return; }
+      store(a.units,a.transit,'file','DMS stock - '+name);
+      alert('Loaded '+a.units.length+' vehicles on hand and '+a.transit.length+' in transit from '+name+
+            '.\n\nNet Stock is taken as the total on hand; DC and Godown say where part of it is standing.');
+    });
+  };
   window.skImportTransit=function(){
     readFile(function(aoa,name){
       var a=parseStock(aoa,true); if(a.err){ alert(a.err); return; }
@@ -6982,7 +7045,8 @@ document.addEventListener('DOMContentLoaded', initApp);
   function sourceBar(S){
     return '<span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">'
       +'<button class="btn btn-sm btn-primary" onclick="skPull()">&#128260; Refresh from sheet</button>'
-      +'<button class="btn btn-sm" onclick="skImport()">&#128228; Stock file</button>'
+      +'<button class="btn btn-sm btn-primary" onclick="skImportDms()">&#128230; DMS stock</button>'
+      +'<button class="btn btn-sm" onclick="skImport()">&#128228; VIN stock file</button>'
       +'<button class="btn btn-sm" onclick="skImportTransit()">&#128667; Transit file</button>'
       +(S.how==='sheet'||S.how==='file'?'<button class="btn btn-sm" onclick="skReset()">Reset</button>':'')
       +'</span>';
