@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v74 &middot; 29 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v75 &middot; 29 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -9877,10 +9877,15 @@ document.addEventListener('DOMContentLoaded', initApp);
       var D=dmsParse(aoa);
       if(!D) throw new Error('Could not read the stock monitoring tab - no SKU / Net Stock columns.');
       D.at=new Date().toLocaleString('en-IN');
-      ops.dms=Object.assign({on:(ops.dms&&ops.dms.on)||false},D);
-      if(ops.dms.on) applyDms();
+      /* reading DMS switches the tiles to it, unless the user has deliberately
+         turned that off - the whole point of reading it is to see the DMS
+         figure, so making them confirm every time is friction for nothing */
+      var first=!(ops.dms&&ops.dms.byModel);
+      ops.dms=Object.assign({on:first?true:!!(ops.dms&&ops.dms.on)},D);
+      var applied=ops.dms.on? applyDms() : false;
       save(); rerenderActiveOps();
-      showToast('DMS stock read: '+D.net+' on hand, '+D.transit+' in transit.');
+      showToast('DMS stock: '+D.net+' on hand, '+D.transit+' in transit.'
+        +(applied?' The tiles now show DMS.':''));
     }).catch(function(e){ showToast(e.message); });
   };
   function applyDms(){
@@ -9894,6 +9899,9 @@ document.addEventListener('DOMContentLoaded', initApp);
       if(m.tr>0)   tr.push({model:mo,qty:m.tr});
     });
     if(!st.length) return false;
+    /* keep the register figures so switching back actually restores them
+       instead of leaving the DMS numbers behind */
+    if(!ops.dmsBackup) ops.dmsBackup={stock:ops.stock,transit:ops.transit,finance:Object.assign({},ops.finance||{})};
     ops.stock=st; ops.transit=tr;
     ops.finance=Object.assign(ops.finance||{},{stockInHand:D.net,transit:D.transit,
       grossStock:D.net+D.transit,dcStock:D.dc,netStock:D.net-D.dc});
@@ -9904,7 +9912,11 @@ document.addEventListener('DOMContentLoaded', initApp);
     if(on){
       if(!ops.dms.byModel){ window.opsDmsCheck(); return; }
       applyDms(); save(); rerenderActiveOps(); showToast('Tiles now show the DMS figure.');
-    } else { save(); showToast('Switched back to the VIN register - press Sync ops from Sheet to reload it.'); rerenderActiveOps(); }
+    } else {
+      if(ops.dmsBackup){ ops.stock=ops.dmsBackup.stock; ops.transit=ops.dmsBackup.transit;
+        ops.finance=Object.assign(ops.finance||{},ops.dmsBackup.finance); ops.dmsBackup=null; }
+      save(); rerenderActiveOps(); showToast('Back to the VIN register.');
+    }
   };
   function dmsCard(total,transitTot){
     var D=ops.dms;
@@ -9916,7 +9928,8 @@ document.addEventListener('DOMContentLoaded', initApp);
     if(!D||!D.byModel){
       h+='<p class="help-text" style="margin:0 0 10px">The tiles above are built from the <b>VIN register</b> &mdash; every chassis the register still carries. '
         +'Your sheet also holds the <b>DMS</b> figure on its stock monitoring tab, and the two rarely agree. '
-        +'Press <b>Read DMS stock</b> to see both side by side &mdash; nothing on this page changes until you then choose to switch.</p>'
+        +'Press <b>Read DMS stock</b>: the tiles switch to the DMS figure and you get both side by side. '
+        +'You can switch back to the register with one click afterwards.</p>'
         +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
         +'<button class="btn btn-primary" onclick="opsDmsCheck()">&#128260; Read DMS stock</button></div></div>';
       return h;
