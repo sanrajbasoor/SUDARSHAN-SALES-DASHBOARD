@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v82 &middot; 30 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v84 &middot; 30 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -1414,7 +1414,13 @@ function exportLeakage(kind){
 function renderCounters() {
   const E=getActiveEnquiries();
   const det=document.getElementById('counter-detail'); if(det){
-    let html='<div style="overflow-x:auto"><table class="table"><thead><tr><th>Counter</th><th>Enquiries</th><th>Active</th><th>Won</th><th>Booked</th><th>Lost</th><th>Conv%</th><th>Finance%</th></tr></thead><tbody>';
+    /* the newest enquiry each counter actually holds. A register that has
+       stopped being updated looks exactly like a counter that has stopped
+       selling, and there was no way to tell the two apart. */
+    const iso=e=>{ const r=String(e.createdAt||e.lastContactAt||''); if(/^\d{4}-\d{2}-\d{2}/.test(r)) return r.slice(0,10);
+      try{ const q=parseDate(r); return q?String(q).slice(0,10):''; }catch(_){ return ''; } };
+    const newest=E.reduce((a,e)=>{ const d=iso(e); return d>a?d:a; },'');
+    let html='<div style="overflow-x:auto"><table class="table"><thead><tr><th>Counter</th><th>Enquiries</th><th>Active</th><th>Won</th><th>Booked</th><th>Lost</th><th>Conv%</th><th>Finance%</th><th>Data through</th></tr></thead><tbody>';
     function row(label,list,style){
       const won=list.filter(e=>e.stage==='Won').length,lost=list.filter(e=>e.stage==='Lost').length,booked=list.filter(e=>e.stage==='Booked').length;
       const active=list.filter(e=>ACTIVE_STAGES.includes(e.stage)).length;
@@ -1422,6 +1428,16 @@ function renderCounters() {
       const fin=list.length?Math.round(list.filter(e=>e.financeRequired==='Yes').length/list.length*100):0;
       /* every count is a handle on the rows behind it - a figure that looks
          wrong can then be checked name by name instead of argued about */
+      const through=(L)=>{
+        if(!L.length) return '<td style="color:var(--muted)">&mdash;</td>';
+        const last=L.reduce((a,e)=>{ const d=iso(e); return d>a?d:a; },'');
+        if(!last) return '<td style="color:var(--muted)">no dates</td>';
+        let behind=0;
+        try{ behind=Math.round((Date.parse(newest)-Date.parse(last))/86400000); }catch(_){}
+        const col = behind>=3 ? '#ff5c5c' : behind>=1 ? '#ffb02e' : 'var(--muted)';
+        return '<td style="color:'+col+'">'+last.slice(8)+'/'+last.slice(5,7)
+          +(behind>=1?(' <b>('+behind+'d behind)</b>'):'')+'</td>';
+      };
       const cell=(n,what,colour)=>{
         if(!n) return '<td style="color:var(--muted)">0</td>';
         return '<td'+(colour?(' style="color:'+colour+'"'):'')+'>'
@@ -1431,7 +1447,7 @@ function renderCounters() {
       return '<tr'+(style||'')+'><td><strong>'+escapeHtml(label)+'</strong></td>'
         +cell(list.length,'enq')+cell(active,'active')+cell(won,'won','var(--ok)')
         +cell(booked,'booked','#a05bff')+cell(lost,'lost','var(--danger)')
-        +'<td>'+conv+'%</td><td>'+fin+'%</td></tr>';
+        +'<td>'+conv+'%</td><td>'+fin+'%</td>'+through(list)+'</tr>';
     }
     config.counters.forEach(c=>{ html+=row(c,E.filter(e=>e.counter===c)); });
     /* Anything whose counter is not one of the configured names used to be
@@ -1448,6 +1464,8 @@ function renderCounters() {
     otherKeys.forEach(k=>{ html+=row(k+'  \u2014 not in Settings',others[k],' style="background:rgba(255,176,46,.10)"'); });
     html+=row('All counters',E,' style="border-top:2px solid var(--line)"');
     html+='</tbody></table></div>';
+    html+='<p class="help-text" style="margin-top:8px"><b>Data through</b> is the newest enquiry that counter holds for this month. '
+      +'A counter sitting days behind the others has a register that stopped being updated &mdash; its figures are not low, they are incomplete.</p>';
     if(otherKeys.length) html+='<p class="help-text" style="margin-top:8px;color:#ffb02e">'
       +'<b>'+otherKeys.reduce((a,k)=>a+others[k].length,0)+' enquiries</b> carry a counter that is not on your list in Settings, '
       +'so they were being left out of this table entirely. Add or correct these names under Settings &rarr; Counters: <b>'
@@ -8753,6 +8771,386 @@ document.addEventListener('DOMContentLoaded', initApp);
 })();
 </script>
 
+
+<script>
+/* ===========================================================================
+   COUNTER REGISTERS — every counter read live from its own sheet      (v84)
+
+   The problem this exists to end:
+
+   The counter figures used to come from a DMS enquiry export that a person had
+   to refresh. When that refresh stopped, the dashboard did not go blank - it
+   went QUIET. Napier Town simply reported 34 wins for September while its own
+   sheet held 61, and nothing on the page said the difference was missing days
+   rather than missing sales.
+
+   Two changes, together, mean it cannot happen again:
+
+     1. LIVE   - all four ICE counter registers are pulled straight from the
+                 sheets the counter teams type into, through the web app's
+                 REG_NT / REG_MM / REG_DN_ICE / REG_PREMIA_ICE feeds. There is
+                 no export step left to forget.
+     2. LOUD   - every register reports the newest row it holds. Any register
+                 more than two days behind the freshest one raises a red banner
+                 at the top of this page, naming the counter and the date it
+                 stopped. Silence is no longer a possible failure mode.
+
+   The registers do not agree on tab names, column order, date formats or
+   status words, so everything here is matched by MEANING, not by position.
+   =========================================================================== */
+(function(){
+  if (window.__CTRREG__) return;
+
+  var KEY='hero-ctrreg-v1';
+
+  /* Which feed belongs to which counter. The counter name is resolved against
+     Settings at run time so renaming a counter there cannot orphan a feed. */
+  var REGS=[
+    {feed:'REG_NT',        label:'Napier Town',  match:/NAPIER|^NT\b/i},
+    {feed:'REG_MM',        label:'MML (ICE)',    match:/MADAN|MML|^MM\b/i},
+    {feed:'REG_DN_ICE',    label:'DN',           match:/DAMOH|^DN\b/i},
+    {feed:'REG_PREMIA_ICE',label:'Premia',       match:/PREMIA|17097/i}
+  ];
+
+  var S={at:'',regs:{}};
+  try{ var raw=localStorage.getItem(KEY); if(raw) S=JSON.parse(raw); }catch(e){}
+  function store(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} }
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+  /* ---------------------------------------------------------- date parsing */
+  var MON={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+  function monthOf(cell){
+    var s=String(cell==null?'':cell).trim(); if(!s) return null;
+    var m=s.match(/([a-z]{3,9})\s*[-.\s]?\s*(\d{2,4})/i); if(!m) return null;
+    var mo=MON[m[1].slice(0,3).toLowerCase()]; if(!mo) return null;
+    var y=parseInt(m[2],10); if(y<100) y+=2000;
+    return {y:y,m:mo};
+  }
+  /* The Month column is authoritative - that lesson was paid for on the VIDA
+     registers, where trusting the date cell put September rows into May. The
+     date cell is only ever asked for the DAY. */
+  function dayOf(cell,mo){
+    var s=String(cell==null?'':cell).trim(); if(!s||s==='0') return 0;
+    var iso=s.match(/^(\d{4})-(\d{2})-(\d{2})/);            // Apps Script Date
+    if(iso) return parseInt(iso[3],10);
+    var dm=s.match(/^(\d{1,2})\s*[a-z]/i);                  // "1 April"
+    if(dm) return parseInt(dm[1],10);
+    var p=s.match(/^(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{2,4})/);
+    if(p){
+      var a=parseInt(p[1],10), b=parseInt(p[2],10);
+      if(mo){ if(b===mo.m) return a; if(a===mo.m) return b; }  // month decides
+      return a<=31?a:b;
+    }
+    var n=s.match(/^(\d{1,2})$/); if(n) return parseInt(n[1],10);
+    return 0;
+  }
+  function pad(n){ return (n<10?'0':'')+n; }
+
+  /* ------------------------------------------------------- status -> stage */
+  var OTHER=/^\s*(MML|NT|DN|ADHARTAL|ADHARTAAL|PREMIA|HUB|VIDA)\s+SOLD\s*$/i;
+  function stageOf(st){
+    var s=String(st==null?'':st).trim();
+    if(!s) return {stage:'Open',why:''};
+    if(OTHER.test(s)) return {stage:'Lost',why:'Sold at '+s.replace(/\s*SOLD\s*$/i,'').trim()};
+    if(/^sold$/i.test(s)||/\bdelivered\b/i.test(s)) return {stage:'Won',why:''};
+    if(/book/i.test(s)) return {stage:'Booked',why:''};
+    if(/^lost$/i.test(s)) return {stage:'Lost',why:'Lost'};
+    if(/clos|cloce/i.test(s)) return {stage:'Lost',why:'Closed'};
+    if(/no\s*inter|not\s*inter/i.test(s)) return {stage:'Lost',why:'Not interested'};
+    if(/refund|cancel/i.test(s)) return {stage:'Lost',why:s};
+    if(/plan\s*dr|open|inter|hot|warm|cold|follow/i.test(s)) return {stage:'Open',why:''};
+    return {stage:'Open',why:''};
+  }
+
+  /* ------------------------------------------------------- column matching */
+  function cols(head){
+    var ix={};
+    function find(re,exact){
+      for(var i=0;i<head.length;i++){
+        var h=String(head[i]==null?'':head[i]).trim();
+        if(!h) continue;
+        if(exact? (h.toLowerCase()===exact) : re.test(h)) return i;
+      }
+      return -1;
+    }
+    ix.month = find(/^month$/i);
+    ix.date  = find(/^date$/i);
+    if(ix.date<0)  ix.date  = find(/enquiry\s*(entry\s*)?date/i);
+    ix.cust  = find(/customer\s*name|full\s*name/i);
+    ix.mob   = find(/mobile|contact/i);
+    ix.src1  = find(/source\s*-?\s*1/i);
+    if(ix.src1<0)  ix.src1  = find(/source/i);
+    ix.src2  = find(/source\s*-?\s*2/i);
+    ix.model = find(/^model$/i);
+    if(ix.model<0) ix.model = find(/model/i);
+    ix.dse   = find(null,'dse');
+    if(ix.dse<0)   ix.dse   = find(/^dse/i);
+    ix.stat  = find(null,'status');
+    if(ix.stat<0)  ix.stat  = find(/status/i);
+    ix.sold  = find(/sold\s*date/i);
+    ix.rem   = find(/remark/i);
+    ix.nfu   = find(/next\s*follow/i);
+    return ix;
+  }
+
+  /* --------------------------------------------------------------- parsing */
+  function parse(def,head,rows){
+    var ix=cols(head), out=[], last='', bad=0, nodate=0;
+    if(ix.cust<0||ix.stat<0) return {rows:[],through:'',skipped:rows.length,nodate:0,ix:ix};
+    var counter=resolve(def);
+    for(var i=0;i<rows.length;i++){
+      var r=rows[i];
+      var name=String(r[ix.cust]==null?'':r[ix.cust]).trim();
+      var mob=String(r[ix.mob]==null?'':r[ix.mob]).replace(/\D/g,'');
+      if(!name && !mob) continue;
+      if(/^(total|grand|s\.?\s*no|customer\s*name)$/i.test(name)) continue;
+      var mo=ix.month>=0?monthOf(r[ix.month]):null;
+      if(!mo && ix.date>=0){                                  // no Month column
+        var d0=String(r[ix.date]||'').match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if(d0) mo={y:parseInt(d0[1],10),m:parseInt(d0[2],10)};
+      }
+      if(!mo){ bad++; continue; }
+      var day=ix.date>=0?dayOf(r[ix.date],mo):0;
+      var dayOk=(day>=1&&day<=31);
+      if(!dayOk){ day=1; nodate++; }
+      var iso=mo.y+'-'+pad(mo.m)+'-'+pad(day);
+      /* A row whose day could not be read still counts for the month, but it
+         must not be allowed to vouch for how fresh the register is - that is
+         how a register full of unreadable dates would pass as up to date. */
+      if(dayOk && iso>last) last=iso;
+      var st=stageOf(ix.stat>=0?r[ix.stat]:'');
+      var fin=String(ix.src1>=0?r[ix.src1]:'').trim();
+      out.push({
+        id:'R-'+def.feed+'-'+(i+1),
+        customer:name||('(no name) '+mob),
+        phone:mob, email:'',
+        counter:counter,
+        source:String(ix.src2>=0&&r[ix.src2]?r[ix.src2]:(fin||'Walk-in')).trim(),
+        model:String(ix.model>=0?(r[ix.model]||''):'').trim(),
+        variant:'', budget:0,
+        rep:String(ix.dse>=0?(r[ix.dse]||''):'').trim(),
+        stage:st.stage,
+        financeRequired:/finance|hdfc|idfc|shriram|hinduja|tata|l&t|hdb|bajaj|hero\s*fin/i.test(fin)?'Yes':'No',
+        financier:/^(cash|csd)$/i.test(fin)?'':String(ix.src2>=0?(r[ix.src2]||''):'').trim(),
+        createdAt:iso,
+        lastContactAt:iso,
+        nextFollowUp:'',
+        notes:String(ix.rem>=0?(r[ix.rem]||''):'').trim(),
+        dropReason:st.why,
+        src:def.feed
+      });
+    }
+    return {rows:out,through:last,skipped:bad,nodate:nodate,ix:ix};
+  }
+
+  function resolve(def){
+    var list=[]; try{ list=(config&&config.counters)||[]; }catch(e){}
+    for(var i=0;i<list.length;i++){ if(def.match.test(list[i])) return list[i]; }
+    return def.label;
+  }
+
+  /* ----------------------------------------------------------------- fetch */
+  function url(){ try{ return (config&&config.script&&config.script.url)||''; }catch(e){ return ''; } }
+  function feed(U,name){
+    var acc={cols:[],rows:[]};
+    function page(from){
+      return fetch(U+'?feed='+name+'&from='+from+'&t='+Date.now(),{cache:'no-cache',redirect:'follow'})
+        .then(function(r){ return r.json(); })
+        .then(function(j){
+          if(!j||!j.ok) throw new Error(j&&j.error?j.error:'feed not served');
+          if(j.cols&&j.cols.length) acc.cols=j.cols;
+          acc.rows=acc.rows.concat(j.rows||[]);
+          if(j.rows&&j.rows.length&&acc.rows.length<(j.total||0)) return page(acc.rows.length);
+          return acc;
+        });
+    }
+    return page(0);
+  }
+
+  window.ctrregSync=function(silent){
+    var U=url();
+    if(!U){ if(!silent) toast('No Apps Script URL saved (Settings)'); return Promise.resolve(); }
+    if(!silent) toast('Reading the counter registers…');
+    return Promise.all(REGS.map(function(def){
+      return feed(U,def.feed).then(function(a){
+        var p=parse(def,a.cols,a.rows);
+        return {def:def,ok:true,rows:p.rows,through:p.through,total:a.rows.length,skipped:p.skipped,nodate:p.nodate};
+      }).catch(function(e){ return {def:def,ok:false,err:e.message}; });
+    })).then(function(res){
+      S.at=new Date().toISOString();
+      S.regs=S.regs||{};
+      res.forEach(function(r){
+        if(r.ok){
+          S.regs[r.def.feed]={counter:resolve(r.def),through:r.through,rows:r.rows.length,
+                              total:r.total,skipped:r.skipped,nodate:r.nodate,err:'',at:S.at};
+          return;
+        }
+        /* A failed read must never erase the last good one. Losing the old
+           figure and showing nothing is how a register goes quiet. */
+        var old=S.regs[r.def.feed];
+        S.regs[r.def.feed]={counter:resolve(r.def),
+          through:old?old.through:'', rows:old?old.rows:0, total:old?old.total:0,
+          skipped:0, err:r.err, at:old?old.at:''};
+      });
+      store();
+      window.__CTRREG_LAST__=res;
+      if(!silent){
+        var bad=res.filter(function(r){ return !r.ok; });
+        toast(bad.length? ('Read '+(res.length-bad.length)+' of '+res.length+' registers — '+bad[0].def.feed+': '+bad[0].err)
+                        : 'Read all '+res.length+' counter registers');
+      }
+      render();
+      return res;
+    });
+  };
+
+  /* ---------------------------------------------------------------- adopt */
+  /* Replacing a counter's enquiries with its register is the whole point, but
+     it overwrites rows, so it keeps one undo and says exactly what it did. */
+  window.ctrregAdopt=function(){
+    var res=window.__CTRREG_LAST__;
+    if(!res||!res.length){ toast('Sync the registers first'); return; }
+    var good=res.filter(function(r){ return r.ok&&r.rows.length; });
+    if(!good.length){ toast('No register rows to adopt'); return; }
+    var n=good.reduce(function(a,r){ return a+r.rows.length; },0);
+    var names=good.map(function(r){ return resolve(r.def); });
+    if(!confirm('Replace the dashboard enquiries for '+names.join(', ')+' with '
+      +n+' rows read from those counters’ own registers?\n\n'
+      +'The rows being replaced came from the DMS export. This can be undone.')) return;
+    try{ localStorage.setItem('hero-ctrreg-undo',JSON.stringify(enquiries)); }catch(e){}
+    var drop={}; names.forEach(function(c){ drop[c]=1; });
+    var before=enquiries.length;
+    enquiries=enquiries.filter(function(e){ return !drop[e.counter]; });
+    good.forEach(function(r){ enquiries=enquiries.concat(r.rows); });
+    saveDataLocal();
+    toast('Adopted '+n+' register rows across '+names.length+' counters ('+before+' → '+enquiries.length+')');
+    redraw();
+  };
+  window.ctrregUndo=function(){
+    var raw; try{ raw=localStorage.getItem('hero-ctrreg-undo'); }catch(e){}
+    if(!raw){ toast('Nothing to undo'); return; }
+    try{ enquiries=JSON.parse(raw); saveDataLocal(); toast('Reverted to the enquiries held before the last adopt'); redraw(); }
+    catch(e){ toast('Undo failed: '+e.message); }
+  };
+  function redraw(){
+    try{ if(typeof renderDashboard==='function') renderDashboard(); }catch(e){}
+    try{ if(typeof renderCounters==='function') renderCounters(); }catch(e){}
+    render();
+  }
+  function toast(m){ try{ if(typeof showToast==='function') showToast(m); }catch(e){} }
+
+  /* ---------------------------------------------------------------- render */
+  function fmt(iso){ if(!iso) return '—'; return iso.slice(8)+'/'+iso.slice(5,7); }
+  function html(){
+    var keys=REGS.map(function(d){ return d.feed; });
+    var any=keys.some(function(k){ return S.regs[k]; });
+    var h='<div class="card" style="margin-top:14px"><div class="card-header">'
+      +'<div><h3 class="card-title">Counter registers — read live</h3>'
+      +'<p class="help-text" style="margin:2px 0 0">Every ICE counter, straight from the sheet its own team types into. '
+      +'No export to refresh, so no counter can quietly fall behind again.</p></div></div>';
+
+    if(!any){
+      h+='<p class="help-text">Not read yet. Press <b>Sync registers</b> once the new <code>Feeds.gs</code> is deployed.</p>';
+    } else {
+      var newest='';
+      keys.forEach(function(k){ var r=S.regs[k]; if(r&&r.through>newest) newest=r.through; });
+      var stale=[], broken=[], read=0;
+      h+='<div style="overflow-x:auto"><table class="table"><thead><tr>'
+        +'<th>Counter</th><th>Register</th><th>Rows</th><th>Data through</th><th>Behind</th><th>State</th>'
+        +'</tr></thead><tbody>';
+      REGS.forEach(function(d){
+        var r=S.regs[d.feed];
+        if(!r){ h+='<tr><td><b>'+esc(d.label)+'</b></td><td>'+d.feed+'</td>'
+          +'<td colspan="4" style="color:var(--muted)">not read</td></tr>'; return; }
+        if(r.err){
+          broken.push({c:r.counter,e:r.err});
+          h+='<tr style="background:rgba(255,92,92,.10)"><td><b>'+esc(r.counter)+'</b></td>'
+            +'<td style="color:var(--muted)">'+d.feed+'</td>'
+            +'<td>'+(r.rows||'—')+'</td><td>'+fmt(r.through)+'</td><td>—</td>'
+            +'<td style="color:#ff5c5c">could not read — '+esc(r.err)
+            +(r.through?' <span style="color:var(--muted)">(showing the last good read)</span>':'')+'</td></tr>';
+          return;
+        }
+        read++;
+        var behind=0;
+        try{ behind=Math.round((Date.parse(newest)-Date.parse(r.through))/86400000); }catch(e){}
+        if(behind>=3) stale.push({c:r.counter,d:r.through,b:behind});
+        var col=behind>=3?'#ff5c5c':behind>=1?'#ffb02e':'var(--ok)';
+        h+='<tr><td><b>'+esc(r.counter)+'</b></td><td style="color:var(--muted)">'+d.feed+'</td>'
+          +'<td>'+r.rows+(r.nodate?(' <span style="color:#ffb02e" title="rows whose date cell could not be read; '
+              +'they still count for the month but cannot vouch for freshness">+'+r.nodate+' undated</span>'):'')+'</td>'
+          +'<td>'+fmt(r.through)+'</td>'
+          +'<td style="color:'+col+'">'+(behind>0?(behind+'d'):'—')+'</td>'
+          +'<td style="color:'+col+'">'+(behind>=3?'STALE — chase this counter':behind>=1?'a day or two behind':'current')+'</td></tr>';
+      });
+      h+='</tbody></table></div>';
+
+      if(stale.length){
+        h+='<div style="margin-top:10px;padding:10px 12px;border-left:3px solid #ff5c5c;'
+          +'background:rgba(255,92,92,.10);border-radius:6px">'
+          +'<b style="color:#ff5c5c">'+stale.length+' register'+(stale.length>1?'s have':' has')+' stopped being updated.</b><br>'
+          +stale.map(function(s){ return esc(s.c)+' last wrote a row on <b>'+fmt(s.d)+'</b> ('+s.b+' days ago)'; }).join('<br>')
+          +'<br><span class="help-text">Until that sheet is filled in, this counter’s figures on every page are '
+          +'incomplete, not low. This is exactly what made Napier Town read 34 against its own 61 in September.</span></div>';
+      } else if(read===REGS.length){
+        h+='<p class="help-text" style="margin-top:8px;color:var(--ok)">'
+          +'All '+REGS.length+' registers were read and all are current. Nothing is being under-reported.</p>';
+      }
+      /* A register nobody can read is worse than a stale one, because it looks
+         like an empty counter. It gets its own banner and never a green line. */
+      if(broken.length){
+        h+='<div style="margin-top:10px;padding:10px 12px;border-left:3px solid #ff5c5c;'
+          +'background:rgba(255,92,92,.10);border-radius:6px">'
+          +'<b style="color:#ff5c5c">'+broken.length+' register'+(broken.length>1?'s could':' could')+' not be read.</b><br>'
+          +broken.map(function(x){ return esc(x.c)+' — '+esc(x.e); }).join('<br>')
+          +'<br><span class="help-text">Usually one of two things: the new <code>Feeds.gs</code> has not been '
+          +'deployed as a NEW VERSION yet, or the account the script runs as cannot open that counter’s '
+          +'spreadsheet. Share the sheet with it and run <code>TEST_feeds()</code>.</span></div>';
+      }
+      h+='<p class="help-text" style="margin-top:8px">Last read '
+        +esc(S.at?new Date(S.at).toLocaleString('en-IN'):'—')
+        +'. <b>Adhartal</b> keeps no register of its own — it appears only as a sold-status on the other counters’ '
+        +'sheets, so its enquiries cannot be read live until it gets one.</p>';
+    }
+
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">'
+      +'<button class="btn btn-primary" onclick="ctrregSync()">Sync registers</button>'
+      +'<button class="btn" onclick="ctrregAdopt()">Use registers as the counter figures</button>'
+      +'<button class="btn" onclick="ctrregUndo()">Undo last adopt</button>'
+      +'</div></div>';
+    return h;
+  }
+
+  function ensure(){
+    var view=document.getElementById('view-counters'); if(!view) return false;
+    var d=document.getElementById('ctrreg-root');
+    if(!d){ d=document.createElement('div'); d.id='ctrreg-root'; }
+    if(d.parentNode!==view) view.insertBefore(d,view.firstChild);
+    return true;
+  }
+  function render(){ var d=document.getElementById('ctrreg-root'); if(d) d.innerHTML=html(); }
+
+  var prev=window.setView;
+  window.setView=function(n){
+    var r; try{ r=prev.apply(this,arguments); }catch(e){ try{ console.warn('[ctrreg]',e); }catch(_){} }
+    if(n==='counters'){ setTimeout(function(){ try{ if(ensure()) render(); }catch(e){} },90); }
+    return r;
+  };
+  document.addEventListener('DOMContentLoaded',function(){
+    setTimeout(function(){
+      try{ var a=document.querySelector('.nav-item.active');
+        if(a&&a.dataset.view==='counters'&&ensure()) render(); }catch(e){}
+      /* one quiet read a session, so the freshness table is never itself stale */
+      try{ if(url()) window.ctrregSync(true); }catch(e){}
+    },1600);
+  });
+
+  window.__CTRREG__=function(){ return S; };
+})();
+
+</script>
 </body>
 <script>
 // Auto-pull live data on every open so management/team always see the
