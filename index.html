@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v87 &middot; 30 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v88 &middot; 30 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -8837,7 +8837,12 @@ document.addEventListener('DOMContentLoaded', initApp);
     {feed:'REG_DN_VIDA',   label:'DN',           match:/DAMOH|^DN\b/i},
     {feed:'REG_PREMIA',    label:'Premia',       match:/PREMIA|17097/i},
     {feed:'REG_AT_ICE',    label:'Adhartal',     match:/ADHA+R?TA?A?L|ADRTL|^AT\b/i},
-    {feed:'REG_AT_VIDA',   label:'Adhartal',     match:/ADHA+R?TA?A?L|ADRTL|^AT\b/i}
+    {feed:'REG_AT_VIDA',   label:'Adhartal',     match:/ADHA+R?TA?A?L|ADRTL|^AT\b/i},
+    /* The VIDA hub register. Napier Town and MML do not keep VIDA registers of
+       their own - every EV enquiry either counter takes is written here, which
+       is why their VIDA columns looked empty. The enquiries were never missing;
+       they were pooled under the hub. */
+    {feed:'REG_HUB',       label:'VIDA Hub',     match:/HUB/i}
   ];
 
   var S={at:'',regs:{}};
@@ -8849,31 +8854,136 @@ document.addEventListener('DOMContentLoaded', initApp);
 
   /* ---------------------------------------------------------- date parsing */
   var MON={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+  /* ------------------------------------------------------------------------
+     Reading a date out of these registers is the single hardest part of this
+     whole job, because the four teams do not agree and two of them are wrong:
+
+       NT      Month says just "SEP" - NO YEAR - and the date is dd.mm.yyyy
+       MM      Month "Sep-26.",  date "25 September"
+       DN      Month "SEP26.",   date dd-mm-yyyy
+       AT      Month still says "July-26." on rows dated in September, and its
+               date is mm/dd/yyyy - the opposite order to everyone else
+       Premia  Month "Sep-26.",  date mixed dd-mm-yyyy and dd/mm/yyyy
+
+     An earlier version demanded a YEAR in the month cell, so every NT row that
+     said "SEP" was thrown away as undated. That silently dropped all 128 of
+     Napier Town's September rows and made the page report the counter 62 days
+     stale when its register was current to the 28th. A false alarm is worse
+     than no alarm, so the parser now works the format out per register instead
+     of assuming one.
+     --------------------------------------------------------------------- */
   function monthOf(cell){
     var s=String(cell==null?'':cell).trim(); if(!s) return null;
-    var m=s.match(/([a-z]{3,9})\s*[-.\s]?\s*(\d{2,4})/i); if(!m) return null;
+    var m=s.match(/([a-z]{3,9})\s*[-.\s]?\s*(\d{2,4})?/i); if(!m) return null;
     var mo=MON[m[1].slice(0,3).toLowerCase()]; if(!mo) return null;
-    var y=parseInt(m[2],10); if(y<100) y+=2000;
-    return {y:y,m:mo};
+    var y=null;
+    if(m[2]){ y=parseInt(m[2],10); if(y<100) y+=2000; }
+    return {y:y,m:mo};           // y may be null - "SEP" carries no year
   }
-  /* The Month column is authoritative - that lesson was paid for on the VIDA
-     registers, where trusting the date cell put September rows into May. The
-     date cell is only ever asked for the DAY. */
-  function dayOf(cell,mo){
-    var s=String(cell==null?'':cell).trim(); if(!s||s==='0') return 0;
-    var iso=s.match(/^(\d{4})-(\d{2})-(\d{2})/);            // Apps Script Date
-    if(iso) return parseInt(iso[3],10);
-    var dm=s.match(/^(\d{1,2})\s*[a-z]/i);                  // "1 April"
-    if(dm) return parseInt(dm[1],10);
+
+  /* the numeric parts of a date cell, before deciding which is the day */
+  function parts(cell){
+    var s=String(cell==null?'':cell).trim(); if(!s||s==='0') return null;
+    var iso=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);        // Apps Script Date
+    if(iso) return {y:+iso[1], a:+iso[2], b:+iso[3], iso:true};
+    var dm=s.match(/^(\d{1,2})\s*([a-z]{3,9})/i);           // "25 September"
+    if(dm && MON[dm[2].slice(0,3).toLowerCase()])
+      return {y:null, a:+dm[1], b:MON[dm[2].slice(0,3).toLowerCase()], named:true};
     var p=s.match(/^(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{2,4})/);
-    if(p){
-      var a=parseInt(p[1],10), b=parseInt(p[2],10);
-      if(mo){ if(b===mo.m) return a; if(a===mo.m) return b; }  // month decides
-      return a<=31?a:b;
-    }
-    var n=s.match(/^(\d{1,2})$/); if(n) return parseInt(n[1],10);
-    return 0;
+    if(p){ var y=+p[3]; if(y<100) y+=2000; return {y:y, a:+p[1], b:+p[2]}; }
+    return null;
   }
+
+  /* Work out, for THIS register, whether the date cell is day-first or
+     month-first - by evidence, not by assumption. Two independent signals:
+     a component above 12 can only be a day, and a component that keeps
+     matching the month column is the month. */
+  function calibrate(rows,ix){
+    var bigA=0,bigB=0,hitA=0,hitB=0,agree=0,seen=0;
+    for(var i=0;i<rows.length;i++){
+      var r=rows[i]; if(ix.date<0||r.length<=ix.date) continue;
+      var p=parts(r[ix.date]); if(!p||p.iso||p.named) continue;
+      if(p.a>12) bigA++;
+      if(p.b>12) bigB++;
+      var mo=ix.month>=0?monthOf(r[ix.month]):null;
+      if(mo){ if(p.a===mo.m) hitA++; if(p.b===mo.m) hitB++; }
+    }
+    var dayFirst;
+    if(bigA>bigB*2) dayFirst=true;        // first part exceeds 12 - day first
+    else if(bigB>bigA*2) dayFirst=false;  // second part exceeds 12 - month first
+    else dayFirst=(hitB>=hitA);           // else: whichever matches the month
+    /* Second question, and the one that actually decides the counts: is the
+       MONTH COLUMN trustworthy for this register? Where the two agree it is,
+       and it is the better source because it survives a mistyped date cell.
+       Where they disagree row after row, the month column has been left behind
+       (Adhartal's still says "July-26." in September) and the date must win. */
+    for(var j=0;j<rows.length;j++){
+      var q=rows[j]; if(ix.date<0||q.length<=ix.date) continue;
+      var pp=parts(q[ix.date]); if(!pp) continue;
+      var mm=ix.month>=0?monthOf(q[ix.month]):null; if(!mm) continue;
+      seen++;
+      var dm = pp.iso?pp.a : (pp.named?pp.b : (dayFirst?pp.b:pp.a));
+      if(dm===mm.m) agree++;
+    }
+    /* The register's own year, taken as the one most of its rows carry. A
+       single mistyped 2029 in a date cell was enough to throw its row out of
+       September entirely AND to stand as the register's newest date - so an
+       outlier year is now replaced rather than believed. */
+    var yc={},best=null,bn=0;
+    for(var k=0;k<rows.length;k++){
+      var rr=rows[k]; if(ix.date<0||rr.length<=ix.date) continue;
+      var pz=parts(rr[ix.date]); if(!pz||pz.y==null||pz.y<2000||pz.y>2100) continue;
+      yc[pz.y]=(yc[pz.y]||0)+1;
+      if(yc[pz.y]>bn){ bn=yc[pz.y]; best=pz.y; }
+    }
+    return {dayFirst:dayFirst, trustMonth:(seen? (agree/seen)>=0.5 : true),
+            agree:seen?Math.round(agree/seen*100):null,
+            year:best||new Date().getFullYear()};
+  }
+
+  function daysIn(y,m){ return new Date(y,m,0).getDate(); }
+
+  /* Returns {y,m,d} or null. The date cell decides the month wherever it
+     carries one, because a month column can be left behind (Adhartal's still
+     says July on September rows) while a date cell rarely is. The month column
+     supplies the year when the date cell has none, and stands in entirely when
+     there is no date at all. */
+  function when(r,ix,cal,fallbackYear){
+    var mo=ix.month>=0?monthOf(r[ix.month]):null;
+    var p=ix.date>=0&&r.length>ix.date?parts(r[ix.date]):null;
+    var y=null,m=null,d=0,dOk=false;
+    if(p){
+      if(p.iso){ y=p.y; m=p.a; d=p.b; }
+      else if(p.named){ m=p.b; d=p.a; y=mo&&mo.y?mo.y:null; }
+      else { m=cal.dayFirst?p.b:p.a; d=cal.dayFirst?p.a:p.b; y=p.y; }
+      dOk=true;
+    }
+    /* the month column wins where this register has shown it can be trusted */
+    if(cal.trustMonth && mo) m=mo.m;
+    if(m==null&&mo) m=mo.m;
+    if(m==null) return null;
+    /* a year more than a year away from this register's own is a typo */
+    var base=cal.year||fallbackYear;
+    /* NT writes its month as bare "SEP" with no year at all. Where the month
+       column carries no year and is the trusted source, the financial year
+       supplies it - April to December in the base year, January to March in
+       the next - rather than a date cell that may hold a mistyped 2027. */
+    if(cal.trustMonth && mo && mo.y==null && m!=null){
+      var fyY=(m>=4)?base:(base+1);
+      if(y==null||y!==fyY){ y=fyY; }
+    }
+    if(y==null||y<2000||y>2100||Math.abs(y-base)>1){
+      y=(mo&&mo.y&&mo.y>=2000&&mo.y<=2100&&Math.abs(mo.y-base)<=1)?mo.y:base;
+      dOk=dOk&&false;   // the date could not be believed, so it cannot vouch for freshness
+    }
+    if(m<1||m>12) return null;
+    var dim=daysIn(y,m);
+    /* a 31st of September is somebody's typo, not a date - it must never be
+       allowed to stand as the newest row and make every other counter look late */
+    if(!dOk||d<1||d>dim) return {y:y,m:m,d:1,noday:true};
+    return {y:y,m:m,d:d};
+  }
+
   function pad(n){ return (n<10?'0':'')+n; }
 
   /* ------------------------------------------------------- status -> stage */
@@ -8924,30 +9034,33 @@ document.addEventListener('DOMContentLoaded', initApp);
   }
 
   /* --------------------------------------------------------------- parsing */
+  var TODAY=(function(){ var t=new Date();
+    return t.getFullYear()+'-'+pad2(t.getMonth()+1)+'-'+pad2(t.getDate()); })();
+  function pad2(n){ return (n<10?'0':'')+n; }
+
   function parse(def,head,rows){
     var ix=cols(head), out=[], last='', bad=0, nodate=0;
     if(ix.cust<0||ix.stat<0) return {rows:[],through:'',skipped:rows.length,nodate:0,ix:ix};
     var counter=resolve(def);
+    var cal=calibrate(rows,ix);
+    var fy=new Date().getFullYear();
     for(var i=0;i<rows.length;i++){
       var r=rows[i];
       var name=String(r[ix.cust]==null?'':r[ix.cust]).trim();
       var mob=String(r[ix.mob]==null?'':r[ix.mob]).replace(/\D/g,'');
       if(!name && !mob) continue;
       if(/^(total|grand|s\.?\s*no|customer\s*name)$/i.test(name)) continue;
-      var mo=ix.month>=0?monthOf(r[ix.month]):null;
-      if(!mo && ix.date>=0){                                  // no Month column
-        var d0=String(r[ix.date]||'').match(/^(\d{4})-(\d{2})-(\d{2})/);
-        if(d0) mo={y:parseInt(d0[1],10),m:parseInt(d0[2],10)};
-      }
-      if(!mo){ bad++; continue; }
-      var day=ix.date>=0?dayOf(r[ix.date],mo):0;
-      var dayOk=(day>=1&&day<=31);
-      if(!dayOk){ day=1; nodate++; }
-      var iso=mo.y+'-'+pad(mo.m)+'-'+pad(day);
+      var w=when(r,ix,cal,fy);
+      if(!w){ bad++; continue; }
+      var day=w.d, dayOk=!w.noday;
+      if(!dayOk) nodate++;
+      var iso=w.y+'-'+pad(w.m)+'-'+pad(day);
       /* A row whose day could not be read still counts for the month, but it
          must not be allowed to vouch for how fresh the register is - that is
          how a register full of unreadable dates would pass as up to date. */
-      if(dayOk && iso>last) last=iso;
+      /* and a row dated in the future is a typo too - it must not become the
+         register's "data through", which would make a stale counter read fresh */
+      if(dayOk && iso<=TODAY && iso>last) last=iso;
       var st=stageOf(ix.stat>=0?r[ix.stat]:'');
       var fin=String(ix.src1>=0?r[ix.src1]:'').trim();
       out.push({
@@ -8970,7 +9083,7 @@ document.addEventListener('DOMContentLoaded', initApp);
         src:def.feed
       });
     }
-    return {rows:out,through:last,skipped:bad,nodate:nodate,ix:ix};
+    return {rows:out,through:last,skipped:bad,nodate:nodate,cal:cal,ix:ix};
   }
 
   function resolve(def){
@@ -9032,7 +9145,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     return Promise.all(REGS.map(function(def){
       return feed(U,def.feed).then(function(a){
         var p=parse(def,a.cols,a.rows);
-        return {def:def,ok:true,rows:p.rows,through:p.through,total:a.rows.length,skipped:p.skipped,nodate:p.nodate};
+        return {def:def,ok:true,rows:p.rows,through:p.through,total:a.rows.length,skipped:p.skipped,nodate:p.nodate,cal:p.cal};
       }).catch(function(e){ return {def:def,ok:false,err:e.message}; });
     })).then(function(res){
       S.at=new Date().toISOString();
@@ -9040,7 +9153,7 @@ document.addEventListener('DOMContentLoaded', initApp);
       res.forEach(function(r){
         if(r.ok){
           S.regs[r.def.feed]={counter:resolve(r.def),through:r.through,rows:r.rows.length,
-                              total:r.total,skipped:r.skipped,nodate:r.nodate,err:'',at:S.at};
+                              total:r.total,skipped:r.skipped,nodate:r.nodate,cal:r.cal,err:'',at:S.at};
           return;
         }
         /* A failed read must never erase the last good one. Losing the old
@@ -9138,8 +9251,11 @@ document.addEventListener('DOMContentLoaded', initApp);
         if(behind>=3) stale.push({c:r.counter,d:r.through,b:behind});
         var col=behind>=3?'#ff5c5c':behind>=1?'#ffb02e':'var(--ok)';
         h+='<tr><td><b>'+esc(r.counter)+'</b></td><td style="color:var(--muted)">'+d.feed+'</td>'
-          +'<td>'+r.rows+(r.nodate?(' <span style="color:#ffb02e" title="rows whose date cell could not be read; '
-              +'they still count for the month but cannot vouch for freshness">+'+r.nodate+' undated</span>'):'')+'</td>'
+          +'<td>'+r.rows
+              +(r.nodate?(' <span style="color:#ffb02e" title="rows whose day could not be read; they still count '
+                +'for the month but cannot vouch for freshness">+'+r.nodate+' undated</span>'):'')
+              +(r.total&&r.total-r.rows-0>0?(' <span style="color:var(--muted)" title="rows in the tab that carry no '
+                +'customer and no month at all - blank filler rows">of '+r.total+'</span>'):'')+'</td>'
           +'<td>'+fmt(r.through)+'</td>'
           +'<td style="color:'+col+'">'+(behind>0?(behind+'d'):'—')+'</td>'
           +'<td style="color:'+col+'">'+(behind>=3?'STALE — chase this counter':behind>=1?'a day or two behind':'current')+'</td></tr>';
@@ -9570,15 +9686,18 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'1st against an enquiry taken in August, a walk-in nobody wrote down. <b>DN’s VIDA register matches its '
       +'invoices exactly</b>, and every ICE register lands within six. The registers are sound.</p>';
 
-    h+='<div style="margin-top:10px;padding:10px 12px;border-left:3px solid #ff5c5c;'
-      +'background:rgba(255,92,92,.10);border-radius:6px">'
-      +'<b style="color:#ff5c5c">254 VIDA retails have no enquiry register behind them.</b><br>'
-      +'Napier Town invoiced 143 VIDA units in September and MML 111, and neither counter keeps a VIDA register. '
-      +'Those enquiries exist only in the <b>FY26-VIDA MML</b> hub sheet, which cannot be opened from here. '
-      +'Until it is readable, VIDA conversion for these two counters cannot be measured at all — the sales are '
-      +'known, the enquiries behind them are not.<br>'
-      +'<span class="help-text">Adhartal is a smaller case of the same thing: 7 sold on its VIDA register against '
-      +'17 invoiced, because that register stops on 17/09.</span></div>';
+    h+='<div style="margin-top:10px;padding:10px 12px;border-left:3px solid #ffb02e;'
+      +'background:rgba(255,176,46,.10);border-radius:6px">'
+      +'<b style="color:#ffb02e">Napier Town and MML keep no VIDA register of their own \u2014 their 254 EV '
+      +'enquiries are pooled in the hub.</b><br>'
+      +'The enquiries are not missing. Every VIDA enquiry either counter takes is written into the shared '
+      +'<b>FY26-VIDA MML</b> hub register, which the dashboard now reads live as the <b>VIDA Hub</b> counter. '
+      +'What that register does not carry is <i>which counter</i> the sale belongs to \u2014 so the invoices split '
+      +'NT 143 / MML 111, while the enquiries behind them sit in one undivided pool.<br>'
+      +'<span class="help-text">The consequence is narrow but real: total VIDA conversion is measurable, '
+      +'per-counter VIDA conversion is not. Splitting it needs a counter column on the hub register. '
+      +'Adhartal is a different problem \u2014 it has its own VIDA register, but that register stops on 17/09, '
+      +'which is why it reads 7 sold against 17 invoiced.</span></div>';
 
     /* the network half of the same report */
     var nk=Object.keys(RETAIL.network).sort(function(a,b){ return sum(RETAIL.network[b])-sum(RETAIL.network[a]); });
