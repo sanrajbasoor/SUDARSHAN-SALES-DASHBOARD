@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v75 &middot; 29 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v77 &middot; 30 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -676,7 +676,29 @@ async function loadFromScript() {
     enquiries = json.enquiries;
     if (json.config) { if (json.config.counters) config.counters = json.config.counters; if (json.config.reps) config.reps = json.config.reps; if (json.config.models) config.models = json.config.models; if (json.config.financiers) config.financiers = json.config.financiers; }
     if (json.followUpCounts && typeof json.followUpCounts==='object') { window.__followUps = json.followUpCounts; try{localStorage.setItem('hero-followups-v1', JSON.stringify(json.followUpCounts));}catch(e){} }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(enquiries)); migrateDates(); return true;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(enquiries)); migrateDates();
+    /* the pull REPLACES the whole enquiry list - nothing here is merged - so
+       record when it happened and how the month-by-counter picture moved,
+       otherwise a figure "reverting" five minutes after it was corrected looks
+       like a dashboard fault when it is the sheet being re-read */
+    try{
+      var prev=(window.__lastPull&&window.__lastPull.cohort)||null, now={};
+      var per=(typeof currentPeriod!=='undefined'&&currentPeriod)?currentPeriod:'';
+      enquiries.forEach(function(e){
+        var k=''; try{ k=getMonthKey(e); }catch(_){}
+        if(per && k!==per) return;
+        var c=String(e.counter||'').trim()||'(none)';
+        var g=now[c]||(now[c]={enq:0,won:0}); g.enq++; if(e.stage==='Won') g.won++;
+      });
+      var moved=[];
+      if(prev) Object.keys(now).forEach(function(c){
+        var a2=prev[c]||{enq:0,won:0};
+        if(a2.won!==now[c].won || a2.enq!==now[c].enq)
+          moved.push(c+': '+a2.enq+'/'+a2.won+' \u2192 '+now[c].enq+'/'+now[c].won);
+      });
+      window.__lastPull={at:Date.now(), n:enquiries.length, period:per, cohort:now, moved:moved};
+    }catch(e){}
+    return true;
   } catch(err) { console.warn('[Script] Pull failed:',err); return false; }
 }
 async function loadFromScriptManual() {
@@ -8476,7 +8498,23 @@ document.addEventListener('DOMContentLoaded', initApp);
     var host=document.getElementById('ctr-retail-root'); if(!host) return;
     var B=build(), C=cohort(), p=period(), lbl=monthLabel(p);
 
-    var h='<div class="card" style="margin-bottom:14px;border-left:4px solid #ffb02e">'
+    var LP=window.__lastPull;
+    var h='';
+    if(LP){
+      var mins=Math.round((Date.now()-LP.at)/60000);
+      h+='<div class="card" style="margin-bottom:14px;border-left:4px solid #5b9eff">'
+        +'<h3 style="margin:0">This page mirrors the Google Sheet</h3>'
+        +'<p class="help-text" style="margin-top:6px">The enquiry list is <b>replaced wholesale from the sheet every 5 minutes</b> &mdash; '
+        +'nothing is merged, and nothing you change here survives the next pull. '
+        +'Last replaced <b>'+(mins<1?'less than a minute':mins+' minute'+(mins===1?'':'s'))+' ago</b>, '
+        +LP.n.toLocaleString('en-IN')+' enquiries. '
+        +'If a figure here is wrong, it is wrong in the sheet &mdash; correcting it in the dashboard cannot hold.</p>'
+        + (LP.moved && LP.moved.length
+            ? ('<p class="help-text" style="margin-top:6px;color:#ffb02e"><b>The last pull changed this month:</b> '+esc(LP.moved.join(' &middot; '))+'</p>')
+            : '')
+        +'</div>';
+    }
+    h+='<div class="card" style="margin-bottom:14px;border-left:4px solid #ffb02e">'
       +'<h3 style="margin:0">Two different questions &mdash; read them apart</h3>'
       +'<p class="help-text" style="margin-top:6px">The table above counts <b>enquiries'+(p?(' created in '+esc(lbl)):'')+'</b>, and its '
       +'<b>Won</b> column is how many of those enquiries have since been won. It is a cohort, not retail. '
@@ -9842,7 +9880,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     if(c.sku<0||c.net<0) return null;
     function q(row,i){ if(i<0) return 0; var v=String(row[i]==null?'':row[i]).replace(/[^0-9.\-]/g,'');
       var n=parseFloat(v); return isFinite(n)&&n>0?Math.round(n):0; }
-    var last='', out={net:0,transit:0,dc:0,gd:0,skus:0,byModel:{}};
+    var last='', out={net:0,transit:0,dc:0,gd:0,skus:0,byModel:{},bySku:{}};
     aoa.slice(hi+1).forEach(function(row){
       if(!row) return;
       var sku=String(row[c.sku]==null?'':row[c.sku]).trim().toUpperCase();
@@ -9852,6 +9890,8 @@ document.addEventListener('DOMContentLoaded', initApp);
       out.net+=n; out.transit+=t; out.dc+=d; out.gd+=g; out.skus++;
       var m=out.byModel[mo]||(out.byModel[mo]={show:0,gd:0,dc:0,tr:0});
       m.show+=n-d-g; m.gd+=g; m.dc+=d; m.tr+=t;
+      var k=out.bySku[sku]||(out.bySku[sku]={model:mo,desc:'',net:0,tr:0,dc:0,gd:0});
+      k.net+=n; k.tr+=t; k.dc+=d; k.gd+=g;
     });
     return out.skus? out : null;
   }
@@ -9998,6 +10038,143 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'</div>';
   }
 
+  /* ---------- SKU by SKU: where the VIN register and DMS disagree ----------
+     The totals say the gap is counter-held stock, but a total cannot be worked.
+     This lines the two up SKU by SKU so the 300-odd vehicles become a list. */
+  var RECON=null;
+  function vinParse(aoa){
+    if(!aoa||!aoa.length) return null;
+    var hi=-1;
+    for(var r=0;r<Math.min(aoa.length,15);r++){
+      var row=(aoa[r]||[]).map(function(x){ return String(x==null?'':x).trim().toLowerCase(); });
+      if(row.indexOf('sku')>=0){ hi=r; break; }
+    }
+    if(hi<0) return null;
+    var head=(aoa[hi]||[]).map(function(x){ return String(x==null?'':x).trim().toLowerCase(); });
+    function f(){ for(var i=0;i<arguments.length;i++){ var j=head.indexOf(arguments[i]); if(j>=0) return j; } return -1; }
+    var c={sku:f('sku','sku code'), loc:f('inventory location','location'),
+           desc:f('sku description','description'), model:f('model','model name'),
+           stn:f('stn status','status'), phys:f('vin physical status')};
+    if(c.sku<0) return null;
+    /* the same buckets the DMS tab uses, so the two can be compared at all */
+    function bucket(l){
+      l=String(l||'').toUpperCase();
+      if(/GODW?O?W?N|GODOWN/.test(l)) return 'gd';
+      if(/\bDC\b|FESTIVAL/.test(l)) return 'dc';
+      if(/NETWORK/.test(l)) return 'net';
+      if(/VIDA|PREMIA|HUB/.test(l)) return 'vida';
+      return 'ctr';
+    }
+    var out={total:0,gd:0,dc:0,net:0,vida:0,ctr:0,tr:0,bySku:{}};
+    aoa.slice(hi+1).forEach(function(row){
+      if(!row) return;
+      var sku=String(row[c.sku]==null?'':row[c.sku]).trim().toUpperCase();
+      if(!/^[A-Z0-9]{8,}$/.test(sku)) return;
+      var locRaw=c.loc>=0?row[c.loc]:'';
+      var isTr=/transit/i.test(String(locRaw||''))
+            || (c.stn>=0 && /transit/i.test(String(row[c.stn]||'')))
+            || (c.phys>=0 && /transit/i.test(String(row[c.phys]||'')));
+      var k=out.bySku[sku]||(out.bySku[sku]={model:String(c.model>=0?(row[c.model]||''):'').trim().toUpperCase(),
+        desc:String(c.desc>=0?(row[c.desc]||''):'').trim(), total:0,gd:0,dc:0,net:0,vida:0,ctr:0,tr:0});
+      if(isTr){ k.tr++; out.tr++; return; }
+      var bk=bucket(locRaw);
+      k[bk]++; k.total++; out[bk]++; out.total++;
+    });
+    return out.total? out : null;
+  }
+  function feedRows(name){
+    var U=''; try{ U=(config&&config.script&&config.script.url)||''; }catch(e){}
+    if(!U) return Promise.reject(new Error('No Apps Script URL saved (Settings).'));
+    var rows=[], cols=null;
+    function step(from){
+      return fetch(U+'?feed='+name+'&from='+from+'&t='+Date.now(),{cache:'no-cache',redirect:'follow'})
+        .then(function(r){ return r.json(); })
+        .then(function(j){
+          if(!j||j.ok!==true) throw new Error((j&&j.error)||('The '+name+' feed did not answer.'));
+          if(!cols) cols=j.cols||[]; rows=rows.concat(j.rows||[]);
+          if(j.more && j.rows && j.rows.length) return step(from+j.rows.length);
+          return [cols].concat(rows);
+        });
+    }
+    return step(0);
+  }
+  window.opsRecon=function(){
+    showToast('Lining up the VIN register against DMS...');
+    Promise.all([feedRows('STOCK'), feedRows('STOCK_DMS')]).then(function(res){
+      var V=vinParse(res[0]), D=dmsParse(res[1]);
+      if(!V) throw new Error('Could not read the VIN stock tab.');
+      if(!D) throw new Error('Could not read the stock monitoring tab.');
+      var keys={}; Object.keys(V.bySku).forEach(function(k){ keys[k]=1; });
+      Object.keys(D.bySku).forEach(function(k){ keys[k]=1; });
+      var rows=Object.keys(keys).map(function(k){
+        var v=V.bySku[k]||{total:0,gd:0,dc:0,net:0,vida:0,ctr:0,tr:0,model:'',desc:''};
+        var d=D.bySku[k]||{net:0,tr:0,dc:0,gd:0,model:'',desc:''};
+        return {sku:k, model:v.model||d.model||'', desc:v.desc||'',
+                vin:v.total, ctr:v.ctr, gd:v.gd, dc:v.dc, net:v.net, vida:v.vida, vtr:v.tr,
+                dms:d.net, dtr:d.tr, gap:v.total-d.net};
+      });
+      rows.sort(function(a,b){ return Math.abs(b.gap)-Math.abs(a.gap) || b.vin-a.vin; });
+      RECON={rows:rows, V:V, D:D, at:new Date().toLocaleString('en-IN'), all:false};
+      rerenderActiveOps();
+      showToast('Reconciled '+rows.length+' SKUs.');
+    }).catch(function(e){ showToast(e.message); });
+  };
+  window.opsReconAll=function(){ if(RECON){ RECON.all=!RECON.all; rerenderActiveOps(); } };
+  window.opsReconExport=function(){
+    if(!RECON) return;
+    var head=['SKU','Model','Colour / description','VIN total','at counters','godown','DC','network','VIDA','VIN transit','DMS net stock','DMS transit','Gap (VIN - DMS)'];
+    var body=RECON.rows.map(function(r){ return [r.sku,r.model,r.desc,r.vin,r.ctr,r.gd,r.dc,r.net,r.vida,r.vtr,r.dms,r.dtr,r.gap]; });
+    try{ downloadCsv('stock_vin_vs_dms.csv',head,body); }catch(e){ showToast('Export failed: '+e.message); }
+  };
+  function reconCard(){
+    var h='<div class="card" style="margin-top:14px;border-left:4px solid #5b9eff">'
+      +'<h3 style="margin:0 0 6px">Where the VIN register and DMS disagree &mdash; SKU by SKU</h3>';
+    if(!RECON){
+      h+='<p class="help-text" style="margin:0 0 10px">The totals say the gap is stock standing at the counters, but a total cannot be worked. '
+        +'This lines the two sources up SKU by SKU, biggest difference first, so you can see exactly which vehicles are involved.</p>'
+        +'<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" onclick="opsRecon()">&#128269; Reconcile SKU by SKU</button></div></div>';
+      return h;
+    }
+    var V=RECON.V, D=RECON.D;
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">'
+      +'<button class="btn btn-sm" onclick="opsRecon()">&#128260; Re-run</button>'
+      +'<button class="btn btn-sm" onclick="opsReconExport()">&#11015;&#65039; Export the list</button>'
+      +'<button class="btn btn-sm" onclick="opsReconAll()">'+(RECON.all?'Show the biggest 60':'Show every SKU')+'</button></div>';
+    /* the explanation, in numbers */
+    h+='<div style="overflow-x:auto;margin-bottom:12px"><table class="table"><thead><tr><th>Where the VIN register says it is</th>'
+      +'<th style="text-align:right">Units</th><th>Counted by DMS?</th></tr></thead><tbody>'
+      +'<tr><td>Godown</td><td style="text-align:right">'+V.gd+'</td><td style="color:#2bd47d">yes &mdash; DMS godown '+D.gd+'</td></tr>'
+      +'<tr><td>DC</td><td style="text-align:right">'+V.dc+'</td><td style="color:#2bd47d">yes &mdash; DMS DC '+D.dc+'</td></tr>'
+      +'<tr><td>Standing at the counters</td><td style="text-align:right"><b>'+V.ctr+'</b></td><td style="color:#ff5c5c">no</td></tr>'
+      +'<tr><td>Pushed to the network</td><td style="text-align:right"><b>'+V.net+'</b></td><td style="color:#ff5c5c">no</td></tr>'
+      +'<tr><td>VIDA (dealer 17097)</td><td style="text-align:right"><b>'+V.vida+'</b></td><td style="color:#ff5c5c">no &mdash; different dealer code</td></tr>'
+      +'<tr style="border-top:2px solid var(--line)"><td><b>VIN register total</b></td><td style="text-align:right"><b>'+V.total+'</b></td>'
+      +'<td><b>DMS net stock '+D.net+' &middot; gap '+(V.total-D.net)+'</b></td></tr>'
+      +'</tbody></table></div>';
+    var list=RECON.all?RECON.rows:RECON.rows.slice(0,60);
+    h+='<div style="overflow-x:auto;max-height:520px;overflow-y:auto"><table class="table"><thead><tr>'
+      +'<th>SKU</th><th>Model</th><th style="text-align:right">VIN</th><th style="text-align:right">counters</th>'
+      +'<th style="text-align:right">godown</th><th style="text-align:right">DC</th><th style="text-align:right">network</th>'
+      +'<th style="text-align:right">VIDA</th><th style="text-align:right">DMS</th><th style="text-align:right">Gap</th></tr></thead><tbody>';
+    list.forEach(function(r){
+      var c=r.gap>0?'#ff5c5c':r.gap<0?'#5b9eff':'var(--muted)';
+      h+='<tr><td><b>'+esc(r.sku)+'</b></td><td class="help-text">'+esc(r.model||'')+'</td>'
+        +'<td style="text-align:right"><b>'+r.vin+'</b></td>'
+        +'<td style="text-align:right">'+(r.ctr||'')+'</td><td style="text-align:right">'+(r.gd||'')+'</td>'
+        +'<td style="text-align:right">'+(r.dc||'')+'</td><td style="text-align:right">'+(r.net||'')+'</td>'
+        +'<td style="text-align:right">'+(r.vida||'')+'</td>'
+        +'<td style="text-align:right"><b>'+r.dms+'</b></td>'
+        +'<td style="text-align:right;color:'+c+'"><b>'+(r.gap>0?'+':'')+r.gap+'</b></td></tr>';
+    });
+    h+='</tbody></table></div>'
+      +'<p class="help-text" style="margin-top:8px">Read '+esc(RECON.at)+' &middot; '+RECON.rows.length+' SKUs'
+      +(RECON.all?'':', showing the 60 with the widest difference')+'. '
+      +'<b>Gap</b> is VIN register less DMS. Positive means the register carries vehicles DMS does not count &mdash; '
+      +'nearly always stock already allotted to a counter. Negative means DMS holds stock with no VIN against it, '
+      +'which is worth checking with the sheet owner.</p></div>';
+    return h;
+  }
+
   /* ====================== STOCK VIEW ====================== */
   function renderStock(){
     var root=document.getElementById('ops-stock-root'); if(!root) return;
@@ -10012,6 +10189,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     h+=kpi(f.netStock,'Net (excl. DC)','#2bd47d','less festival-DC stock');
     h+='</div>';
     h+=dmsCard(total,transitTot);
+    h+=reconCard();
 
     // location tiles
     h+='<div class="card" style="margin-top:14px"><h3>Stock by location</h3><div class="grid grid-3" style="gap:10px">';
