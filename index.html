@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v88 &middot; 30 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v89 &middot; 30 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -9029,7 +9029,8 @@ document.addEventListener('DOMContentLoaded', initApp);
     if(ix.stat<0)  ix.stat  = find(/status/i);
     ix.sold  = find(/sold\s*date/i);
     ix.rem   = find(/remark/i);
-    ix.nfu   = find(/next\s*follow/i);
+    ix.nfu   = find(/next\s*(day\s*)?follow/i);
+    ix.fuc   = find(/follow\s*ups?\s*count/i);
     return ix;
   }
 
@@ -9062,6 +9063,13 @@ document.addEventListener('DOMContentLoaded', initApp);
          register's "data through", which would make a stale counter read fresh */
       if(dayOk && iso<=TODAY && iso>last) last=iso;
       var st=stageOf(ix.stat>=0?r[ix.stat]:'');
+      var fuc=0;
+      if(ix.fuc>=0&&r.length>ix.fuc){ var fv=parseInt(String(r[ix.fuc]).replace(/\D/g,''),10); if(fv>0&&fv<200) fuc=fv; }
+      var nfu='';
+      if(ix.nfu>=0&&r.length>ix.nfu){
+        var nw=when([r[ix.nfu]],{month:-1,date:0},cal,fy);
+        if(nw&&!nw.noday) nfu=nw.y+'-'+pad(nw.m)+'-'+pad(nw.d);
+      }
       var fin=String(ix.src1>=0?r[ix.src1]:'').trim();
       out.push({
         id:'R-'+def.feed+'-'+(i+1),
@@ -9077,10 +9085,14 @@ document.addEventListener('DOMContentLoaded', initApp);
         financier:/^(cash|csd)$/i.test(fin)?'':String(ix.src2>=0?(r[ix.src2]||''):'').trim(),
         createdAt:iso,
         lastContactAt:iso,
-        nextFollowUp:'',
+        nextFollowUp:nfu,
         notes:String(ix.rem>=0?(r[ix.rem]||''):'').trim(),
         dropReason:st.why,
-        src:def.feed
+        src:def.feed,
+        /* the two columns the season actually turns on: when this customer is
+           next due a call, and how many calls they have had so far */
+        followUps:fuc,
+        counterSrc:def.feed
       });
     }
     return {rows:out,through:last,skipped:bad,nodate:nodate,cal:cal,ix:ix};
@@ -9756,6 +9768,386 @@ document.addEventListener('DOMContentLoaded', initApp);
   });
 
   window.__RETAILXREF__=function(){ return {retail:RETAIL, reg:fromRegisters()}; };
+})();
+
+</script>
+
+<script>
+/* ===========================================================================
+   FOLLOW-UP TRACKER — the Enquiries page, built for the season       (v89)
+
+   An enquiry register is only worth the follow-ups it produces. Through
+   Navratri and Diwali the constraint is not leads, it is calls: which open
+   enquiry is due today, who has been left alone longest, and which DSE is
+   carrying more than they can work.
+
+   Two things this fixes at the same time:
+
+   1. The DSE names. config.reps still held the six demo names the dashboard
+      shipped with - Priya Shah, Rahul Mehta, Anjali Verma, Vikram Singh,
+      Sneha Iyer, Arjun Kapoor - none of whom exist. Every rep dropdown and the
+      Settings list offered those instead of MUSKAN, RAJENDRA, SHALBH, KANCHAN
+      and the rest. The real names are now taken from the enquiries themselves.
+
+   2. The follow-up view. Open enquiries are bucketed by what they need TODAY,
+      counter by counter and DSE by DSE, and every bucket exports to CSV.
+
+   Buckets, in the order they should be worked:
+      OVERDUE      a next-follow-up date that has passed
+      DUE TODAY    due today
+      NO DATE SET  open, but nobody said when to call back - the silent killer
+      COLD         no contact for 7+ days and no date set
+      DUE SOON     due in the next 3 days
+   =========================================================================== */
+(function(){
+  if (window.__FOLLOWUP__) return;
+
+  var DEMO=['Priya Shah','Rahul Mehta','Anjali Verma','Vikram Singh','Sneha Iyer','Arjun Kapoor'];
+  var OPEN_STAGES=['Open','New','Contacted','Qualified','Test Drive','Negotiation','Booked'];
+
+  var UI={counter:'',dse:'',bucket:'',sort:'priority'};
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function pad(n){ return (n<10?'0':'')+n; }
+  function todayIso(){ var t=new Date(); return t.getFullYear()+'-'+pad(t.getMonth()+1)+'-'+pad(t.getDate()); }
+  function iso(v){
+    var s=String(v==null?'':v).trim(); if(!s) return '';
+    if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+    try{ if(typeof parseDate==='function'){ var d=parseDate(s); if(d) return String(d).slice(0,10); } }catch(e){}
+    return '';
+  }
+  function days(a,b){ if(!a||!b) return null; return Math.round((Date.parse(b)-Date.parse(a))/86400000); }
+
+  /* ---------------------------------------------------------- the real DSEs */
+  function dsesFromData(){
+    var byC={}, all={};
+    (enquiries||[]).forEach(function(e){
+      var r=String(e.rep==null?'':e.rep).trim(); if(!r) return;
+      if(DEMO.indexOf(r)>=0) return;
+      var c=String(e.counter==null?'':e.counter).trim()||'(no counter)';
+      (byC[c]=byC[c]||{})[r]=(byC[c][r]||0)+1;
+      all[r]=(all[r]||0)+1;
+    });
+    return {byC:byC, all:all};
+  }
+  /* The demo names are replaced the moment real ones exist. Left alone, they
+     keep being offered on every new enquiry, and a fictional DSE on a real
+     enquiry is worse than a blank one. */
+  window.fuFixDses=function(silent){
+    var d=dsesFromData(), names=Object.keys(d.all);
+    if(!names.length){ if(!silent) toast('No DSE names in the data yet - sync or adopt the registers first'); return false; }
+    names.sort(function(a,b){ return d.all[b]-d.all[a]; });
+    var had=(config.reps||[]).slice();
+    var removed=had.filter(function(n){ return DEMO.indexOf(n)>=0; });
+    var kept=had.filter(function(n){ return DEMO.indexOf(n)<0 && names.indexOf(n)<0; });
+    config.reps=names.concat(kept);
+    try{ saveDataLocal(); }catch(e){}
+    try{ if(typeof populateSelect==='function') populateSelect('f-rep-in',config.reps,true,'\u2014 Select DSE \u2014'); }catch(e){}
+    if(!silent) toast('DSE list rebuilt from the enquiries: '+names.length+' real names'
+      +(removed.length?(', '+removed.length+' demo names removed'):''));
+    return true;
+  };
+
+  /* --------------------------------------------------------------- bucketing */
+  function open_(e){ return OPEN_STAGES.indexOf(e.stage)>=0; }
+  function bucketOf(e,T){
+    var nfu=iso(e.nextFollowUp), lc=iso(e.lastContactAt)||iso(e.createdAt);
+    if(nfu){
+      if(nfu<T) return 'overdue';
+      if(nfu===T) return 'today';
+      var dd=days(T,nfu);
+      if(dd!=null&&dd<=3) return 'soon';
+      return 'later';
+    }
+    var quiet=lc?days(lc,T):null;
+    if(quiet!=null&&quiet>=7) return 'cold';
+    return 'nodate';
+  }
+  var BUCKETS=[
+    {k:'overdue',label:'Overdue',  colour:'#ff5c5c', why:'the follow-up date has passed'},
+    {k:'today',  label:'Due today',colour:'#ffb02e', why:'due today'},
+    {k:'nodate', label:'No date set',colour:'#a05bff',why:'open with no next-follow-up date at all'},
+    {k:'cold',   label:'Cold 7d+', colour:'#ff8a5c', why:'no contact for a week and no date set'},
+    {k:'soon',   label:'Due in 3d',colour:'#5b9eff', why:'due within three days'},
+    {k:'later',  label:'Scheduled',colour:'var(--muted)',why:'has a date further out'}
+  ];
+  function bmeta(k){ for(var i=0;i<BUCKETS.length;i++) if(BUCKETS[i].k===k) return BUCKETS[i]; return BUCKETS[5]; }
+
+  /* Priority is explainable on purpose - a number nobody can argue with is a
+     number nobody acts on. Intent first, then how late the call is. */
+  var STAGEW={'Booked':100,'Negotiation':80,'Test Drive':70,'Qualified':55,'Contacted':40,'New':30,'Open':30};
+  function score(e,T){
+    var s=STAGEW[e.stage]||25;
+    var nfu=iso(e.nextFollowUp);
+    if(nfu&&nfu<T){ var late=days(nfu,T)||0; s+=Math.min(60,late*3); }
+    if(!nfu) s+=15;
+    if(!(+e.followUps>0)) s+=20;
+    var lc=iso(e.lastContactAt)||iso(e.createdAt);
+    var quiet=lc?days(lc,T):null;
+    if(quiet!=null) s+=Math.min(30,Math.max(0,quiet));
+    return Math.round(s);
+  }
+
+  function rows(){
+    var T=todayIso();
+    var out=[];
+    (enquiries||[]).forEach(function(e){
+      if(!open_(e)) return;
+      var b=bucketOf(e,T);
+      var lc=iso(e.lastContactAt)||iso(e.createdAt);
+      out.push({e:e, b:b, score:score(e,T),
+        quiet:lc?days(lc,T):null,
+        age:iso(e.createdAt)?days(iso(e.createdAt),T):null,
+        nfu:iso(e.nextFollowUp),
+        fu:(+e.followUps||0)});
+    });
+    return out;
+  }
+  function filtered(R){
+    return R.filter(function(r){
+      if(UI.counter&&r.e.counter!==UI.counter) return false;
+      if(UI.dse&&String(r.e.rep||'')!==UI.dse) return false;
+      if(UI.bucket&&r.b!==UI.bucket) return false;
+      return true;
+    });
+  }
+
+  /* ----------------------------------------------------------------- export */
+  function csv(list,name){
+    function c(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }
+    var head=['Counter','DSE','Customer','Mobile','Model','Stage','Bucket','Next follow-up',
+              'Days overdue','Last contact','Days quiet','Enquiry age (days)','Follow-ups so far',
+              'Finance','Source','Priority','Remark'];
+    var T=todayIso();
+    var lines=[head.map(c).join(',')];
+    list.slice().sort(function(a,b){ return b.score-a.score; }).forEach(function(r){
+      var e=r.e, over=(r.nfu&&r.nfu<T)?days(r.nfu,T):'';
+      lines.push([e.counter,e.rep,e.customer,e.phone,e.model,e.stage,bmeta(r.b).label,r.nfu,
+        over,iso(e.lastContactAt),r.quiet,r.age,r.fu,e.financeRequired,e.source,r.score,e.notes]
+        .map(c).join(','));
+    });
+    var blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8;'});
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=name;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    toast('Exported '+list.length+' enquiries');
+  }
+  function slug(s){ return String(s||'all').replace(/[^A-Za-z0-9]+/g,'_').replace(/^_|_$/g,''); }
+  window.fuExport=function(which){
+    var R=rows(), T=todayIso();
+    if(which==='view') return csv(filtered(R),'followup_'+slug(UI.counter||'all_counters')
+      +(UI.dse?('_'+slug(UI.dse)):'')+(UI.bucket?('_'+UI.bucket):'')+'_'+T+'.csv');
+    if(which==='all') return csv(R,'followup_all_counters_'+T+'.csv');
+    /* counter-wise: one file per counter, fired in sequence */
+    var by={}; R.forEach(function(r){ (by[r.e.counter||'(none)']=by[r.e.counter||'(none)']||[]).push(r); });
+    var ks=Object.keys(by);
+    if(!ks.length){ toast('Nothing to export'); return; }
+    ks.forEach(function(k,i){ setTimeout(function(){ csv(by[k],'followup_'+slug(k)+'_'+T+'.csv'); }, i*400); });
+  };
+  window.fuExportCounter=function(c){
+    var R=rows().filter(function(r){ return r.e.counter===c; });
+    csv(R,'followup_'+slug(c)+'_'+todayIso()+'.csv');
+  };
+
+  function toast(m){ try{ if(typeof showToast==='function') showToast(m); }catch(e){} }
+
+  /* ----------------------------------------------------------------- render */
+  window.fuSet=function(k,v){ UI[k]=(UI[k]===v?'':v); if(k==='counter') UI.dse=''; render(); };
+  window.fuSort=function(v){ UI.sort=v; render(); };
+  window.fuClear=function(){ UI.counter=''; UI.dse=''; UI.bucket=''; render(); };
+
+  function html(){
+    var R=rows(), T=todayIso();
+    var demoLeft=(config.reps||[]).filter(function(n){ return DEMO.indexOf(n)>=0; });
+
+    var h='<div class="card" style="margin-top:14px"><div class="card-header"><div>'
+      +'<h3 class="card-title">Follow-up tracker</h3>'
+      +'<p class="help-text" style="margin:2px 0 0">Every open enquiry, sorted by what it needs today. '
+      +R.length+' open across all counters.</p></div></div>';
+
+    if(demoLeft.length){
+      h+='<div style="margin:0 0 12px;padding:10px 12px;border-left:3px solid #ffb02e;'
+        +'background:rgba(255,176,46,.10);border-radius:6px">'
+        +'<b style="color:#ffb02e">The DSE list still holds '+demoLeft.length+' names that do not exist.</b><br>'
+        +esc(demoLeft.join(', '))+' shipped as demo data and are still offered on every new enquiry. '
+        +'<button class="btn" style="margin-top:6px" onclick="fuFixDses()">Rebuild the DSE list from the enquiries</button></div>';
+    }
+
+    /* tiles */
+    var cnt={}; BUCKETS.forEach(function(b){ cnt[b.k]=0; });
+    R.forEach(function(r){ cnt[r.b]=(cnt[r.b]||0)+1; });
+    var neverFU=R.filter(function(r){ return !r.fu; }).length;
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">';
+    BUCKETS.forEach(function(b){
+      if(b.k==='later'&&!cnt[b.k]) return;
+      var on=UI.bucket===b.k;
+      h+='<div onclick="fuSet(\'bucket\',\''+b.k+'\')" title="'+esc(b.why)+'" '
+        +'style="cursor:pointer;flex:1 1 130px;min-width:130px;padding:10px 12px;border-radius:8px;'
+        +'border:1px solid '+(on?b.colour:'var(--line)')+';background:'+(on?'rgba(255,255,255,.06)':'transparent')+'">'
+        +'<div style="font-size:22px;font-weight:700;color:'+b.colour+'">'+(cnt[b.k]||0)+'</div>'
+        +'<div style="font-size:12px;opacity:.75">'+b.label+'</div></div>';
+    });
+    h+='<div style="flex:1 1 130px;min-width:130px;padding:10px 12px;border-radius:8px;border:1px dashed var(--line)">'
+      +'<div style="font-size:22px;font-weight:700">'+neverFU+'</div>'
+      +'<div style="font-size:12px;opacity:.75">never followed up</div></div>';
+    h+='</div>';
+
+    /* The finding that matters more than any single bucket: almost nobody is
+       being given a date to be called back on. An enquiry with no next date
+       does not resurface by itself - it just goes quiet and is counted as a
+       lost sale three months later. */
+    var dated=R.filter(function(r){ return r.nfu; }).length;
+    var old90=R.filter(function(r){ return r.age!=null&&r.age>90; }).length;
+    if(R.length){
+      h+='<div style="margin:0 0 12px;padding:10px 12px;border-left:3px solid '
+        +(dated/R.length<0.25?'#ff5c5c':'#5b9eff')+';background:rgba(91,158,255,.08);border-radius:6px">'
+        +'<b>Only '+dated+' of '+R.length+' open enquiries carry a next-follow-up date</b> ('
+        +Math.round(dated/R.length*100)+'%). The other '+(R.length-dated)+' will not resurface on their own '
+        +'— nothing in any sheet or on this page will raise them again on a given day, so they go quiet and '
+        +'get counted as lost three months later. Filling that one column is the highest-return thing the '
+        +'counters can do before the season.'
+        +(old90?('<br><span class="help-text">Separately, <b>'+old90+'</b> enquiries are still marked open after '
+          +'90 days. Most are dead and should be closed — while they sit open they drag every conversion '
+          +'rate on the dashboard down.</span>'):'')
+        +'</div>';
+    }
+
+    /* counter x bucket */
+    var cs={}; R.forEach(function(r){ var c=r.e.counter||'(none)'; (cs[c]=cs[c]||{n:0})[r.b]=(cs[c][r.b]||0)+1; cs[c].n++; });
+    var ck=Object.keys(cs).sort(function(a,b){ return (cs[b].overdue||0)-(cs[a].overdue||0)||cs[b].n-cs[a].n; });
+    h+='<div style="overflow-x:auto"><table class="table"><thead><tr><th>Counter</th><th>Open</th>'
+      +BUCKETS.map(function(b){ return '<th style="color:'+b.colour+'">'+b.label+'</th>'; }).join('')
+      +'<th>Export</th></tr></thead><tbody>';
+    ck.forEach(function(c){
+      var on=UI.counter===c;
+      h+='<tr'+(on?' style="background:rgba(91,158,255,.10)"':'')+'>'
+        +'<td><b style="cursor:pointer;border-bottom:1px dashed currentColor" onclick="fuSet(\'counter\',\''+esc(c).replace(/'/g,"\\'")+'\')">'+esc(c)+'</b></td>'
+        +'<td><b>'+cs[c].n+'</b></td>'
+        +BUCKETS.map(function(b){
+            var v=cs[c][b.k]||0;
+            return '<td style="color:'+(v?b.colour:'var(--muted)')+'">'+v+'</td>'; }).join('')
+        +'<td><button class="btn" style="padding:2px 8px;font-size:12px" '
+        +'onclick="fuExportCounter(\''+esc(c).replace(/'/g,"\\'")+'\')">CSV</button></td></tr>';
+    });
+    h+='</tbody></table></div>';
+
+    /* DSE workload for the chosen counter (or everyone) */
+    var scope=R.filter(function(r){ return !UI.counter||r.e.counter===UI.counter; });
+    var ds={};
+    scope.forEach(function(r){
+      var d=String(r.e.rep||'(unassigned)');
+      var o=ds[d]=ds[d]||{n:0,overdue:0,nodate:0,never:0,oldest:0,fu:0};
+      o.n++;
+      if(r.b==='overdue') o.overdue++;
+      if(r.b==='nodate') o.nodate++;
+      if(!r.fu) o.never++;
+      o.fu+=r.fu;
+      if(r.age!=null&&r.age>o.oldest) o.oldest=r.age;
+    });
+    var dk=Object.keys(ds).sort(function(a,b){ return ds[b].overdue-ds[a].overdue||ds[b].n-ds[a].n; });
+    if(dk.length){
+      h+='<h4 style="margin:16px 0 6px;font-size:14px">DSE workload'
+        +(UI.counter?(' \u2014 '+esc(UI.counter)):' \u2014 all counters')+'</h4>';
+      h+='<div style="overflow-x:auto"><table class="table"><thead><tr><th>DSE</th><th>Open</th>'
+        +'<th style="color:#ff5c5c">Overdue</th><th style="color:#a05bff">No date</th>'
+        +'<th>Never called</th><th>Avg follow-ups</th><th>Oldest open</th></tr></thead><tbody>';
+      dk.forEach(function(d){
+        var o=ds[d], on=UI.dse===d;
+        h+='<tr'+(on?' style="background:rgba(91,158,255,.10)"':'')+'>'
+          +'<td><b style="cursor:pointer;border-bottom:1px dashed currentColor" onclick="fuSet(\'dse\',\''+esc(d).replace(/'/g,"\\'")+'\')">'+esc(d)+'</b></td>'
+          +'<td><b>'+o.n+'</b></td>'
+          +'<td style="color:'+(o.overdue?'#ff5c5c':'var(--muted)')+'">'+o.overdue+'</td>'
+          +'<td style="color:'+(o.nodate?'#a05bff':'var(--muted)')+'">'+o.nodate+'</td>'
+          +'<td style="color:'+(o.never?'#ffb02e':'var(--muted)')+'">'+o.never+'</td>'
+          +'<td>'+(o.n?(o.fu/o.n).toFixed(1):'0')+'</td>'
+          +'<td'+(o.oldest>45?' style="color:#ff5c5c"':'')+'>'+(o.oldest||'\u2014')+(o.oldest?'d':'')+'</td></tr>';
+      });
+      h+='</tbody></table></div>';
+    }
+
+    /* the working list */
+    var L=filtered(R);
+    L.sort(function(a,b){
+      if(UI.sort==='age') return (b.age||0)-(a.age||0);
+      if(UI.sort==='quiet') return (b.quiet||0)-(a.quiet||0);
+      return b.score-a.score;
+    });
+    var chips=[];
+    if(UI.counter) chips.push(esc(UI.counter));
+    if(UI.dse) chips.push(esc(UI.dse));
+    if(UI.bucket) chips.push(bmeta(UI.bucket).label);
+    h+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:16px 0 6px">'
+      +'<h4 style="margin:0;font-size:14px">Call list \u2014 '+L.length+(chips.length?(' \u2022 '+chips.join(' \u2022 ')):'')+'</h4>'
+      +'<select class="filter-select" onchange="fuSort(this.value)">'
+      +'<option value="priority"'+(UI.sort==='priority'?' selected':'')+'>Sort: priority</option>'
+      +'<option value="quiet"'+(UI.sort==='quiet'?' selected':'')+'>Sort: longest silent</option>'
+      +'<option value="age"'+(UI.sort==='age'?' selected':'')+'>Sort: oldest enquiry</option></select>'
+      +(chips.length?'<button class="btn" style="padding:2px 10px;font-size:12px" onclick="fuClear()">Clear filters</button>':'')
+      +'<button class="btn btn-primary" style="padding:2px 10px;font-size:12px" onclick="fuExport(\'view\')">Export this list</button>'
+      +'<button class="btn" style="padding:2px 10px;font-size:12px" onclick="fuExport(\'counterwise\')">Export counter-wise</button>'
+      +'<button class="btn" style="padding:2px 10px;font-size:12px" onclick="fuExport(\'all\')">Export everything</button>'
+      +'</div>';
+
+    h+='<div style="overflow-x:auto"><table class="table"><thead><tr>'
+      +'<th>!</th><th>Customer</th><th>Mobile</th><th>Counter</th><th>DSE</th><th>Model</th><th>Stage</th>'
+      +'<th>Next FU</th><th>Silent</th><th>Age</th><th>FUs</th><th>Remark</th></tr></thead><tbody>';
+    L.slice(0,300).forEach(function(r){
+      var e=r.e, b=bmeta(r.b);
+      var over=(r.nfu&&r.nfu<T)?days(r.nfu,T):null;
+      h+='<tr>'
+        +'<td><span title="'+esc(b.label+' \u2014 '+b.why+' \u2022 priority '+r.score)+'" '
+          +'style="display:inline-block;width:9px;height:9px;border-radius:50%;background:'+b.colour+'"></span></td>'
+        +'<td><b>'+esc(e.customer||'')+'</b></td>'
+        +'<td>'+(e.phone?('<a href="tel:'+esc(e.phone)+'" style="color:var(--accent)">'+esc(e.phone)+'</a>'):'<span style="color:var(--muted)">no number</span>')+'</td>'
+        +'<td>'+esc(e.counter||'')+'</td><td>'+esc(e.rep||'<span style="color:var(--muted)">unassigned</span>')+'</td>'
+        +'<td>'+esc(e.model||'')+'</td><td>'+esc(e.stage||'')+'</td>'
+        +'<td'+(over?' style="color:#ff5c5c"':'')+'>'+(r.nfu?(r.nfu.slice(8)+'/'+r.nfu.slice(5,7)+(over?(' <b>+'+over+'d</b>'):'')):'<span style="color:#a05bff">none set</span>')+'</td>'
+        +'<td'+(r.quiet!=null&&r.quiet>=7?' style="color:#ff8a5c"':'')+'>'+(r.quiet!=null?(r.quiet+'d'):'\u2014')+'</td>'
+        +'<td>'+(r.age!=null?(r.age+'d'):'\u2014')+'</td>'
+        +'<td'+(!r.fu?' style="color:#ffb02e"':'')+'>'+r.fu+'</td>'
+        +'<td style="max-width:260px;color:var(--muted);font-size:12px">'+esc(String(e.notes||'').slice(0,90))+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+    if(L.length>300) h+='<p class="help-text">Showing the top 300 by '+UI.sort+' \u2014 export for the rest.</p>';
+    h+='<p class="help-text" style="margin-top:8px"><b>Priority</b> = stage intent (Booked 100 down to Open 30) '
+      +'+ 3 per day overdue + 20 if never followed up + 1 per day of silence. Hover the dot on any row to see its score. '
+      +'<b>No date set</b> is the bucket worth watching: those enquiries are not lost yet, but nobody has said when to '
+      +'call back, so nothing will make them surface again.<br>'
+      +'This page ignores the month selector on purpose — an enquiry taken in August still needs a call in '
+      +'October, and hiding it because the month changed is how it gets lost.</p>';
+    return h+'</div>';
+  }
+
+  function ensure(){
+    var view=document.getElementById('view-enquiries'); if(!view) return false;
+    var d=document.getElementById('followup-root');
+    if(!d){ d=document.createElement('div'); d.id='followup-root'; }
+    if(d.parentNode!==view) view.insertBefore(d,view.firstChild);
+    return true;
+  }
+  function render(){ var d=document.getElementById('followup-root'); if(d) d.innerHTML=html(); }
+
+  var prev=window.setView;
+  window.setView=function(n){
+    var r; try{ r=prev.apply(this,arguments); }catch(e){ try{ console.warn('[followup]',e); }catch(_){} }
+    if(n==='enquiries'){ setTimeout(function(){ try{ if(ensure()) render(); }catch(e){} },90); }
+    return r;
+  };
+  document.addEventListener('DOMContentLoaded',function(){
+    setTimeout(function(){
+      /* swap the fictional names out quietly as soon as real ones exist */
+      try{
+        var demo=(config.reps||[]).filter(function(n){ return DEMO.indexOf(n)>=0; });
+        if(demo.length) window.fuFixDses(true);
+      }catch(e){}
+      try{ var a=document.querySelector('.nav-item.active');
+        if(a&&a.dataset.view==='enquiries'&&ensure()) render(); }catch(e){}
+    },1700);
+  });
+
+  window.__FOLLOWUP__=function(){ return {rows:rows(), ui:UI}; };
 })();
 
 </script>
