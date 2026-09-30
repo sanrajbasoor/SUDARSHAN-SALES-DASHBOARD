@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v89 &middot; 30 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v91 &middot; 30 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -10148,6 +10148,412 @@ document.addEventListener('DOMContentLoaded', initApp);
   });
 
   window.__FOLLOWUP__=function(){ return {rows:rows(), ui:UI}; };
+})();
+
+</script>
+
+<script>
+/* ===========================================================================
+   AIRTEL IQ — PROSPECTS BY COUNTER                                   (v90)
+
+   Every counter has its own Airtel number, and Airtel records which number a
+   call was connected to. That is the counter attribution: it is in the call
+   data already, it had just never been joined to the enquiry register.
+
+   Doing the join answers the question that matters before a season - not
+   "how many calls did we get" but "who called us and was never written down".
+
+   Attribution, from the Destination_Name Airtel puts on the agent leg:
+       9111100344 / 6264912884  Napier town        -> Napier Town
+       9770501700               Damoh Naka         -> DN
+       9111100352               MADAN MAHAL        -> MML (ICE)
+       9232619096 / 9111100342  adhartaal          -> Adhartal
+       6264912886               VIDA HUB           -> VIDA Hub
+       9111000158               DRISHTI            -> service, excluded
+
+   A call with no connected number at all is one the CUSTOMER hung up before
+   anyone answered - 1,084 of them show HangUpCause "Caller". Those people
+   cannot be attributed to a counter, so they are pooled separately rather
+   than blamed on whichever counter happened to be next in the rotation.
+   =========================================================================== */
+(function(){
+  if (window.__IQPROSPECT__) return;
+
+  /* the IQ page's own counter names -> the names this dashboard uses */
+  var MAP={'Damoh Naka':'DN','Madan Mahal':'MML (ICE)','Napier Town':'Napier Town',
+           'Adhartal':'Adhartal','VIDA Hub':'VIDA Hub','Premia':'Premia'};
+  var UI={counter:'',only:'new30'};   // new30 | new | all | nothru
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function pad(n){ return (n<10?'0':'')+n; }
+  function ten(v){ var d=String(v==null?'':v).replace(/\D/g,''); return d.length>=10?d.slice(-10):''; }
+  function toast(m){ try{ if(typeof showToast==='function') showToast(m); }catch(e){} }
+
+  function seed(){ try{ return window.IQ_SEED||null; }catch(e){ return null; } }
+
+  /* one row per customer number, with the counter they actually reached */
+  var _cache=null, _cacheAt=0;
+  function build(){
+    if(_cache && Date.now()-_cacheAt<20000) return _cache;
+    var S=seed(); if(!S||!S.rows) return null;
+    var ep=Date.parse(S.epoch+'T00:00:00Z');
+    var per={};
+    for(var i=0;i<S.rows.length;i++){
+      var r=S.rows[i], ci=r[4];
+      if(ci<0) continue;
+      var mob=S.custs[ci]; if(!mob) continue;
+      var a=(r[3]>=0)?S.agents[r[3]]:null;
+      var raw=a&&a[2]?a[2]:'';
+      if(raw==='Service') continue;                 /* service line, excluded */
+      var ctr=MAP[raw]||'';
+      var p=per[mob]||(per[mob]={n:0,ans:0,miss:0,drop:0,sec:0,first:1e9,last:-1,c:{},
+                                  inFirst:null, outAfter:null, tries:0, inAns:0, outAns:0});
+      p.n++;
+      if(r[5]===0){ p.ans++; if(r[2]===0) p.inAns++; else p.outAns++; }
+      else if(r[5]===1) p.miss++; else p.drop++;
+      p.sec+=(r[6]||0);
+      if(r[0]<p.first) p.first=r[0];
+      if(r[0]>p.last)  p.last=r[0];
+      if(ctr) p.c[ctr]=(p.c[ctr]||0)+1;
+      /* the two timestamps the whole speed-to-lead measure rests on: when this
+         person first rang us, and when we first rang them back */
+      var t=r[0]*1440+(r[1]||0);
+      if(r[2]===0){ p.tries++; if(p.inFirst==null||t<p.inFirst) p.inFirst=t; }
+      else { if(p.outAfter==null||t<p.outAfter) p.outAfter=t; }
+    }
+    /* who is already written down, and where */
+    var known={};
+    (enquiries||[]).forEach(function(e){
+      var t=ten(e.phone); if(!t) return;
+      var cur=known[t];
+      if(!cur||String(e.createdAt||'')>String(cur.createdAt||'')) known[t]=e;
+    });
+    var T=new Date(), todayD=Math.round((Date.parse(T.getFullYear()+'-'+pad(T.getMonth()+1)+'-'+pad(T.getDate())+'T00:00:00Z')-ep)/86400000);
+    var out=[];
+    Object.keys(per).forEach(function(m){
+      var p=per[m], best='', bn=0;
+      Object.keys(p.c).forEach(function(k){ if(p.c[k]>bn){ bn=p.c[k]; best=k; } });
+      var e=known[m]||null;
+      /* minutes from their first call to our first call back - only counted
+         when the callback actually came after the call, never before */
+      var back=null;
+      if(p.inFirst!=null){
+        var cands=(p.outAfter!=null&&p.outAfter>=p.inFirst)?p.outAfter:null;
+        if(cands!=null) back=cands-p.inFirst;
+      }
+      var sold=!!(e&&e.stage==='Won');
+      out.push({mob:m, counter:best, calls:p.n, ans:p.ans, miss:p.miss, drop:p.drop,
+        sec:p.sec, first:iso(ep,p.first), last:iso(ep,p.last), tries:p.tries,
+        /* "connected" means WE picked up when THEY rang. An outbound call that
+           connected is recovery, not an answered call, and counting it as one
+           flattered the answer rate from 35% to 63%. */
+        conn:p.inAns>0, rang:p.tries>0, outAns:p.outAns,
+        back:back, quiet:todayD-p.last, inReg:!!e, sold:sold, e:e});
+    });
+    _cache=out; _cacheAt=Date.now();
+    return out;
+  }
+  function iso(ep,d){ if(d<0||d>1e8) return ''; var t=new Date(ep+d*86400000);
+    return t.getUTCFullYear()+'-'+pad(t.getUTCMonth()+1)+'-'+pad(t.getUTCDate()); }
+  function hm(s){ if(!s) return '0m'; var m=Math.round(s/60); return m<60?(m+'m'):(Math.floor(m/60)+'h'+pad(m%60)); }
+
+  function view(){
+    var L=build(); if(!L) return [];
+    return L.filter(function(r){
+      if(UI.counter==='(unassigned)'){ if(r.counter) return false; }
+      else if(UI.counter && r.counter!==UI.counter) return false;
+      if(UI.only==='new' && r.inReg) return false;
+      if(UI.only==='new30' && (r.inReg || r.quiet>30)) return false;
+      if(UI.only==='nothru' && r.ans>0) return false;
+      return true;
+    }).sort(function(a,b){ return (b.calls-a.calls)||(a.quiet-b.quiet); });
+  }
+
+  /* ----------------------------------------------------------------- export */
+  function csv(list,name){
+    function c(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }
+    var head=['Mobile','Counter (number they reached)','Calls','Answered','Missed',
+              'Dropped by customer','Talk time','First call','Last call','Days since last call',
+              'Already in register','Register counter','Register DSE','Register stage'];
+    var lines=[head.map(c).join(',')];
+    list.forEach(function(r){
+      lines.push([r.mob, r.counter||'(nobody picked up)', r.calls, r.ans, r.miss, r.drop, hm(r.sec),
+        r.first, r.last, r.quiet, r.inReg?'Yes':'NO - not written down',
+        r.e?r.e.counter:'', r.e?r.e.rep:'', r.e?r.e.stage:''].map(c).join(','));
+    });
+    var blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8;'});
+    var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    toast('Exported '+list.length+' callers');
+  }
+  function slug(s){ return String(s||'all').replace(/[^A-Za-z0-9]+/g,'_').replace(/^_|_$/g,''); }
+  function stamp(){ var t=new Date(); return t.getFullYear()+'-'+pad(t.getMonth()+1)+'-'+pad(t.getDate()); }
+
+  window.iqpExport=function(which){
+    var L=build(); if(!L){ toast('Airtel IQ data is not loaded'); return; }
+    if(which==='view') return csv(view(),'iq_prospects_'+slug(UI.counter||'all')+'_'+UI.only+'_'+stamp()+'.csv');
+    /* counter-wise: one file each, only the callers nobody has written down */
+    var by={};
+    L.forEach(function(r){ if(r.inReg) return; (by[r.counter||'(unassigned)']=by[r.counter||'(unassigned)']||[]).push(r); });
+    var ks=Object.keys(by);
+    if(!ks.length){ toast('Nothing to export'); return; }
+    ks.forEach(function(k,i){ setTimeout(function(){ csv(by[k],'iq_prospects_'+slug(k)+'_'+stamp()+'.csv'); }, i*400); });
+  };
+  window.iqpExportCounter=function(c){
+    var L=build()||[];
+    var list=L.filter(function(r){ return (c==='(unassigned)'?!r.counter:r.counter===c) && !r.inReg; })
+              .sort(function(a,b){ return (b.calls-a.calls)||(a.quiet-b.quiet); });
+    csv(list,'iq_prospects_'+slug(c)+'_'+stamp()+'.csv');
+  };
+  window.iqpSet=function(k,v){ UI[k]=(k==='counter'&&UI[k]===v)?'':v; render(); };
+
+
+  /* ------------------------------------------------------------------ funnel
+     A call is not an enquiry and an enquiry is not a sale. The chain that
+     actually governs how many bikes a phone number produces is:
+
+        offered -> connected -> captured in the register -> sold
+
+     Multiply the three rates and you get the yield per caller. Each stage is
+     someone's job, and each one is fixable on its own:
+
+        answer rate   staffing and rotation on the counter line
+        recovery      calling back the people who did not get through
+        capture rate  writing the caller into the register at all
+        conversion    what the DSE does with it afterwards
+     ------------------------------------------------------------------------ */
+  function pct(a,b){ return b?Math.round(a/b*100):0; }
+  function mins(m){
+    if(m==null) return '—';
+    if(m<60) return m+'m';
+    if(m<1440) return (m/60).toFixed(1)+'h';
+    return Math.round(m/1440)+'d';
+  }
+  function median(a){ if(!a.length) return null; var s=a.slice().sort(function(x,y){return x-y;}); return s[Math.floor(s.length/2)]; }
+
+  function funnel(L){
+    var F={};
+    L.forEach(function(r){
+      var k=r.counter||'(unassigned)';
+      var f=F[k]=F[k]||{lead:0,rang:0,conn:0,nc:0,rec:0,cap:0,sold:0,back:[],hot:0};
+      f.lead++;
+      if(r.conn) f.conn++;
+      else if(r.rang){ f.nc++; if(r.back!=null) f.rec++; }
+      if(r.inReg) f.cap++;
+      if(r.sold) f.sold++;
+      if(r.back!=null) f.back.push(r.back);
+      if(!r.conn && r.tries>=3) f.hot++;
+      if(r.rang) f.rang++;
+    });
+    var T={lead:0,rang:0,conn:0,nc:0,rec:0,cap:0,sold:0,back:[],hot:0};
+    Object.keys(F).forEach(function(k){
+      ['lead','rang','conn','nc','rec','cap','sold','hot'].forEach(function(f){ T[f]+=F[k][f]; });
+      T.back=T.back.concat(F[k].back);
+    });
+
+    var h='<h4 style="margin:16px 0 6px;font-size:14px">Call-to-sale funnel</h4>';
+    h+='<div style="overflow-x:auto"><table class="table"><thead><tr>'
+      +'<th>Counter line</th><th>Callers</th><th>Rang us</th><th>We answered</th><th>Answer rate</th>'
+      +'<th>Never got through</th><th>Called back</th><th>Median callback</th>'
+      +'<th>In register</th><th>Capture rate</th><th>Sold</th><th>Yield</th>'
+      +'</tr></thead><tbody>';
+    var ks=Object.keys(F).sort(function(a,b){ return F[b].lead-F[a].lead; });
+    function rate(v,good,ok){ return v>=good?'var(--ok)':(v>=ok?'#ffb02e':'#ff5c5c'); }
+    ks.forEach(function(k){
+      var f=F[k], ar=pct(f.conn,f.rang), cr=pct(f.cap,f.lead), rr=pct(f.rec,f.nc), y=pct(f.sold,f.lead);
+      h+='<tr><td><b>'+esc(k)+'</b></td>'
+        +'<td><b>'+f.lead+'</b></td><td>'+f.rang+'</td><td>'+f.conn+'</td>'
+        +'<td style="color:'+rate(ar,70,50)+'"><b>'+ar+'%</b></td>'
+        +'<td style="color:'+(f.nc?'#ff8a5c':'var(--muted)')+'">'+f.nc+'</td>'
+        +'<td style="color:'+rate(rr,50,20)+'">'+f.rec+' ('+rr+'%)</td>'
+        +'<td>'+mins(median(f.back))+'</td>'
+        +'<td>'+f.cap+'</td>'
+        +'<td style="color:'+rate(cr,50,25)+'"><b>'+cr+'%</b></td>'
+        +'<td style="color:var(--ok)">'+f.sold+'</td>'
+        +'<td><b>'+y+'%</b></td></tr>';
+    });
+    var ar=pct(T.conn,T.rang), cr=pct(T.cap,T.lead), rr=pct(T.rec,T.nc), y=pct(T.sold,T.lead);
+    h+='<tr style="border-top:2px solid var(--line)"><td><b>All lines</b></td>'
+      +'<td><b>'+T.lead+'</b></td><td>'+T.rang+'</td><td>'+T.conn+'</td><td><b>'+ar+'%</b></td>'
+      +'<td>'+T.nc+'</td><td>'+T.rec+' ('+rr+'%)</td><td>'+mins(median(T.back))+'</td>'
+      +'<td>'+T.cap+'</td><td><b>'+cr+'%</b></td><td>'+T.sold+'</td><td><b>'+y+'%</b></td></tr>';
+    h+='</tbody></table></div>';
+
+    /* what the leak is worth, in bikes, using this dealership's own rates */
+    var lost=T.nc-T.rec;
+    var units=Math.round(lost*(T.cap/(T.lead||1))*(T.sold/(T.cap||1)));
+    h+='<div style="margin-top:10px;padding:10px 12px;border-left:3px solid #ff5c5c;'
+      +'background:rgba(255,92,92,.10);border-radius:6px">'
+      +'<b style="color:#ff5c5c">'+lost+' people rang a counter, never got through, and were never called back.</b><br>'
+      +'At this dealership’s own capture rate ('+cr+'%) and its own conversion on captured leads ('
+      +pct(T.sold,T.cap)+'%), that pool is worth roughly <b>'+units+' bikes</b>. '
+      +'It needs no advertising spend and no new leads — the customers already called.'
+      +(T.hot?('<br><span class="help-text"><b>'+T.hot+'</b> of them tried <b>three or more times</b> and still '
+        +'never reached anybody. Those are the hottest and the angriest; work them first.</span>'):'')
+      +'</div>';
+
+    /* speed to lead - the lever nobody measures */
+    var B=[{k:'<15m',t:15},{k:'<1h',t:60},{k:'same day',t:1440},{k:'next day',t:2880},{k:'later',t:1e9}];
+    var cnt=B.map(function(){ return 0; }), never=0;
+    L.forEach(function(r){
+      if(r.conn) return;
+      if(r.back==null){ never++; return; }
+      for(var i=0;i<B.length;i++){ if(r.back<=B[i].t){ cnt[i]++; return; } }
+    });
+    h+='<h4 style="margin:16px 0 6px;font-size:14px">Speed to lead — how fast a missed caller is rung back</h4>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap">';
+    B.forEach(function(b,i){
+      h+='<div style="flex:1 1 110px;min-width:110px;padding:8px 10px;border-radius:8px;border:1px solid var(--line)">'
+        +'<div style="font-size:20px;font-weight:700;color:'+(i<2?'var(--ok)':(i<4?'#ffb02e':'#ff8a5c'))+'">'+cnt[i]+'</div>'
+        +'<div style="font-size:12px;opacity:.75">'+b.k+'</div></div>';
+    });
+    h+='<div style="flex:1 1 110px;min-width:110px;padding:8px 10px;border-radius:8px;border:1px solid #ff5c5c">'
+      +'<div style="font-size:20px;font-weight:700;color:#ff5c5c">'+never+'</div>'
+      +'<div style="font-size:12px;opacity:.75">never called back</div></div></div>';
+    h+='<p class="help-text" style="margin-top:8px">A missed call returned inside fifteen minutes is a different '
+      +'lead from one returned the next day — the customer has usually walked into somebody else’s showroom '
+      +'by then. Set one rule the counters can actually be held to: <b>every unanswered call returned the same '
+      +'working hour</b>. This board will show whether it happened.</p>';
+
+    return h;
+  }
+
+  /* ----------------------------------------------------------------- render */
+  function html(){
+    var L=build();
+    if(!L) return '<div class="card" style="margin-top:14px"><div class="card-header"><div>'
+      +'<h3 class="card-title">Airtel IQ \u2014 prospects by counter</h3></div></div>'
+      +'<p class="help-text">The Airtel IQ call data is not loaded in this build.</p></div>';
+
+    var tot=L.length, untracked=L.filter(function(r){ return !r.inReg; }).length;
+    var nothru=L.filter(function(r){ return !r.ans; }).length;
+
+    var h='<div class="card" style="margin-top:14px"><div class="card-header"><div>'
+      +'<h3 class="card-title">Airtel IQ \u2014 call-to-sale conversion</h3>'
+      +'<p class="help-text" style="margin:2px 0 0">One row per <b>caller</b>, not per call, joined to the enquiry '
+      +'registers by mobile and followed through to the sale. Service calls on 9111000158 are excluded.</p></div></div>';
+
+    h+='<div style="margin:0 0 12px;padding:10px 12px;border-left:3px solid '
+      +(untracked/tot>0.4?'#ff5c5c':'#ffb02e')+';background:rgba(255,176,46,.10);border-radius:6px">'
+      +'<b style="color:'+(untracked/tot>0.4?'#ff5c5c':'#ffb02e')+'">'+untracked+' of '+tot
+      +' people who called us are not in any enquiry register</b> ('+Math.round(untracked/tot*100)+'%). '
+      +'They rang a counter number, and nothing was written down. '
+      +nothru+' of them never got through to anybody at all.'
+      +'<br><span class="help-text">Not every one of these is a lost sale. A sales line also takes service '
+      +'queries, parts questions, wrong numbers and repeat dials from the same person, and a caller who rang '
+      +'twenty times in a month is rarely a prospect. The list below therefore defaults to callers who are '
+      +'<b>not in any register and have called within the last 30 days</b> \u2014 that is the part worth working.'
+      +'</span></div>';
+
+    h+=funnel(L);
+
+    var act=L.filter(function(r){ return !r.inReg && r.quiet<=30; }).length;
+    h+='<p class="help-text" style="margin:-6px 0 12px"><b>'+act+'</b> of them called within the last 30 days '
+      +'and are still not written down anywhere \u2014 that is the workable list, and it is what the counter-wise '
+      +'export gives you when this filter is on.</p>';
+
+    /* per counter */
+    var by={};
+    L.forEach(function(r){
+      var k=r.counter||'(unassigned)';
+      var o=by[k]=by[k]||{n:0,newp:0,ans:0,miss:0,drop:0,nothru:0,recent:0};
+      o.n++; if(!r.inReg) o.newp++;
+      o.ans+=r.ans; o.miss+=r.miss; o.drop+=r.drop;
+      if(!r.ans) o.nothru++;
+      if(r.quiet<=30) o.recent++;
+    });
+    var ks=Object.keys(by).sort(function(a,b){ return by[b].newp-by[a].newp; });
+    h+='<div style="overflow-x:auto"><table class="table"><thead><tr>'
+      +'<th>Counter line</th><th>Callers</th><th>Not in register</th><th>Never got through</th>'
+      +'<th>Called in last 30d</th><th>Answered calls</th><th>Missed</th><th>Export</th>'
+      +'</tr></thead><tbody>';
+    ks.forEach(function(k){
+      var o=by[k], on=UI.counter===k;
+      h+='<tr'+(on?' style="background:rgba(91,158,255,.10)"':'')+'>'
+        +'<td><b style="cursor:pointer;border-bottom:1px dashed currentColor" '
+        +'onclick="iqpSet(\'counter\',\''+esc(k).replace(/'/g,"\\'")+'\')">'+esc(k)+'</b>'
+        +(k==='(unassigned)'?' <span class="help-text">nobody picked up</span>':'')+'</td>'
+        +'<td><b>'+o.n+'</b></td>'
+        +'<td style="color:'+(o.newp?'#ff5c5c':'var(--ok)')+'"><b>'+o.newp+'</b></td>'
+        +'<td style="color:'+(o.nothru?'#ff8a5c':'var(--muted)')+'">'+o.nothru+'</td>'
+        +'<td>'+o.recent+'</td><td style="color:var(--ok)">'+o.ans+'</td>'
+        +'<td style="color:var(--muted)">'+o.miss+'</td>'
+        +'<td><button class="btn" style="padding:2px 8px;font-size:12px" '
+        +'onclick="iqpExportCounter(\''+esc(k).replace(/'/g,"\\'")+'\')">CSV</button></td></tr>';
+    });
+    h+='</tbody></table></div>';
+
+    /* the list */
+    var V=view();
+    h+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:16px 0 6px">'
+      +'<h4 style="margin:0;font-size:14px">'+V.length+' callers'
+      +(UI.counter?(' \u2014 '+esc(UI.counter)):'')+'</h4>'
+      +'<select class="filter-select" onchange="iqpSet(\'only\',this.value)">'
+      +'<option value="new30"'+(UI.only==='new30'?' selected':'')+'>Not in any register, called in last 30 days</option>'
+      +'<option value="new"'+(UI.only==='new'?' selected':'')+'>Not in any register (all time)</option>'
+      +'<option value="nothru"'+(UI.only==='nothru'?' selected':'')+'>Never got through</option>'
+      +'<option value="all"'+(UI.only==='all'?' selected':'')+'>Everyone who called</option></select>'
+      +(UI.counter?'<button class="btn" style="padding:2px 10px;font-size:12px" onclick="iqpSet(\'counter\',\''+esc(UI.counter).replace(/'/g,"\\'")+'\')">Clear counter</button>':'')
+      +'<button class="btn btn-primary" style="padding:2px 10px;font-size:12px" onclick="iqpExport(\'view\')">Export this list</button>'
+      +'<button class="btn" style="padding:2px 10px;font-size:12px" onclick="iqpExport(\'counterwise\')">Export counter-wise</button>'
+      +'</div>';
+
+    h+='<div style="overflow-x:auto"><table class="table"><thead><tr>'
+      +'<th>Mobile</th><th>Counter line</th><th>Calls</th><th>Answered</th><th>Missed</th>'
+      +'<th>Dropped by customer</th><th>Talk</th><th>Last call</th><th>Silent</th><th>In register</th>'
+      +'</tr></thead><tbody>';
+    V.slice(0,300).forEach(function(r){
+      h+='<tr><td><a href="tel:'+esc(r.mob)+'" style="color:var(--accent)">'+esc(r.mob)+'</a></td>'
+        +'<td>'+(r.counter?esc(r.counter):'<span style="color:var(--muted)">nobody picked up</span>')+'</td>'
+        +'<td><b>'+r.calls+'</b></td>'
+        +'<td style="color:'+(r.ans?'var(--ok)':'var(--muted)')+'">'+r.ans+'</td>'
+        +'<td style="color:'+(r.miss?'#ffb02e':'var(--muted)')+'">'+r.miss+'</td>'
+        +'<td style="color:var(--muted)">'+r.drop+'</td>'
+        +'<td>'+hm(r.sec)+'</td>'
+        +'<td>'+(r.last?(r.last.slice(8)+'/'+r.last.slice(5,7)):'\u2014')+'</td>'
+        +'<td'+(r.quiet>30?' style="color:#ff8a5c"':'')+'>'+r.quiet+'d</td>'
+        +'<td>'+(r.inReg
+            ?('<span style="color:var(--ok)">'+esc(r.e.counter||'yes')+(r.e.rep?(' / '+esc(r.e.rep)):'')+'</span>')
+            :'<span style="color:#ff5c5c">no</span>')+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+    if(V.length>300) h+='<p class="help-text">Showing the first 300 \u2014 export for the rest.</p>';
+
+    h+='<p class="help-text" style="margin-top:8px"><b>Counter line</b> is the counter whose Airtel number the '
+      +'call was actually connected to, so it is attribution by fact rather than by guess. '
+      +'<b>Dropped by customer</b> is a call the caller ended before anyone picked up \u2014 it shows as missed in '
+      +'Airtel\u2019s own report, which overstates how many calls the counters dropped. '
+      +'The <b>(unassigned)</b> row is the pool nobody answered at all: those callers reached no counter, so they '
+      +'belong to whoever you give them to.</p></div>';
+    return h;
+  }
+
+  function ensure(){
+    var view=document.getElementById('view-enquiries'); if(!view) return false;
+    var d=document.getElementById('iqprospect-root');
+    if(!d){ d=document.createElement('div'); d.id='iqprospect-root'; }
+    if(d.parentNode!==view){
+      var a=document.getElementById('followup-root');
+      if(a&&a.nextSibling) view.insertBefore(d,a.nextSibling);
+      else view.insertBefore(d,view.firstChild);
+    }
+    return true;
+  }
+  function render(){ _cache=null; var d=document.getElementById('iqprospect-root'); if(d) d.innerHTML=html(); }
+
+  var prev=window.setView;
+  window.setView=function(n){
+    var r; try{ r=prev.apply(this,arguments); }catch(e){ try{ console.warn('[iqprospects]',e); }catch(_){} }
+    if(n==='enquiries'){ setTimeout(function(){ try{ if(ensure()) render(); }catch(e){} },140); }
+    return r;
+  };
+  document.addEventListener('DOMContentLoaded',function(){
+    setTimeout(function(){ try{ var a=document.querySelector('.nav-item.active');
+      if(a&&a.dataset.view==='enquiries'&&ensure()) render(); }catch(e){} },1750);
+  });
+
+  window.__IQPROSPECT__=function(){ return {rows:build(), ui:UI}; };
 })();
 
 </script>
