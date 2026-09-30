@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v77 &middot; 30 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v78 &middot; 30 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -592,7 +592,12 @@ function isHot(e){
   if (v === true) return true;
   return /^(1|y|yes|true|hot)$/i.test(String(v == null ? '' : v).trim());
 }
-const ACTIVE_STAGES = ['New','Contacted','Qualified','Test Drive','Negotiation','Booked'];
+/* The live data only ever uses the four stages in STAGES above. This list was
+   left over from a generic CRM template, and of its six names only 'Booked'
+   exists here - so "Active" was silently counting Booked and nothing else,
+   which is why Active and Booked matched on every row. The old names are kept
+   so any legacy row still lands somewhere sensible. */
+const ACTIVE_STAGES = ['Open','New','Contacted','Qualified','Test Drive','Negotiation','Booked'];
 const BOOKED_STAGE = 'Booked';
 const STALE_DAYS = 7;
 const DEFAULT_COUNTERS = ['Napier Town','MML (ICE)','VIDA Hub','DN','Premia','Adhartal'];
@@ -8514,6 +8519,39 @@ document.addEventListener('DOMContentLoaded', initApp);
             : '')
         +'</div>';
     }
+    /* what the enquiry list actually contains for this month, stage by stage -
+       so a figure that looks wrong can be checked against the raw data in one
+       glance instead of being argued about */
+    try{
+      var per=period(), all=(enquiries||[]), inMonth=[], stages={}, months={};
+      all.forEach(function(e){
+        var k=''; try{ k=getMonthKey(e); }catch(_){}
+        if(k) months[k]=(months[k]||0)+1;
+        if(!per || k===per) inMonth.push(e);
+      });
+      inMonth.forEach(function(e){ var st=String(e.stage||'(blank)'); stages[st]=(stages[st]||0)+1; });
+      var known={Open:1,Booked:1,Won:1,Lost:1}, odd=[];
+      Object.keys(stages).forEach(function(k){ if(!known[k]) odd.push(k+' '+stages[k]); });
+      h+='<div class="card" style="margin-bottom:14px;border-left:4px solid #a05bff">'
+        +'<h3 style="margin:0">What the data actually holds &mdash; '+esc(lbl)+'</h3>'
+        +'<p class="help-text" style="margin-top:6px">'
+        +'<b>'+inMonth.length.toLocaleString('en-IN')+'</b> enquiries in this month, out of <b>'
+        +all.length.toLocaleString('en-IN')+'</b> in the whole list. Stages present: '
+        + (Object.keys(stages).sort(function(x,y){ return stages[y]-stages[x]; })
+            .map(function(k){ return '<b>'+esc(k)+'</b> '+stages[k]; }).join(' &middot; ') || 'none')
+        +'.</p>'
+        + (inMonth.length===all.length && per
+            ? '<p class="help-text" style="color:#ff5c5c;margin-top:6px"><b>Every enquiry in the list falls in this month.</b> '
+              +'That usually means the dates did not import &mdash; the month filter then has nothing to bite on and every month shows the same figures.</p>'
+            : '')
+        + (odd.length
+            ? ('<p class="help-text" style="color:#ffb02e;margin-top:6px"><b>Stages the dashboard does not recognise:</b> '+esc(odd.join(' &middot; '))
+               +'. These are counted as neither won, lost, booked nor active, so they vanish from every column but Enquiries.</p>')
+            : '')
+        +'<p class="help-text" style="margin-top:6px">Months in the list: '
+        + (Object.keys(months).sort().reverse().slice(0,14).map(function(m){ return esc(m)+' ('+months[m]+')'; }).join(' &middot; ') || 'none')
+        +'</p></div>';
+    }catch(e){}
     h+='<div class="card" style="margin-bottom:14px;border-left:4px solid #ffb02e">'
       +'<h3 style="margin:0">Two different questions &mdash; read them apart</h3>'
       +'<p class="help-text" style="margin-top:6px">The table above counts <b>enquiries'+(p?(' created in '+esc(lbl)):'')+'</b>, and its '
