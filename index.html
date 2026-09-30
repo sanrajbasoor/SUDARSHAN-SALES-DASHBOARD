@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v78 &middot; 30 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v79 &middot; 30 Sep 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -1415,15 +1415,33 @@ function renderCounters() {
   const E=getActiveEnquiries();
   const det=document.getElementById('counter-detail'); if(det){
     let html='<div style="overflow-x:auto"><table class="table"><thead><tr><th>Counter</th><th>Enquiries</th><th>Active</th><th>Won</th><th>Booked</th><th>Lost</th><th>Conv%</th><th>Finance%</th></tr></thead><tbody>';
-    config.counters.forEach(c=>{
-      const list=E.filter(e=>e.counter===c);
+    function row(label,list,style){
       const won=list.filter(e=>e.stage==='Won').length,lost=list.filter(e=>e.stage==='Lost').length,booked=list.filter(e=>e.stage==='Booked').length;
       const active=list.filter(e=>ACTIVE_STAGES.includes(e.stage)).length;
       const conv=list.length?Math.round(won/list.length*100):0;
       const fin=list.length?Math.round(list.filter(e=>e.financeRequired==='Yes').length/list.length*100):0;
-      html+='<tr><td><strong>'+escapeHtml(c)+'</strong></td><td>'+list.length+'</td><td>'+active+'</td><td style="color:var(--ok)">'+won+'</td><td style="color:#a05bff">'+booked+'</td><td style="color:var(--danger)">'+lost+'</td><td>'+conv+'%</td><td>'+fin+'%</td></tr>';
-    });
-    html+='</tbody></table></div>'; det.innerHTML=html;
+      return '<tr'+(style||'')+'><td><strong>'+escapeHtml(label)+'</strong></td><td>'+list.length+'</td><td>'+active+'</td><td style="color:var(--ok)">'+won+'</td><td style="color:#a05bff">'+booked+'</td><td style="color:var(--danger)">'+lost+'</td><td>'+conv+'%</td><td>'+fin+'%</td></tr>';
+    }
+    config.counters.forEach(c=>{ html+=row(c,E.filter(e=>e.counter===c)); });
+    /* Anything whose counter is not one of the configured names used to be
+       dropped from this table without trace - blanks, misspellings, counters
+       nobody has added to Settings. On a busy month that silently hid hundreds
+       of enquiries, and the sales among them, so they get their own rows now
+       and the totals always add up to the month. */
+    const listed={}; config.counters.forEach(c=>{ listed[c]=1; });
+    const others={};
+    E.forEach(e=>{ const c=String(e.counter==null?'':e.counter).trim();
+      if(listed[c]) return; const k=c||'(no counter on the row)';
+      (others[k]=others[k]||[]).push(e); });
+    const otherKeys=Object.keys(others).sort((a,b)=>others[b].length-others[a].length);
+    otherKeys.forEach(k=>{ html+=row(k+'  \u2014 not in Settings',others[k],' style="background:rgba(255,176,46,.10)"'); });
+    html+=row('All counters',E,' style="border-top:2px solid var(--line)"');
+    html+='</tbody></table></div>';
+    if(otherKeys.length) html+='<p class="help-text" style="margin-top:8px;color:#ffb02e">'
+      +'<b>'+otherKeys.reduce((a,k)=>a+others[k].length,0)+' enquiries</b> carry a counter that is not on your list in Settings, '
+      +'so they were being left out of this table entirely. Add or correct these names under Settings &rarr; Counters: <b>'
+      +otherKeys.map(k=>escapeHtml(k)+' ('+others[k].length+')').join(' &middot; ')+'</b>.</p>';
+    det.innerHTML=html;
   }
   const cntCounts=config.counters.map(c=>E.filter(e=>e.counter===c).length);
   const cntConv=config.counters.map(c=>{const l=E.filter(e=>e.counter===c);return l.length?Math.round(l.filter(e=>e.stage==='Won').length/l.length*100):0;});
