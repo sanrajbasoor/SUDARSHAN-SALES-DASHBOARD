@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v97 &middot; 2 Oct 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v98 &middot; 2 Oct 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -10730,7 +10730,91 @@ document.addEventListener('DOMContentLoaded', initApp);
      and an outcome that lands back in the register the counter already keeps.
      That is what the two buttons below do. */
 
-  var WORK={cap:20};
+  var WORK={cap:20, cool:7};   /* days a name rests after being handed out */
+
+  /* ------------------------------------------------------------ issued ledger
+     A list that is handed out every morning and never remembers what it handed
+     out yesterday will give the DSE the same twenty names all week. The
+     customer gets rung four times, decides this dealership cannot organise
+     itself, and the list stops being worked at all.
+
+     So every export stamps the numbers it contained with the date they went
+     out. Anyone issued inside the cooling-off window drops out of the next
+     list automatically.
+
+     Two deliberate exceptions, because a blanket block would be as bad as no
+     block at all:
+
+       - if the customer HAS RUNG AGAIN since the list went out, they come
+         straight back. A new call is new intent and outranks any cooldown.
+       - if they have since been written into a register, they are gone from
+         this list anyway, which is the outcome we actually want.
+
+     The ledger lives in this browser. That fits how it is used - one person
+     exports and hands the lists out - but it does not travel between
+     computers, so it can be exported and loaded on another machine. */
+  var ISSKEY='hero-iq-issued-v1';
+  var ISS=(function(){ try{ return JSON.parse(localStorage.getItem(ISSKEY)||'{}'); }catch(e){ return {}; } })();
+  function issSave(){ try{ localStorage.setItem(ISSKEY,JSON.stringify(ISS)); }catch(e){
+    toast('Browser storage is full — the issued list was not saved'); } }
+  function daysSince(iso){
+    if(!iso) return null;
+    try{ return Math.round((Date.parse(stamp()+'T00:00:00Z')-Date.parse(iso+'T00:00:00Z'))/86400000); }catch(e){ return null; }
+  }
+  function markIssued(list,label){
+    var day=stamp(), n=0;
+    list.forEach(function(r){
+      var m=r.mob||r; if(!m) return;
+      var e=ISS[m]||(ISS[m]={times:0,at:'',to:''});
+      e.times++; e.at=day; e.to=label||'';
+      n++;
+    });
+    issSave();
+    return n;
+  }
+  /* held back: issued inside the window, and no fresh call since it went out */
+  function heldBack(r){
+    if(!WORK.cool) return false;
+    var e=ISS[r.mob]; if(!e||!e.at) return false;
+    var since=daysSince(e.at);
+    if(since==null||since>=WORK.cool) return false;
+    if(r.last && r.last>e.at) return false;      /* they rang again - bring them back */
+    return true;
+  }
+  window.iqpCool=function(v){ WORK.cool=parseInt(v,10)||0; render(); };
+  window.iqpIssuedClear=function(){
+    if(!confirm('Forget every issued date? The next list will include people handed out recently.')) return;
+    ISS={}; issSave(); toast('Issued history cleared'); render();
+  };
+  window.iqpIssuedExport=function(){
+    function c(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }
+    var ks=Object.keys(ISS);
+    if(!ks.length){ toast('Nothing issued yet'); return; }
+    var lines=[['Mobile','Last issued','Times issued','List'].map(c).join(',')];
+    ks.sort(function(a,b){ return (ISS[b].at||'').localeCompare(ISS[a].at||''); })
+      .forEach(function(m){ lines.push([m,ISS[m].at,ISS[m].times,ISS[m].to].map(c).join(',')); });
+    var blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8;'});
+    var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download='issued_history_'+stamp()+'.csv'; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    toast('Exported '+ks.length+' issued numbers');
+  };
+  window.iqpIssuedImport=function(){
+    var txt=prompt('Paste the issued-history CSV from the other computer\n(Mobile, Last issued, Times issued, List)');
+    if(!txt) return;
+    var n=0;
+    String(txt).split(/\r?\n/).forEach(function(line){
+      var p=line.split(',');
+      var m=String(p[0]||'').replace(/\D/g,'').slice(-10);
+      var at=String(p[1]||'').trim().slice(0,10);
+      if(m.length!==10||!/^\d{4}-\d{2}-\d{2}$/.test(at)) return;
+      var e=ISS[m]||(ISS[m]={times:0,at:'',to:''});
+      if(at>e.at){ e.at=at; e.to=String(p[3]||'').trim(); }
+      e.times=Math.max(e.times, parseInt(p[2],10)||1);
+      n++;
+    });
+    issSave(); toast('Loaded '+n+' issued numbers'); render();
+  };
+
 
   /* A stable order, so the list does not reshuffle between two people opening
      it on the same day and nobody gets called twice. */
@@ -10742,6 +10826,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     L.forEach(function(r){
       if(r.inReg) return;              /* already written down - not our job */
       if(r.quiet>30) return;           /* older than a month is a different campaign */
+      if(heldBack(r)) return;          /* handed out recently and has not rung since */
       var k=r.counter||'(unassigned)';
       (by[k]=by[k]||[]).push(r);
     });
@@ -10809,8 +10894,11 @@ document.addEventListener('DOMContentLoaded', initApp);
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
       }, i*400);
     });
-    toast('Built '+ks.length+' list'+(ks.length>1?'s':'')+' — '+
-      ks.reduce(function(a,k){ return a+by[k].length; },0)+' calls for today');
+    var all=[]; ks.forEach(function(k){ all=all.concat(by[k]); });
+    markIssued(all,'call list');
+    toast('Built '+ks.length+' list'+(ks.length>1?'s':'')+' — '+all.length
+      +' calls for today, stamped as issued');
+    render();
   };
 
   /* capture rate by month - the one number to run the season on */
@@ -10892,7 +10980,8 @@ document.addEventListener('DOMContentLoaded', initApp);
     try{ (enquiries||[]).forEach(function(e){ var t=ten(e.phone); if(t) inReg[t]=e; }); }catch(e){}
     function c(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }
     var want=Object.keys(M.people).map(function(k){ return M.people[k]; })
-      .filter(function(p){ return (!num||p.num===num) && !p.reached; })
+      .filter(function(p){ return (!num||p.num===num) && !p.reached
+                                  && !heldBack({mob:p.mob,last:p.lastIso}); })
       .sort(function(a,b){ return b.tries-a.tries || a.quiet-b.quiet; });
     if(!want.length){ toast('Nothing unreached on that number'); return; }
     var head=['Mobile','Sales number','Counter','Times they rang','First missed','Last missed',
@@ -10907,7 +10996,9 @@ document.addEventListener('DOMContentLoaded', initApp);
     var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
     a.download='never_reached_'+slug(num||'all')+'_'+stamp()+'.csv';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    toast('Exported '+want.length+' people who rang and were never reached');
+    markIssued(want,'never reached '+(num||'all'));
+    toast('Exported '+want.length+' people who rang and were never reached \u2014 stamped as issued');
+    render();
   };
 
   function missedPanel(){
@@ -11006,6 +11097,11 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
       +'<b style="font-size:15px">Today\u2019s calls: '+due+'</b>'
       +'<span class="help-text">capped at '+WORK.cap+' per counter so it can actually be finished</span>'
+      +'<span class="help-text">Rest a name for'
+      +' <select class="filter-select" style="padding:1px 4px" onchange="iqpCool(this.value)">'
+      + [0,3,7,14,30].map(function(d){ return '<option value="'+d+'"'+(WORK.cool===d?' selected':'')
+          +'>'+(d?(d+' days'):'no rest')+'</option>'; }).join('')
+      +'</select> after it is handed out</span>'
       +'<button class="btn btn-primary" style="padding:3px 10px;font-size:12px" onclick="iqpWorklist(\'sheet\')">'
       +'Call sheets, counter-wise</button>'
       +'<button class="btn" style="padding:3px 10px;font-size:12px" onclick="iqpWorklist(\'register\')">'
@@ -11014,11 +11110,26 @@ document.addEventListener('DOMContentLoaded', initApp);
       + Object.keys(by).sort(function(a,b){ return by[b].length-by[a].length; }).map(function(k){
           return '<span><b>'+by[k].length+'</b> <span style="opacity:.75">'+esc(k)+'</span></span>'; }).join('')
       +'</div>'
+      + (function(){
+          var L2=build()||[], held=0, lastOut='';
+          L2.forEach(function(r){ if(!r.inReg && r.quiet<=30 && heldBack(r)){ held++;
+            var e=ISS[r.mob]; if(e&&e.at>lastOut) lastOut=e.at; } });
+          if(!held) return '';
+          return '<div style="margin-top:8px;padding:7px 10px;border-radius:6px;background:rgba(255,255,255,.05)">'
+            +'<b>'+held+'</b> more are being rested \u2014 handed out on or since '+esc(lastOut)
+            +', and they have not rung again. They come back on their own once the rest period ends, '
+            +'or immediately if they call.</div>';
+        })()
       +'<p class="help-text" style="margin:8px 0 0">Callers from the last 30 days who are in no register, '
       +'hardest triers first, in a fixed order so two people opening this get the same list and nobody is '
       +'rung twice. <b>Register paste-in</b> gives the same people in that counter\u2019s own column order, '
       +'pre-filled \u2014 paste the block into the register, fill name and model on the call, and they drop '
-      +'off tomorrow\u2019s list on their own.</p></div>';
+      +'off tomorrow\u2019s list on their own.</p>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'
+      +'<button class="btn" style="padding:1px 8px;font-size:11px" onclick="iqpIssuedExport()">Save issued history</button>'
+      +'<button class="btn" style="padding:1px 8px;font-size:11px" onclick="iqpIssuedImport()">Load on another computer</button>'
+      +'<button class="btn" style="padding:1px 8px;font-size:11px" onclick="iqpIssuedClear()">Clear issued history</button>'
+      +'</div></div>';
 
     /* ---- capture rate, the number to manage ---- */
     var CT=captureTrend(L), ms=Object.keys(CT).sort();
@@ -11092,7 +11203,7 @@ document.addEventListener('DOMContentLoaded', initApp);
 
     h+='<div style="overflow-x:auto"><table class="table"><thead><tr>'
       +'<th>Mobile</th><th>Counter line</th><th>Calls</th><th>Answered</th><th>Missed</th>'
-      +'<th>Dropped by customer</th><th>Talk</th><th>Last call</th><th>Silent</th><th>In register</th>'
+      +'<th>Dropped by customer</th><th>Talk</th><th>Last call</th><th>Silent</th><th>Issued</th><th>In register</th>'
       +'</tr></thead><tbody>';
     V.slice(0,300).forEach(function(r){
       h+='<tr><td><a href="tel:'+esc(r.mob)+'" style="color:var(--accent)">'+esc(r.mob)+'</a></td>'
@@ -11104,6 +11215,14 @@ document.addEventListener('DOMContentLoaded', initApp);
         +'<td>'+hm(r.sec)+'</td>'
         +'<td>'+(r.last?(r.last.slice(8)+'/'+r.last.slice(5,7)):'\u2014')+'</td>'
         +'<td'+(r.quiet>30?' style="color:#ff8a5c"':'')+'>'+r.quiet+'d</td>'
+        +(function(){
+            var e=ISS[r.mob];
+            if(!e||!e.at) return '<td style="color:var(--muted)">\u2014</td>';
+            var dd=daysSince(e.at);
+            return '<td style="color:'+(dd!=null&&dd<WORK.cool?'#ffb02e':'var(--muted)')+'" title="'
+              +esc(e.to||'')+'">'+e.at.slice(8)+'/'+e.at.slice(5,7)
+              +(e.times>1?(' \u00d7'+e.times):'')+'</td>';
+          })()
         +'<td>'+(r.inReg
             ?('<span style="color:var(--ok)">'+esc(r.e.counter||'yes')+(r.e.rep?(' / '+esc(r.e.rep)):'')+'</span>')
             :'<span style="color:#ff5c5c">no</span>')+'</td></tr>';
