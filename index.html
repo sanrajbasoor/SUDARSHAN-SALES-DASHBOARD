@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v91 &middot; 30 Sep 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v97 &middot; 2 Oct 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -8849,6 +8849,30 @@ document.addEventListener('DOMContentLoaded', initApp);
   try{ var raw=localStorage.getItem(KEY); if(raw) S=JSON.parse(raw); }catch(e){}
   function store(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} }
 
+  /* The failure this fixes: only the row COUNTS were ever cached, never the
+     rows. So the moment the Apps Script URL stopped answering - a deployment
+     replaced, a URL changed - the register data vanished and the page fell
+     back to the stale DMS export, which is exactly what "back to square one"
+     looked like. The rows are now kept, so a dead URL costs freshness, never
+     the figures themselves. */
+  /* Deliberately NOT a second copy of the rows. An earlier version cached them
+     under their own key, which put 1.8MB beside the 1.8MB the enquiry store
+     already held and took this origin to 3.7MB of a 5MB browser quota. The
+     next store to grow would have thrown QuotaExceeded, the write would have
+     failed silently, and the cache would have stopped updating - reviving the
+     exact bug it was added to fix. The applied register rows persist in the
+     enquiry store already, so THEY are the cache. */
+  function cachedRows(){
+    var out=[];
+    try{
+      for(var i=0;i<enquiries.length;i++){
+        var id=String(enquiries[i].id||'');
+        if(id.charAt(0)==='R'&&id.charAt(1)==='-') out.push(enquiries[i]);
+      }
+    }catch(e){}
+    return out.length?{at:(S&&S.at)||'',rows:out}:null;
+  }
+
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 
@@ -9104,6 +9128,84 @@ document.addEventListener('DOMContentLoaded', initApp);
     return def.label;
   }
 
+  /* ------------------------------------------------------------ tier 0 file
+     The permanent path. A scheduled Apps Script job commits the registers to
+     data/registers.json in this dashboard's own repo, and the page reads that
+     file from its own origin. No deployment URL at view time, no cross-origin
+     request, no published sheet, no browser cache dependency - and the same
+     data on every device. If the job ever stops, the file is still there and
+     still right; it simply stops getting newer, and the page says how old it
+     is instead of silently reverting. */
+  var FILE='data/registers.json';
+  function fromFile(){
+    return fetch(FILE+'?t='+Math.floor(Date.now()/60000),{cache:'no-cache'})
+      .then(function(r){
+        if(!r.ok) throw new Error('no '+FILE+' in the repo yet (HTTP '+r.status+')');
+        return r.text();
+      })
+      .then(function(t){
+        var s2=t.replace(/^\uFEFF/,'').trim();
+        if(s2.charAt(0)!=='{') throw new Error(FILE+' is not JSON \u2014 the push job has not written it yet');
+        var j=JSON.parse(s2);
+        if(!j.feeds) throw new Error(FILE+' has no feeds in it');
+        return j;
+      });
+  }
+
+  /* ------------------------------------------------- transports, in order
+     An Apps Script /exec URL is a moving target: every time a new deployment
+     is created instead of a new VERSION of the old one, the URL changes and
+     the old one starts answering "no such script". That has now broken this
+     twice, so it is no longer the only way in.
+
+     A sheet PUBLISHED TO THE WEB gets a /pub?output=csv link that belongs to
+     the document, not to a deployment. It cannot be invalidated by anything
+     done in the Apps Script editor, it needs no redeploy, and the browser can
+     fetch it directly. Where one is configured it is tried FIRST, and the web
+     app becomes the fallback rather than the lifeline.
+
+     The trade-off, stated plainly: a published sheet is readable by anyone who
+     has the link. These sheets carry customer names and mobile numbers, so
+     this is a deliberate choice to make - not a default. Nothing is published
+     unless a link is pasted in below. */
+  function pubUrls(){
+    try{ return (config&&config.pubcsv)||{}; }catch(e){ return {}; }
+  }
+  function parseCsv(text){
+    var rows=[], row=[], f='', q=false;
+    for(var i=0;i<text.length;i++){
+      var c=text.charAt(i);
+      if(q){
+        if(c==='"'){ if(text.charAt(i+1)==='"'){ f+='"'; i++; } else q=false; }
+        else f+=c;
+      } else if(c==='"') q=true;
+      else if(c===','){ row.push(f); f=''; }
+      else if(c==='\n'){ row.push(f); f=''; rows.push(row); row=[]; }
+      else if(c!=='\r') f+=c;
+    }
+    if(f.length||row.length){ row.push(f); rows.push(row); }
+    return rows.filter(function(r){ return r.length>1||String(r[0]||'').trim(); });
+  }
+  function fromPub(u){
+    return fetch(u+(u.indexOf('?')<0?'?':'&')+'t='+Date.now(),{cache:'no-cache',redirect:'follow'})
+      .then(function(r){ return r.text(); })
+      .then(function(t){
+        var s2=t.replace(/^\uFEFF/,'');
+        if(/^\s*</.test(s2)) throw new Error('that published link returned a web page, not CSV \u2014 re-publish the tab as "Comma-separated values"');
+        var rows=parseCsv(s2);
+        if(rows.length<2) throw new Error('the published link returned no rows');
+        /* the header is the first row that names a customer and a status */
+        var hi=0;
+        for(var i=0;i<Math.min(12,rows.length);i++){
+          var low=rows[i].map(function(x){ return String(x).trim().toLowerCase(); });
+          var hasC=low.some(function(x){ return x.indexOf('customer name')>=0; });
+          var hasS=low.some(function(x){ return x==='status'; });
+          if(hasC&&hasS){ hi=i; break; }
+        }
+        return {cols:rows[hi], rows:rows.slice(hi+1)};
+      });
+  }
+
   /* ----------------------------------------------------------------- fetch */
   function url(){ try{ return (config&&config.script&&config.script.url)||''; }catch(e){ return ''; } }
   /* When the web app answers with a web PAGE instead of JSON, the browser's
@@ -9151,46 +9253,159 @@ document.addEventListener('DOMContentLoaded', initApp);
   }
 
   window.ctrregSync=function(silent){
-    var U=url();
-    if(!U){ if(!silent) toast('No Apps Script URL saved (Settings)'); return Promise.resolve(); }
     if(!silent) toast('Reading the counter registers…');
-    return Promise.all(REGS.map(function(def){
-      return feed(U,def.feed).then(function(a){
-        var p=parse(def,a.cols,a.rows);
-        return {def:def,ok:true,rows:p.rows,through:p.through,total:a.rows.length,skipped:p.skipped,nodate:p.nodate,cal:p.cal};
-      }).catch(function(e){ return {def:def,ok:false,err:e.message}; });
-    })).then(function(res){
-      S.at=new Date().toISOString();
-      S.regs=S.regs||{};
-      res.forEach(function(r){
-        if(r.ok){
-          S.regs[r.def.feed]={counter:resolve(r.def),through:r.through,rows:r.rows.length,
-                              total:r.total,skipped:r.skipped,nodate:r.nodate,cal:r.cal,err:'',at:S.at};
-          return;
-        }
-        /* A failed read must never erase the last good one. Losing the old
-           figure and showing nothing is how a register goes quiet. */
-        var old=S.regs[r.def.feed];
-        S.regs[r.def.feed]={counter:resolve(r.def),
-          through:old?old.through:'', rows:old?old.rows:0, total:old?old.total:0,
-          skipped:0, err:r.err, at:old?old.at:''};
+    /* Tier 0 first: the file this dashboard ships beside itself. */
+    return fromFile().then(function(j){
+      var res=REGS.map(function(def){
+        var f=j.feeds[def.feed];
+        if(!f||!f.rows||!f.rows.length)
+          return {def:def,ok:false,err:'not in '+FILE+' — add it to PUSH_FEEDS in Push.gs and run PUSH_now()'};
+        var p=parse(def,f.cols,f.rows);
+        return {def:def,ok:true,rows:p.rows,through:p.through,total:f.rows.length,
+                skipped:p.skipped,nodate:p.nodate,cal:p.cal,cols:f.cols,via:'repo file'};
       });
-      store();
-      window.__CTRREG_LAST__=res;
-      if(!silent){
-        var bad=res.filter(function(r){ return !r.ok; });
-        toast(bad.length? ('Read '+(res.length-bad.length)+' of '+res.length+' registers — '+bad[0].def.feed+': '+bad[0].err)
-                        : 'Read all '+res.length+' counter registers');
-      }
-      render();
+      finishSync(res,silent,j.at);
       return res;
+    }).catch(function(fileErr){
+      return liveSync(silent,fileErr);
     });
   };
+
+  /* Only reached when the repo file is missing or unreadable. */
+  function liveSync(silent,fileErr){
+    var U=url(), pub=pubUrls(), anyPub=Object.keys(pub).length;
+    if(!U&&!anyPub){
+      if(!silent) toast(fileErr?fileErr.message:'No source configured');
+      var none=REGS.map(function(def){ return {def:def,ok:false,
+        err:(fileErr?fileErr.message:'no source configured')}; });
+      finishSync(none,true,null);
+      return Promise.resolve(none);
+    }
+    return Promise.all(REGS.map(function(def){
+      var get = pub[def.feed] ? fromPub(pub[def.feed]) : feed(U,def.feed);
+      return get.then(function(a){
+        var p=parse(def,a.cols,a.rows);
+        return {def:def,ok:true,rows:p.rows,through:p.through,total:a.rows.length,
+                skipped:p.skipped,nodate:p.nodate,cal:p.cal,cols:a.cols,
+                via:(pub[def.feed]?'published link':'web app')};
+      }).catch(function(e){ return {def:def,ok:false,err:e.message}; });
+    })).then(function(res){ finishSync(res,silent,null); return res; });
+  }
+
+  function finishSync(res,silent,fileAt){
+    S.at=fileAt||new Date().toISOString();
+    S.regs=S.regs||{};
+    res.forEach(function(r){
+      if(r.ok){
+        S.regs[r.def.feed]={counter:resolve(r.def),through:r.through,rows:r.rows.length,
+                            total:r.total,skipped:r.skipped,nodate:r.nodate,cal:r.cal,
+                            cols:r.cols||((S.regs[r.def.feed]||{}).cols)||null,
+                            via:r.via,err:'',at:S.at};
+        return;
+      }
+      /* A failed read must never erase the last good one. Losing the old
+         figure and showing nothing is how a register goes quiet. */
+      var old=S.regs[r.def.feed];
+      S.regs[r.def.feed]={counter:resolve(r.def),
+        through:old?old.through:'', rows:old?old.rows:0, total:old?old.total:0,
+        skipped:0, cols:old?old.cols:null, via:old?old.via:'', err:r.err, at:old?old.at:''};
+    });
+    store();
+    window.__CTRREG_LAST__=res;
+    var ok=res.filter(function(r){ return r.ok; });
+    var via=(ok[0]&&ok[0].via)||'';
+    S.via=via;
+    if(!silent){
+      var bad=res.filter(function(r){ return !r.ok; });
+      toast(bad.length? ('Read '+ok.length+' of '+res.length+' registers'
+                          +(bad[0]?(' — '+bad[0].def.feed+': '+bad[0].err):''))
+                      : ('Read all '+res.length+' registers'+(via?(' from the '+via):'')));
+    }
+    render();
+  }
+
+  /* --------------------------------------------------------- source of truth
+     The counter figures must never depend on somebody remembering to press a
+     button. On every load this walks the sources in order of quality and
+     applies the best one it can actually get:
+
+        1  LIVE      registers read just now
+        2  CACHED    the last successful read, however old
+        3  SNAPSHOT  the September count taken by hand on 30 Sep
+        4  (nothing) the DMS export already in the page
+
+     It is idempotent: it only ever replaces rows it owns - ids beginning R- or
+     S- and the export rows for counters a register covers - so running it on
+     every load cannot accumulate duplicates or touch a hand-typed enquiry. */
+  var TIER={n:0,label:'',at:''};
+  function ownRows(){
+    var live=window.__CTRREG_LAST__;
+    if(live){
+      var ok=live.filter(function(r){ return r.ok&&r.rows&&r.rows.length; });
+      if(ok.length){
+        var out=[]; ok.forEach(function(r){ out=out.concat(r.rows); });
+        return {rows:out, tier:1, label:'live', at:new Date().toISOString()};
+      }
+    }
+    var c=cachedRows();
+    if(c) return {rows:c.rows, tier:2, label:'last good read', at:c.at};
+    try{
+      var S2=window.__SEPTREG__&&window.__SEPTREG__();
+      if(S2&&S2.rows&&S2.rows.length)
+        return {rows:S2.rows, tier:3, label:'September snapshot', at:S2.seed&&S2.seed.built};
+    }catch(e){}
+    return null;
+  }
+  function apply(src,silent){
+    if(!src) return false;
+    /* Scope the replacement to the COUNTER AND MONTH the source actually
+       carries. Keyed on counter alone, the September snapshot would have
+       deleted August and October for those counters on its way in - wiping
+       real data to install older data. */
+    var covered={};
+    src.rows.forEach(function(r){
+      if(!r.counter) return;
+      covered[r.counter+'|'+String(r.createdAt||'').slice(0,7)]=1;
+    });
+    var before=enquiries.length;
+    var kept=0;
+    enquiries=enquiries.filter(function(e){
+      var id=String(e.id||'');
+      /* Anything typed into this dashboard by hand carries an E### id from the
+         New Enquiry form. Those are the only rows here that exist nowhere else,
+         so they are never replaced - a resolver that quietly deleted somebody's
+         walk-in would be a far worse bug than a stale figure. */
+      if(/^E\d{3}$/.test(id)){ kept++; return true; }
+      if(id.charAt(0)==='R'&&id.charAt(1)==='-') return false;   /* ours */
+      if(id.charAt(0)==='S'&&id.charAt(1)==='-') return false;   /* ours */
+      if(covered[e.counter+'|'+String(e.createdAt||'').slice(0,7)]) return false;  /* superseded */
+      return true;
+    }).concat(src.rows);
+    TIER.kept=kept;
+    var saved=true;
+    try{ saveDataLocal(); }catch(e){ saved=false; }
+    TIER={n:src.tier,label:src.label,at:src.at||'',kept:kept,saved:saved};
+    try{ localStorage.setItem('hero-ctrreg-tier',JSON.stringify(TIER)); }catch(e){ TIER.saved=false; }
+    if(!saved) toast('Browser storage is full \u2014 the figures are right on screen but will not survive a reload');
+    if(!silent) toast('Counter figures taken from the '+src.label+' ('+before+' \u2192 '+enquiries.length+')');
+    return true;
+  }
+  window.ctrregResolve=function(silent){
+    var src=ownRows();
+    if(!src){ if(!silent) toast('No register data from any source yet'); return false; }
+    var done=apply(src,silent);
+    try{ if(typeof renderDashboard==='function') renderDashboard(); }catch(e){}
+    try{ if(typeof renderCounters==='function') renderCounters(); }catch(e){}
+    render();
+    return done;
+  };
+  try{ var t0=localStorage.getItem('hero-ctrreg-tier'); if(t0) TIER=JSON.parse(t0); }catch(e){}
 
   /* ---------------------------------------------------------------- adopt */
   /* Replacing a counter's enquiries with its register is the whole point, but
      it overwrites rows, so it keeps one undo and says exactly what it did. */
-  window.ctrregAdopt=function(){
+  window.ctrregAdopt=function(){ return window.ctrregResolve(false); };
+  window.ctrregAdoptOld=function(){
     var res=window.__CTRREG_LAST__;
     if(!res||!res.length){ toast('Sync the registers first'); return; }
     var good=res.filter(function(r){ return r.ok&&r.rows.length; });
@@ -9209,6 +9424,22 @@ document.addEventListener('DOMContentLoaded', initApp);
     toast('Adopted '+n+' register rows across '+names.length+' counters ('+before+' → '+enquiries.length+')');
     redraw();
   };
+  window.ctrregSetPub=function(feed){
+    var cur=(pubUrls()[feed])||'';
+    var v=prompt('Published CSV link for '+feed+'\n\n'
+      +'In that sheet: File \u2192 Share \u2192 Publish to web \u2192 pick the register tab \u2192 '
+      +'Comma-separated values (.csv) \u2192 Publish, then paste the link here.\n\n'
+      +'Leave blank to remove it and go back to the web app.', cur);
+    if(v===null) return;
+    v=String(v).trim();
+    try{
+      config.pubcsv=config.pubcsv||{};
+      if(v) config.pubcsv[feed]=v; else delete config.pubcsv[feed];
+      saveDataLocal();
+    }catch(e){}
+    toast(v?('Published link saved for '+feed):('Published link removed for '+feed));
+    window.ctrregSync(false);
+  };
   window.ctrregUndo=function(){
     var raw; try{ raw=localStorage.getItem('hero-ctrreg-undo'); }catch(e){}
     if(!raw){ toast('Nothing to undo'); return; }
@@ -9225,12 +9456,26 @@ document.addEventListener('DOMContentLoaded', initApp);
   /* ---------------------------------------------------------------- render */
   function fmt(iso){ if(!iso) return '—'; return iso.slice(8)+'/'+iso.slice(5,7); }
   function html(){
+    var TB={1:{c:'var(--ok)',t:'LIVE'},2:{c:'#ffb02e',t:'LAST GOOD READ'},3:{c:'#ff8a5c',t:'SNAPSHOT'}};
+    var tb=TB[TIER.n];
     var keys=REGS.map(function(d){ return d.feed; });
     var any=keys.some(function(k){ return S.regs[k]; });
     var h='<div class="card" style="margin-top:14px"><div class="card-header">'
       +'<div><h3 class="card-title">Counter registers — read live</h3>'
       +'<p class="help-text" style="margin:2px 0 0">Every ICE counter, straight from the sheet its own team types into. '
       +'No export to refresh, so no counter can quietly fall behind again.</p></div></div>';
+
+    /* which source the figures on every page are actually standing on */
+    h+='<div style="margin:0 0 12px;padding:9px 12px;border-radius:6px;border-left:3px solid '
+      +(tb?tb.c:'var(--line)')+';background:rgba(255,255,255,.04)">'
+      +(tb?('<b style="color:'+tb.c+'">Counter figures: '+tb.t+'</b> \u2014 '
+            +esc(TIER.label)+(TIER.at?(', '+new Date(TIER.at).toLocaleString('en-IN')):'')
+            +(TIER.n>1?'. The registers could not be read just now, so the last good data is being used rather '
+                      +'than letting the stale DMS export take over.'
+                      :(S.via?(', via the '+esc(S.via)+'.'):'.')))
+          :'<b>Counter figures: DMS export</b> \u2014 no register data has been read yet.')
+      +' <button class="btn" style="padding:1px 8px;font-size:12px;margin-left:6px" '
+      +'onclick="ctrregResolve(false)">Re-apply best source</button></div>';
 
     if(!any){
       h+='<p class="help-text">Not read yet. Press <b>Sync registers</b> once the new <code>Feeds.gs</code> is deployed.</p>';
@@ -9242,19 +9487,22 @@ document.addEventListener('DOMContentLoaded', initApp);
       var newest=t.getFullYear()+'-'+p2(t.getMonth()+1)+'-'+p2(t.getDate());
       var stale=[], broken=[], read=0;
       h+='<div style="overflow-x:auto"><table class="table"><thead><tr>'
-        +'<th>Counter</th><th>Register</th><th>Rows</th><th>Data through</th><th>Behind</th><th>State</th>'
+        +'<th>Counter</th><th>Register</th><th>Rows</th><th>Data through</th><th>Behind</th><th>State</th><th>Link</th>'
         +'</tr></thead><tbody>';
       REGS.forEach(function(d){
         var r=S.regs[d.feed];
+        var lk='<td><button class="btn" style="padding:1px 7px;font-size:11px" title="Use a published CSV link '
+          +'for this register instead of the Apps Script web app" onclick="ctrregSetPub(\''+d.feed+'\')">'
+          +(pubUrls()[d.feed]?'linked':'link')+'</button></td>';
         if(!r){ h+='<tr><td><b>'+esc(d.label)+'</b></td><td>'+d.feed+'</td>'
-          +'<td colspan="4" style="color:var(--muted)">not read</td></tr>'; return; }
+          +'<td colspan="4" style="color:var(--muted)">not read</td>'+lk+'</tr>'; return; }
         if(r.err){
           broken.push({c:r.counter,e:r.err});
           h+='<tr style="background:rgba(255,92,92,.10)"><td><b>'+esc(r.counter)+'</b></td>'
             +'<td style="color:var(--muted)">'+d.feed+'</td>'
             +'<td>'+(r.rows||'—')+'</td><td>'+fmt(r.through)+'</td><td>—</td>'
             +'<td style="color:#ff5c5c">could not read — '+esc(r.err)
-            +(r.through?' <span style="color:var(--muted)">(showing the last good read)</span>':'')+'</td></tr>';
+            +(r.through?' <span style="color:var(--muted)">(showing the last good read)</span>':'')+'</td>'+lk+'</tr>';
           return;
         }
         read++;
@@ -9331,10 +9579,53 @@ document.addEventListener('DOMContentLoaded', initApp);
     setTimeout(function(){
       try{ var a=document.querySelector('.nav-item.active');
         if(a&&a.dataset.view==='counters'&&ensure()) render(); }catch(e){}
-      /* one quiet read a session, so the freshness table is never itself stale */
-      try{ if(url()) window.ctrregSync(true); }catch(e){}
+      /* One quiet read a session, then settle the counter figures on the best
+         source available - whether or not that read succeeded. */
+      try{
+        if(url()) window.ctrregSync(true).then(function(){ try{ window.ctrregResolve(true); }catch(e){} })
+                                         .catch(function(){ try{ window.ctrregResolve(true); }catch(e){} });
+        else window.ctrregResolve(true);
+      }catch(e){ try{ window.ctrregResolve(true); }catch(_){} }
     },1600);
   });
+
+
+  /* ------------------------------------------------- the five-minute reset
+     There is a second writer on this page. A polling loop calls
+     loadFromScript() on open and every five minutes, and that function does
+     `enquiries = json.enquiries` - a wholesale REPLACE from the dashboard-data
+     sheet, which still holds the old DMS export. So the sequence the counters
+     kept seeing was:
+
+         open the page   -> registers applied, figures right
+         five minutes on -> the poll fires, the array is replaced wholesale,
+                            September reverts to the export
+
+     Nothing was being "reset" by anyone; two systems were writing to the same
+     list and the older one had a timer. The registers now always get the last
+     word: whenever that pull succeeds, the resolution runs again on top of it.
+     Everything else the pull brings - follow-up counts, settings, the months
+     no register covers - is left exactly as it arrives. */
+  window.__CTRREG_GUARD__=0;   /* how many sheet pulls we have corrected after */
+  (function guardPull(){
+    var orig=window.loadFromScript;
+    if(typeof orig!=='function') return;
+    if(orig.__ctrregGuarded) return;
+    var wrapped=function(){
+      var out;
+      try{ out=orig.apply(this,arguments); }catch(e){ return Promise.reject(e); }
+      if(!out||typeof out.then!=='function'){
+        try{ window.ctrregResolve(true); window.__CTRREG_GUARD__++; }catch(e){}
+        return out;
+      }
+      return out.then(function(ok){
+        if(ok){ try{ window.ctrregResolve(true); window.__CTRREG_GUARD__++; }catch(e){} }
+        return ok;
+      });
+    };
+    wrapped.__ctrregGuarded=true;
+    window.loadFromScript=wrapped;
+  })();
 
   window.__CTRREG__=function(){ return S; };
 })();
@@ -10419,6 +10710,268 @@ document.addEventListener('DOMContentLoaded', initApp);
     return h;
   }
 
+
+  /* ---------------------------------------------------- the working system
+     What the data says about why this is not converting, and it is not what
+     anyone expects:
+
+       a 60-second-plus conversation  ->  15% get written into a register
+       a call under 60 seconds        ->  14%
+       a customer who rang 3+ times   ->  15%
+
+     Those are the same number. Nobody is triaging - a serious caller and a
+     wrong number have identical odds of being recorded. So a cleverer lead
+     score would change nothing, because the counters are not choosing badly,
+     they are not choosing at all. And it is getting worse, not better:
+
+       Jul 14%   Aug 9%   Sep 7%   of callers ever written down
+
+     The fix is not analysis, it is a finite list somebody owns each morning
+     and an outcome that lands back in the register the counter already keeps.
+     That is what the two buttons below do. */
+
+  var WORK={cap:20};
+
+  /* A stable order, so the list does not reshuffle between two people opening
+     it on the same day and nobody gets called twice. */
+  function hash(sx){ var h=0; for(var i=0;i<sx.length;i++){ h=((h<<5)-h+sx.charCodeAt(i))|0; } return Math.abs(h); }
+  function todayList(){
+    var L=build()||[];
+    var day=stamp();
+    var by={};
+    L.forEach(function(r){
+      if(r.inReg) return;              /* already written down - not our job */
+      if(r.quiet>30) return;           /* older than a month is a different campaign */
+      var k=r.counter||'(unassigned)';
+      (by[k]=by[k]||[]).push(r);
+    });
+    Object.keys(by).forEach(function(k){
+      by[k].sort(function(a,b){
+        /* worked in this order: people who tried hardest and most recently,
+           then a stable tiebreak so the list is the same all day */
+        if(b.tries!==a.tries) return b.tries-a.tries;
+        if(a.quiet!==b.quiet) return a.quiet-b.quiet;
+        return hash(a.mob+day)-hash(b.mob+day);
+      });
+      by[k]=by[k].slice(0,WORK.cap);
+    });
+    return by;
+  }
+
+  /* Paste-back. The columns match that counter's OWN register, in its own
+     order, pre-filled with everything already known - so the DSE pastes the
+     block in, fills name and model as they call, and the loop closes in the
+     sheet they already keep. No new tool, no new habit, and because the
+     dashboard reads that register, a worked caller drops off tomorrow's list
+     by itself. */
+  function regCols(counter){
+    try{
+      var S=window.__CTRREG__&&window.__CTRREG__();
+      if(S&&S.regs){
+        for(var k in S.regs){ if(S.regs[k].counter===counter && S.regs[k].cols) return S.regs[k].cols; }
+      }
+    }catch(e){}
+    return ['Month','Date','Customer Name','Mobile','Source-1','SOURCE-2','MODEL','DSE','Status','Follow up Remarks'];
+  }
+  function fillFor(col,r){
+    var c=String(col||'').trim().toLowerCase();
+    var t=new Date();
+    if(c==='month')              return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][t.getMonth()]+'-'+String(t.getFullYear()).slice(2)+'.';
+    if(c==='date')               return pad(t.getDate())+'.'+pad(t.getMonth()+1)+'.'+t.getFullYear();
+    if(c.indexOf('mobile')>=0)   return r.mob;
+    if(c.indexOf('source-1')>=0) return 'Call Tracker';
+    if(c.indexOf('source-2')>=0) return 'AIRTEL IQ';
+    if(c.indexOf('follow up rem')>=0 || c.indexOf('remark')>=0)
+      return 'IQ: '+r.calls+' call'+(r.calls>1?'s':'')+', last '+r.last+(r.ans?'':', never answered');
+    return '';           /* name, model, DSE and status are filled on the call */
+  }
+  window.iqpWorklist=function(which){
+    var by=todayList(), ks=Object.keys(by);
+    if(!ks.length){ toast('Nothing due — every recent caller is already in a register'); return; }
+    function c(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }
+    ks.forEach(function(k,i){
+      setTimeout(function(){
+        var list=by[k], lines=[];
+        if(which==='register'){
+          var cols=regCols(k);
+          lines.push(cols.map(c).join(','));
+          list.forEach(function(r){ lines.push(cols.map(function(col){ return c(fillFor(col,r)); }).join(',')); });
+        } else {
+          lines.push(['#','Mobile','Attempts','Last call','Days since','Ever answered','Talk time','Counter line','Outcome','Model','Next step']
+            .map(c).join(','));
+          list.forEach(function(r,n){
+            lines.push([n+1,r.mob,r.tries,r.last,r.quiet,r.ans?'yes':'NO',hm(r.sec),k,'','',''].map(c).join(','));
+          });
+        }
+        var blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8;'});
+        var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+        a.download=(which==='register'?'register_paste_':'callsheet_')+slug(k)+'_'+stamp()+'.csv';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      }, i*400);
+    });
+    toast('Built '+ks.length+' list'+(ks.length>1?'s':'')+' — '+
+      ks.reduce(function(a,k){ return a+by[k].length; },0)+' calls for today');
+  };
+
+  /* capture rate by month - the one number to run the season on */
+  function captureTrend(L){
+    var by={};
+    L.forEach(function(r){
+      var m=String(r.first||'').slice(0,7); if(!m) return;
+      var o=by[m]=by[m]||{n:0,c:0};
+      o.n++; if(r.inReg) o.c++;
+    });
+    return by;
+  }
+
+
+  /* ------------------------------------------- missed calls, by sales number
+     The counters call back their missed calls and clear them in two or three
+     days. That is the belief, and the call log does not support it:
+
+        1,132 people rang a sales number and nobody picked up
+          247 were connected within three days   (22%)
+          763 were never reached - not then, not since
+
+     Napier Town alone accounts for 550 of those people and 376 never reached.
+
+     A missed call here means the call reached a counter's number and rang out.
+     It deliberately EXCLUDES the calls where the customer hung up before the
+     line connected at all - those show as missed in Airtel's own report and
+     make the counters look worse than they are. This list is only what the
+     team could have answered and did not. */
+  function missedByNumber(){
+    var S=seed(); if(!S||!S.rows) return null;
+    var ep=Date.parse(S.epoch+'T00:00:00Z');
+    /* every moment this customer was actually connected, either direction */
+    var conn={};
+    for(var i=0;i<S.rows.length;i++){
+      var r=S.rows[i]; if(r[4]<0||r[5]!==0) continue;
+      var m=S.custs[r[4]]; (conn[m]=conn[m]||[]).push(r[0]*1440+(r[1]||0));
+    }
+    Object.keys(conn).forEach(function(k){ conn[k].sort(function(a,b){return a-b;}); });
+
+    var byNum={}, people={};
+    for(var j=0;j<S.rows.length;j++){
+      var q=S.rows[j];
+      if(q[2]!==0 || q[5]!==1 || q[4]<0 || q[3]<0) continue;   /* inbound, rang out */
+      var a=S.agents[q[3]]; if(!a) continue;
+      if(a[2]==='Service') continue;
+      var num=a[0], mob=S.custs[q[4]], t=q[0]*1440+(q[1]||0);
+      var o=byNum[num]||(byNum[num]={num:num, name:a[1]||'', counter:MAP[a[2]]||a[2]||'',
+                                     calls:0, cust:{}, rec:0, never:0, hr:{}});
+      o.calls++; o.hr[Math.floor((q[1]||0)/60)]=(o.hr[Math.floor((q[1]||0)/60)]||0)+1;
+      var key=num+'|'+mob;
+      if(!o.cust[mob]){
+        o.cust[mob]=true;
+        var later=(conn[mob]||[]).filter(function(x){ return x>=t; });
+        var back = later.length ? (later[0]-t) : null;
+        if(back!=null && back<=3*1440) o.rec++;
+        else if(back==null) o.never++;
+        people[key]={mob:mob, num:num, name:a[1]||'', counter:MAP[a[2]]||a[2]||'',
+                     tries:0, first:t, last:t,
+                     backMins:back, reached:(back!=null), in3:(back!=null&&back<=3*1440)};
+      }
+      var pp=people[key]; pp.tries++;
+      if(t<pp.first) pp.first=t; if(t>pp.last) pp.last=t;
+    }
+    var now=Date.now();
+    Object.keys(people).forEach(function(k){
+      var p=people[k];
+      p.firstIso=isoOf(ep,p.first); p.lastIso=isoOf(ep,p.last);
+      p.quiet=Math.round((now-(ep+p.last*60000))/86400000);
+    });
+    return {byNum:byNum, people:people};
+  }
+  function isoOf(ep,mins){ var t=new Date(ep+mins*60000);
+    return t.getUTCFullYear()+'-'+pad(t.getUTCMonth()+1)+'-'+pad(t.getUTCDate()); }
+
+  window.iqpMissedExport=function(num){
+    var M=missedByNumber(); if(!M){ toast('No call data'); return; }
+    var inReg={};
+    try{ (enquiries||[]).forEach(function(e){ var t=ten(e.phone); if(t) inReg[t]=e; }); }catch(e){}
+    function c(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }
+    var want=Object.keys(M.people).map(function(k){ return M.people[k]; })
+      .filter(function(p){ return (!num||p.num===num) && !p.reached; })
+      .sort(function(a,b){ return b.tries-a.tries || a.quiet-b.quiet; });
+    if(!want.length){ toast('Nothing unreached on that number'); return; }
+    var head=['Mobile','Sales number','Counter','Times they rang','First missed','Last missed',
+              'Days since','Ever connected','In a register','Register counter'];
+    var lines=[head.map(c).join(',')];
+    want.forEach(function(p){
+      var e=inReg[p.mob];
+      lines.push([p.mob,p.num,p.counter,p.tries,p.firstIso,p.lastIso,p.quiet,'NO',
+        e?'yes':'no', e?e.counter:''].map(c).join(','));
+    });
+    var blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8;'});
+    var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download='never_reached_'+slug(num||'all')+'_'+stamp()+'.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    toast('Exported '+want.length+' people who rang and were never reached');
+  };
+
+  function missedPanel(){
+    var M=missedByNumber(); if(!M) return '';
+    var ks=Object.keys(M.byNum).sort(function(a,b){ return M.byNum[b].calls-M.byNum[a].calls; });
+    var T={calls:0,people:0,rec:0,never:0};
+    ks.forEach(function(k){ var o=M.byNum[k];
+      T.calls+=o.calls; T.people+=Object.keys(o.cust).length; T.rec+=o.rec; T.never+=o.never; });
+
+    var h='<h4 style="margin:18px 0 6px;font-size:14px">Calls your team did not answer, by sales number</h4>';
+    h+='<div style="margin:0 0 10px;padding:10px 12px;border-left:3px solid #ff5c5c;'
+      +'background:rgba(255,92,92,.10);border-radius:6px">'
+      +'<b style="color:#ff5c5c">'+T.people+' people rang a sales number and nobody picked up. '
+      +T.never+' of them have never been reached since.</b><br>'
+      +'Only <b>'+T.rec+'</b> ('+Math.round(T.rec/Math.max(1,T.people)*100)+'%) were connected within three days. '
+      +'The two-to-three day clearing is happening for about one caller in five, not for all of them.'
+      +'<br><span class="help-text">This counts only calls that rang a counter and were not picked up. '
+      +'Calls where the customer hung up before the line connected are excluded — they show as missed in '
+      +'Airtel’s report but they are not your team’s to answer.</span></div>';
+
+    h+='<div style="overflow-x:auto"><table class="table"><thead><tr>'
+      +'<th>Sales number</th><th>Airtel name</th><th>Counter</th><th>Rang out</th><th>People</th>'
+      +'<th>Back within 3d</th><th>Never reached</th><th>Export</th></tr></thead><tbody>';
+    ks.forEach(function(k){
+      var o=M.byNum[k], n=Object.keys(o.cust).length;
+      if(o.calls<3) return;                       /* ignore one-off handsets */
+      var pc=Math.round(o.rec/Math.max(1,n)*100);
+      h+='<tr><td><b>'+esc(o.num)+'</b></td><td style="color:var(--muted)">'+esc(o.name||'—')+'</td>'
+        +'<td>'+(o.counter?esc(o.counter):'<span style="color:var(--muted)">unmapped</span>')+'</td>'
+        +'<td><b>'+o.calls+'</b></td><td>'+n+'</td>'
+        +'<td style="color:'+(pc>=50?'var(--ok)':pc>=25?'#ffb02e':'#ff5c5c')+'">'+o.rec+' ('+pc+'%)</td>'
+        +'<td style="color:'+(o.never?'#ff5c5c':'var(--muted)')+'"><b>'+o.never+'</b></td>'
+        +'<td><button class="btn" style="padding:1px 8px;font-size:11px" '
+        +'onclick="iqpMissedExport(\''+esc(o.num)+'\')">CSV</button></td></tr>';
+    });
+    h+='<tr style="border-top:2px solid var(--line)"><td><b>All numbers</b></td><td></td><td></td>'
+      +'<td><b>'+T.calls+'</b></td><td><b>'+T.people+'</b></td>'
+      +'<td>'+T.rec+' ('+Math.round(T.rec/Math.max(1,T.people)*100)+'%)</td>'
+      +'<td style="color:#ff5c5c"><b>'+T.never+'</b></td>'
+      +'<td><button class="btn btn-primary" style="padding:1px 8px;font-size:11px" '
+      +'onclick="iqpMissedExport(\'\')">All</button></td></tr>';
+    h+='</tbody></table></div>';
+
+    /* when they are being missed - the staffing question */
+    var H={};
+    ks.forEach(function(k){ var o=M.byNum[k];
+      Object.keys(o.hr).forEach(function(x){ H[x]=(H[x]||0)+o.hr[x]; }); });
+    var hrs=Object.keys(H).map(Number).filter(function(x){ return x>=8&&x<=21; }).sort(function(a,b){return a-b;});
+    var mx=Math.max.apply(null,hrs.map(function(x){ return H[x]; }));
+    h+='<div style="margin-top:10px"><div class="help-text" style="margin-bottom:4px">'
+      +'When calls go unanswered</div><div style="display:flex;gap:3px;align-items:flex-end;height:60px">';
+    hrs.forEach(function(x){
+      var ht=Math.round(H[x]/mx*54)+4;
+      h+='<div title="'+pad(x)+':00 — '+H[x]+' calls" style="flex:1;background:'
+        +(H[x]>=mx*0.8?'#ff5c5c':'#5b9eff')+';height:'+ht+'px;border-radius:2px 2px 0 0"></div>';
+    });
+    h+='</div><div style="display:flex;gap:3px;font-size:10px;color:var(--muted)">'
+      + hrs.map(function(x){ return '<div style="flex:1;text-align:center">'+pad(x)+'</div>'; }).join('')
+      +'</div><p class="help-text" style="margin-top:6px">Spread evenly across the whole working day, '
+      +'not clustered at lunch or closing. That rules out breaks and points at line capacity — calls '
+      +'arriving while the number is already busy. More handsets on the rotation, not stricter timings.</p></div>';
+    return h;
+  }
+
   /* ----------------------------------------------------------------- render */
   function html(){
     var L=build();
@@ -10446,6 +10999,44 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'<b>not in any register and have called within the last 30 days</b> \u2014 that is the part worth working.'
       +'</span></div>';
 
+    /* ---- today's work, before any analysis ---- */
+    var by=todayList(), due=Object.keys(by).reduce(function(a,k){ return a+by[k].length; },0);
+    h+='<div style="margin:0 0 14px;padding:12px 14px;border-radius:8px;border:1px solid var(--accent);'
+      +'background:rgba(91,158,255,.08)">'
+      +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<b style="font-size:15px">Today\u2019s calls: '+due+'</b>'
+      +'<span class="help-text">capped at '+WORK.cap+' per counter so it can actually be finished</span>'
+      +'<button class="btn btn-primary" style="padding:3px 10px;font-size:12px" onclick="iqpWorklist(\'sheet\')">'
+      +'Call sheets, counter-wise</button>'
+      +'<button class="btn" style="padding:3px 10px;font-size:12px" onclick="iqpWorklist(\'register\')">'
+      +'Register paste-in, counter-wise</button></div>'
+      +'<div style="margin-top:8px;display:flex;gap:14px;flex-wrap:wrap">'
+      + Object.keys(by).sort(function(a,b){ return by[b].length-by[a].length; }).map(function(k){
+          return '<span><b>'+by[k].length+'</b> <span style="opacity:.75">'+esc(k)+'</span></span>'; }).join('')
+      +'</div>'
+      +'<p class="help-text" style="margin:8px 0 0">Callers from the last 30 days who are in no register, '
+      +'hardest triers first, in a fixed order so two people opening this get the same list and nobody is '
+      +'rung twice. <b>Register paste-in</b> gives the same people in that counter\u2019s own column order, '
+      +'pre-filled \u2014 paste the block into the register, fill name and model on the call, and they drop '
+      +'off tomorrow\u2019s list on their own.</p></div>';
+
+    /* ---- capture rate, the number to manage ---- */
+    var CT=captureTrend(L), ms=Object.keys(CT).sort();
+    if(ms.length>1){
+      var lastM=CT[ms[ms.length-1]], firstM=CT[ms[0]];
+      h+='<div style="margin:0 0 14px;padding:10px 12px;border-left:3px solid #ff5c5c;'
+        +'background:rgba(255,92,92,.10);border-radius:6px">'
+        +'<b style="color:#ff5c5c">Capture rate is falling, not rising.</b> '
+        +'Of the people who ring us, the share ever written into a register, by the month they first called:<br>'
+        +'<span style="font-family:monospace;font-size:13px">'
+        + ms.map(function(m){ var o=CT[m];
+            return m.slice(5)+'/'+m.slice(2,4)+' '+Math.round(o.c/o.n*100)+'%'; }).join(' &nbsp;&middot;&nbsp; ')
+        +'</span><br><span class="help-text">A 60-second conversation and a 5-second one are written down at the '
+        +'same rate, and so is a customer who rang three times \u2014 all about 14%. Nobody is choosing badly; '
+        +'nobody is choosing. That is why this is a worklist, not a smarter score.</span></div>';
+    }
+
+    h+=missedPanel();
     h+=funnel(L);
 
     var act=L.filter(function(r){ return !r.inReg && r.quiet<=30; }).length;
