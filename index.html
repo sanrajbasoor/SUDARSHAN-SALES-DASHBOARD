@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v98 &middot; 2 Oct 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v101 &middot; 5 Oct 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -3091,6 +3091,11 @@ document.addEventListener('DOMContentLoaded', initApp);
   var COLS=[['HO','Napier Town'],['MML','MML (ICE)'],['DN','DN'],['AT','Adhartal'],
             ['OT','Other'],['NET','Network']];
 
+  /* Bookings live under the same day key with a B- prefix, exactly as the VIDA
+     daily tracker does it. One record per day, so nothing already typed shifts
+     and retail and bookings can never overwrite each other. */
+  function bkk(key){ return 'B-'+key; }
+
   var st; try{ st=Object.assign({phase:1,day:{},tgt:{}},JSON.parse(localStorage.getItem(KEY))||{}); }
           catch(e){ st={phase:1,day:{},tgt:{}}; }
   function save(){ try{ localStorage.setItem(KEY,JSON.stringify(st)); }catch(e){} }
@@ -3191,12 +3196,20 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'<button class="btn btn-sm" onclick="fdClear('+i+')">Clear phase</button></span></div>';
 
     /* ---- the grid ---- */
-    h+='<div style="overflow-x:auto"><table class="table" style="min-width:760px"><thead><tr>'
+    h+='<div style="overflow-x:auto"><table class="table" style="min-width:1180px"><thead>'
+      +'<tr><th colspan="3"></th>'
+      +'<th colspan="'+(COLS.length+2)+'" style="text-align:center;color:#2bd47d;border-bottom:2px solid #2bd47d">RETAIL</th>'
+      +'<th colspan="'+(COLS.length+2)+'" style="text-align:center;color:#00d0ff;border-bottom:2px solid #00d0ff">BOOKING</th>'
+      +'</tr><tr>'
       +'<th>Date</th><th>Event</th><th>Day</th>'
       + COLS.slice(0,5).map(function(c){ return '<th style="text-align:center">'+(c[0]==='OT'?'Other':c[0])+'</th>'; }).join('')
       +'<th style="text-align:right">10348</th>'
       +'<th style="text-align:center">Network</th>'
-      +'<th style="text-align:right">Total</th></tr></thead><tbody>';
+      +'<th style="text-align:right">Total</th>'
+      + COLS.map(function(c){ return '<th style="text-align:center;color:#00d0ff">'
+          +(c[0]==='OT'?'Other':c[0])+'</th>'; }).join('')
+      +'<th style="text-align:right;color:#00d0ff">Booked</th>'
+      +'<th style="text-align:right">Pending</th></tr></thead><tbody>';
 
     B.days.forEach(function(dd){
       var miss = dd.past && !dd.entered;
@@ -3218,22 +3231,59 @@ document.addEventListener('DOMContentLoaded', initApp);
         +' style="width:56px;text-align:center;background:var(--panel);border:1px solid var(--line);'
         +'color:var(--text);border-radius:6px;padding:3px 4px;font-size:13px"></td>';
       h+='<td style="text-align:right"><b style="color:'+(dd.total?'#2bd47d':'var(--muted)')+'">'+(dd.total||'&mdash;')+'</b></td>';
+      /* ---- the booking half ---- */
+      var bTot=0;
+      COLS.forEach(function(c){
+        var bv=cell(i,dd.iso,bkk(c[0]));
+        if(bv!=null) bTot+=bv;
+      });
+      COLS.forEach(function(c){
+        var bv=cell(i,dd.iso,bkk(c[0]));
+        h+='<td style="text-align:center"><input type="number" min="0" value="'+(bv==null?'':bv)+'"'
+          +' onchange="fdSet('+i+',\''+dd.iso+'\',\''+bkk(c[0])+'\',this.value)"'
+          +' style="width:52px;text-align:center;background:var(--panel);border:1px solid rgba(0,208,255,.35);'
+          +'color:var(--text);border-radius:6px;padding:3px 4px;font-size:13px"></td>';
+      });
+      var pend=bTot-(dd.total||0);
+      h+='<td style="text-align:right"><b style="color:'+(bTot?'#00d0ff':'var(--muted)')+'">'+(bTot||'&mdash;')+'</b></td>'
+        +'<td style="text-align:right"><b style="color:'
+        +(pend>0?'#ffb02e':(pend<0?'#2bd47d':'var(--muted)'))+'">'+(pend||'&mdash;')+'</b></td>';
       h+='</tr>';
     });
 
     /* ---- footers ---- */
-    function foot(label,vals,ctr,net,all,colour,extra){
+    function foot(label,vals,ctr,net,all,colour,extra,bvals,ball){
       var r='<tr style="border-top:2px solid var(--line)">'
         +'<td colspan="3"><b'+(colour?(' style="color:'+colour+'"'):'')+'>'+label+'</b>'
         +(extra?('<div class="help-text" style="font-size:11px">'+extra+'</div>'):'')+'</td>';
       vals.slice(0,5).forEach(function(v){ r+='<td style="text-align:center"><b>'+num(v)+'</b></td>'; });
       r+='<td style="text-align:right"><b>'+num(ctr)+'</b></td>'
         +'<td style="text-align:center"><b>'+num(net)+'</b></td>'
-        +'<td style="text-align:right"><b'+(colour?(' style="color:'+colour+'"'):'')+'>'+num(all)+'</b></td></tr>';
+        +'<td style="text-align:right"><b'+(colour?(' style="color:'+colour+'"'):'')+'>'+num(all)+'</b></td>';
+      /* the booking half of the footer: filled for ACHIEVED, blank for LY and
+         TARGET, which are retail figures only - inventing booking equivalents
+         for them would put numbers on the page that nobody set */
+      if(bvals){
+        bvals.slice(0,COLS.length).forEach(function(v){ r+='<td style="text-align:center;color:#00d0ff"><b>'+num(v)+'</b></td>'; });
+        r+='<td style="text-align:right;color:#00d0ff"><b>'+num(ball)+'</b></td>'
+          +'<td style="text-align:right"><b style="color:'+((ball-all)>0?'#ffb02e':((ball-all)<0?'#2bd47d':'var(--muted)'))
+          +'">'+num(ball-all)+'</b></td>';
+      } else {
+        r+='<td colspan="'+(COLS.length+2)+'" class="help-text" style="text-align:left">retail figure</td>';
+      }
+      r+='</tr>';
       return r;
     }
+    /* booking totals for the phase, counter by counter */
+    var bTot=COLS.map(function(){ return 0; }), bAll=0;
+    B.days.forEach(function(dd){
+      COLS.forEach(function(c,ci){
+        var v=cell(i,dd.iso,bkk(c[0]));
+        if(v!=null){ bTot[ci]+=v; bAll+=v; }
+      });
+    });
     h+=foot('ACHIEVED',B.tot,B.ach.ctr,B.ach.net,B.ach.all,'#2bd47d',
-            B.elapsed+' of '+B.days.length+' days elapsed');
+            B.elapsed+' of '+B.days.length+' days elapsed',bTot,bAll);
     h+=foot('LY',PH[i].ly,B.ly.ctr,B.ly.net,B.ly.all,'#94a0c8','same phase last year');
 
     /* target row is editable */
@@ -3250,7 +3300,8 @@ document.addEventListener('DOMContentLoaded', initApp);
       +' onchange="fdTgt('+i+',\'NET\',this.value)"'
       +' style="width:56px;text-align:center;background:var(--panel);border:1px solid #ffb02e;'
       +'color:#ffb02e;border-radius:6px;padding:3px 4px;font-size:13px;font-weight:700"></td>'
-      +'<td style="text-align:right"><b style="color:#ffb02e">'+num(B.tg.all)+'</b></td></tr>';
+      +'<td style="text-align:right"><b style="color:#ffb02e">'+num(B.tg.all)+'</b></td>'
+      +'<td colspan="'+(COLS.length+2)+'" class="help-text" style="text-align:left">retail target</td></tr>';
 
     /* gap row */
     var gaps=B.tot.map(function(v,ci){ return v-target(i,ci); });
@@ -3261,8 +3312,14 @@ document.addEventListener('DOMContentLoaded', initApp);
     var gc=B.ach.ctr-B.tg.ctr, gn=B.ach.net-B.tg.net, ga=B.ach.all-B.tg.all;
     h+='<td style="text-align:right"><b style="color:'+(gc>=0?'#2bd47d':'#ff5c5c')+'">'+sgn(gc)+'</b></td>'
       +'<td style="text-align:center"><b style="color:'+(gn>=0?'#2bd47d':'#ff5c5c')+'">'+sgn(gn)+'</b></td>'
-      +'<td style="text-align:right"><b style="color:'+(ga>=0?'#2bd47d':'#ff5c5c')+'">'+sgn(ga)+'</b></td></tr>';
+      +'<td style="text-align:right"><b style="color:'+(ga>=0?'#2bd47d':'#ff5c5c')+'">'+sgn(ga)+'</b></td>'
+      +'<td colspan="'+(COLS.length+2)+'"></td></tr>';
     h+='</tbody></table></div>';
+    h+='<p class="help-text" style="margin-top:6px"><b>Retail</b> on the left, <b>bookings</b> on the right, '
+      +'counter by counter \u2014 the same shape as the VIDA daily tracker, and stored the same way, so neither '
+      +'half can overwrite the other. <b>Pending</b> is that day\u2019s bookings less its retail: positive is an '
+      +'order bank still to bill, negative is yesterday\u2019s bank being delivered. LY and TARGET stay retail '
+      +'figures \u2014 inventing booking equivalents for them would put numbers on the page nobody set.</p>';
 
     /* ---- pace ---- */
     var left=B.days.length-B.elapsed, need=Math.max(0,B.tg.all-B.ach.all);
@@ -9021,7 +9078,10 @@ document.addEventListener('DOMContentLoaded', initApp);
     if(/^lost$/i.test(s)) return {stage:'Lost',why:'Lost'};
     if(/clos|cloce/i.test(s)) return {stage:'Lost',why:'Closed'};
     if(/no\s*inter|not\s*inter/i.test(s)) return {stage:'Lost',why:'Not interested'};
-    if(/refund|cancel/i.test(s)) return {stage:'Lost',why:s};
+    /* the import mail reports "refand" x5 arriving as an unknown status and
+       being imported as New - a refund counted as a live enquiry. Catch the
+       spellings the counters actually type, not just the correct one. */
+    if(/ref[au]n?d|refnd|cancel|cancle/i.test(s)) return {stage:'Lost',why:s};
     if(/plan\s*dr|open|inter|hot|warm|cold|follow/i.test(s)) return {stage:'Open',why:''};
     return {stage:'Open',why:''};
   }
@@ -11264,6 +11324,629 @@ document.addEventListener('DOMContentLoaded', initApp);
   });
 
   window.__IQPROSPECT__=function(){ return {rows:build(), ui:UI}; };
+})();
+
+</script>
+
+<script>
+/* ===========================================================================
+   VIDA STOCK — concise, under Stock                                  (v99)
+
+   The EV stock lives on its own tab of Sales_Sudarshan Hero (tab id
+   899600674), kept separately from the ICE stock and not to the same column
+   headings. Rather than assume what those headings are, this resolves them at
+   render time by meaning - a model-ish column, a quantity-ish column, and
+   optionally colour, location and ageing - and says on the card which ones it
+   used. If it picks wrong, the fix is one line here rather than a guess that
+   silently reports the wrong number.
+
+   Concise on purpose: a model-by-model count, split by colour only where the
+   sheet carries colour, with the total and the thin lines called out. The full
+   grid stays where it already is, on the SKU x location table.
+   =========================================================================== */
+(function(){
+  if (window.__VIDASTOCK__) return;
+  var KEY='hero-vidastock-v1';
+  var S=(function(){ try{ return JSON.parse(localStorage.getItem(KEY)||'null'); }catch(e){ return null; } })();
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function toast(m){ try{ if(typeof showToast==='function') showToast(m); }catch(e){} }
+  function num(v){ var n=parseFloat(String(v==null?'':v).replace(/[^0-9.\-]/g,'')); return isFinite(n)?n:0; }
+
+  /* ----------------------------------------------- resolve columns by meaning */
+  function cols(head){
+    var H=head.map(function(h){ return String(h==null?'':h).trim(); });
+    function pick(){
+      var res=Array.prototype.slice.call(arguments);
+      for(var r=0;r<res.length;r++){
+        for(var i=0;i<H.length;i++){ if(H[i] && res[r].test(H[i])) return i; }
+      }
+      return -1;
+    }
+    var ix={};
+    ix.model = pick(/^(model|variant|sku\s*desc|description|item)/i, /model/i, /sku/i);
+    ix.colour= pick(/^colou?r$/i, /colou?r/i);
+    ix.loc   = pick(/location|godown|branch|counter|store|warehouse/i);
+    /* a quantity column: prefer an explicit closing/net stock over anything else */
+    ix.qty   = pick(/closing\s*stock|net\s*stock|^stock$|^qty$|quantity|available|balance|physical/i,
+                    /stock/i, /qty|count|nos?\b/i);
+    ix.age   = pick(/age|days|ageing|aging/i);
+    ix.vin   = pick(/^vin$|chassis|engine\s*no/i);
+    return {ix:ix, H:H};
+  }
+
+  /* One row per vehicle, or one row per model with a count - the tab could be
+     either, so both are handled: if there is no quantity column but there are
+     VIN-like rows, each row counts as one unit. */
+  function parse(head,rows){
+    var c=cols(head), ix=c.ix;
+    if(ix.model<0) return {err:'no model or SKU column found on that tab', H:c.H};
+    var perRow = (ix.qty<0);
+    var by={}, total=0, n=0, ages=[];
+    for(var i=0;i<rows.length;i++){
+      var r=rows[i];
+      var m=String(r[ix.model]==null?'':r[ix.model]).trim();
+      if(!m || /^(total|grand\s*total|model|sku)$/i.test(m)) continue;
+      var q = perRow ? 1 : num(r[ix.qty]);
+      if(!perRow && q<=0) continue;
+      var col = ix.colour>=0 ? String(r[ix.colour]||'').trim() : '';
+      var loc = ix.loc>=0 ? String(r[ix.loc]||'').trim() : '';
+      var key=m+(col?(' · '+col):'');
+      var g=by[key]||(by[key]={model:m,colour:col,qty:0,locs:{}});
+      g.qty+=q; total+=q; n++;
+      if(loc) g.locs[loc]=(g.locs[loc]||0)+q;
+      if(ix.age>=0){ var a=num(r[ix.age]); if(a>0) ages.push(a); }
+    }
+    var list=Object.keys(by).map(function(k){ return by[k]; })
+             .sort(function(a,b){ return b.qty-a.qty || a.model.localeCompare(b.model); });
+    return {list:list,total:total,rows:n,perRow:perRow,ages:ages,ix:ix,H:c.H};
+  }
+
+  /* ------------------------------------------------------------------ fetch */
+  function fromFile(){
+    return fetch('data/registers.json?t='+Math.floor(Date.now()/60000),{cache:'no-cache'})
+      .then(function(r){ if(!r.ok) throw new Error('no data/registers.json (HTTP '+r.status+')'); return r.json(); })
+      .then(function(j){
+        var f=j.feeds&&j.feeds.STOCK_VIDA;
+        if(!f) throw new Error('STOCK_VIDA is not in data/registers.json — add it to PUSH_FEEDS in Push.gs and run PUSH_now()');
+        return {cols:f.cols,rows:f.rows,at:j.at,via:'repo file'};
+      });
+  }
+  function fromWebApp(){
+    var u=''; try{ u=(config&&config.script&&config.script.url)||''; }catch(e){}
+    if(!u) return Promise.reject(new Error('no Apps Script URL saved'));
+    var acc={cols:[],rows:[]};
+    function page(from){
+      return fetch(u+'?feed=STOCK_VIDA&from='+from+'&t='+Date.now(),{cache:'no-cache',redirect:'follow'})
+        .then(function(r){ return r.text(); })
+        .then(function(t){
+          var s2=t.replace(/^﻿/,'').trim();
+          if(s2.charAt(0)!=='{') throw new Error('the web app returned a page, not data');
+          var j=JSON.parse(s2);
+          if(!j.ok) throw new Error(j.error||'feed not served');
+          if(j.cols&&j.cols.length) acc.cols=j.cols;
+          acc.rows=acc.rows.concat(j.rows||[]);
+          if(j.rows&&j.rows.length&&acc.rows.length<(j.total||0)) return page(acc.rows.length);
+          return {cols:acc.cols,rows:acc.rows,at:new Date().toISOString(),via:'web app'};
+        });
+    }
+    return page(0);
+  }
+
+  window.vsSync=function(silent){
+    if(!silent) toast('Reading the VIDA stock tab…');
+    return fromFile().catch(function(){ return fromWebApp(); }).then(function(d){
+      var p=parse(d.cols,d.rows);
+      if(p.err){ if(!silent) toast('VIDA stock: '+p.err); return; }
+      S={at:d.at,via:d.via,total:p.total,rows:p.rows,perRow:p.perRow,
+         list:p.list.slice(0,60),cols:p.H,ix:p.ix,ages:p.ages};
+      try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){}
+      if(!silent) toast('VIDA stock: '+p.total+' units across '+p.list.length+' lines');
+      render();
+    }).catch(function(e){
+      if(!silent) toast('VIDA stock: '+e.message);
+    });
+  };
+
+  function html(){
+    var h='<div class="card" style="margin-top:14px"><div class="card-header"><div>'
+      +'<h3 class="card-title">VIDA stock</h3>'
+      +'<p class="help-text" style="margin:2px 0 0">The EV stock tab, read live and kept short — '
+      +'what is on the floor, by model.</p></div>'
+      +'<button class="btn" onclick="vsSync()">Refresh</button></div>';
+
+    if(!S||!S.list){
+      return h+'<p class="help-text">Not read yet. Press <b>Refresh</b> once <code>STOCK_VIDA</code> is '
+        +'in the feeds — it is pinned to tab id 899600674 of Sales_Sudarshan Hero.</p></div>';
+    }
+
+    var thin=S.list.filter(function(x){ return x.qty<=2; }).length;
+    h+='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">'
+      +'<div style="flex:1 1 120px;min-width:120px;padding:10px 12px;border-radius:8px;border:1px solid var(--line)">'
+      +'<div style="font-size:24px;font-weight:700;color:#a05bff">'+S.total+'</div>'
+      +'<div style="font-size:12px;opacity:.75">units in stock</div></div>'
+      +'<div style="flex:1 1 120px;min-width:120px;padding:10px 12px;border-radius:8px;border:1px solid var(--line)">'
+      +'<div style="font-size:24px;font-weight:700">'+S.list.length+'</div>'
+      +'<div style="font-size:12px;opacity:.75">model / colour lines</div></div>'
+      +'<div style="flex:1 1 120px;min-width:120px;padding:10px 12px;border-radius:8px;border:1px solid '
+      +(thin?'#ffb02e':'var(--line)')+'">'
+      +'<div style="font-size:24px;font-weight:700;color:'+(thin?'#ffb02e':'inherit')+'">'+thin+'</div>'
+      +'<div style="font-size:12px;opacity:.75">lines down to 2 or fewer</div></div></div>';
+
+    h+='<div style="overflow-x:auto"><table class="table"><thead><tr><th>Model</th>'
+      +(S.list.some(function(x){return x.colour;})?'<th>Colour</th>':'')
+      +'<th>Units</th><th>Share</th><th>Where</th></tr></thead><tbody>';
+    var anyCol=S.list.some(function(x){return x.colour;});
+    S.list.forEach(function(x){
+      var locs=Object.keys(x.locs||{});
+      h+='<tr><td><b>'+esc(x.model)+'</b></td>'
+        +(anyCol?('<td style="color:var(--muted)">'+esc(x.colour||'—')+'</td>'):'')
+        +'<td'+(x.qty<=2?' style="color:#ffb02e"':'')+'><b>'+x.qty+'</b></td>'
+        +'<td style="color:var(--muted)">'+(S.total?Math.round(x.qty/S.total*100):0)+'%</td>'
+        +'<td style="color:var(--muted);font-size:12px">'
+        + (locs.length? locs.sort(function(a,b){ return x.locs[b]-x.locs[a]; })
+             .slice(0,3).map(function(k){ return esc(k)+' '+x.locs[k]; }).join(' · ') : '—')
+        +'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+
+    /* say what was read and from which columns, so a wrong guess is visible */
+    var used=[];
+    ['model','colour','loc','qty','age'].forEach(function(k){
+      if(S.ix && S.ix[k]>=0 && S.cols && S.cols[S.ix[k]]) used.push(k+' = "'+S.cols[S.ix[k]]+'"');
+    });
+    h+='<p class="help-text" style="margin-top:8px">Read from the '+esc(S.via||'feed')
+      +(S.at?(' on '+new Date(S.at).toLocaleString('en-IN')):'')+'. '
+      +(S.perRow?'That tab lists one vehicle per row, so each row counts as one unit. '
+                :'Quantities are summed from the sheet. ')
+      +'Columns used: <b>'+esc(used.join(', ')||'none')+'</b>. '
+      +'If any of those are the wrong column, say so and it is a one-line change.</p>';
+    return h+'</div>';
+  }
+
+  function ensure(){
+    var view=document.getElementById('view-stock'); if(!view) return false;
+    var d=document.getElementById('vidastock-root');
+    if(!d){ d=document.createElement('div'); d.id='vidastock-root'; }
+    if(d.parentNode!==view) view.appendChild(d);
+    return true;
+  }
+  function render(){ var d=document.getElementById('vidastock-root'); if(d) d.innerHTML=html(); }
+
+  var prev=window.setView;
+  window.setView=function(n){
+    var r; try{ r=prev.apply(this,arguments); }catch(e){ try{ console.warn('[vidastock]',e); }catch(_){} }
+    if(n==='stock'){ setTimeout(function(){ try{ if(ensure()) render(); }catch(e){} },100); }
+    return r;
+  };
+  document.addEventListener('DOMContentLoaded',function(){
+    setTimeout(function(){
+      try{ var a=document.querySelector('.nav-item.active');
+        if(a&&a.dataset.view==='stock'&&ensure()) render(); }catch(e){}
+      try{ window.vsSync(true); }catch(e){}
+    },1800);
+  });
+
+  window.__VIDASTOCK__=function(){ return S; };
+})();
+
+</script>
+
+<script>
+/* ===========================================================================
+   ICE BOOKINGS — the same sheet VIDA has, for the petrol counters      (v99)
+
+   VIDA has had a live booking sheet for a while: every open booking, grouped
+   by exactly what was booked, with what is overdue and what is due this week.
+   The ICE counters had nothing equivalent, which during a festival is the
+   wrong way round - ICE is 261 of the 352-odd units a month and the orders
+   that slip are the ones nobody is looking at.
+
+   Same shape as the VIDA sheet, with one difference that matters for petrol:
+   the first cut is by SEGMENT - Entry, Deluxe, 125cc, Scooter, Premium -
+   because that is how the stock, the targets and the Festival 100 plan are all
+   organised. Model detail sits underneath it.
+
+   A booking is ICE when its model does not read as an EV. Everything comes
+   from the enquiry register at stage Booked, regardless of the month filter -
+   an open booking needs a vehicle whenever it was taken.
+   =========================================================================== */
+(function(){
+  if (window.__ICEBOOK__) return;
+  var st={seg:'',counter:'',sort:'n'};
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function nf(n){ return String(n==null?0:n).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
+  function INRs(n){ n=Math.round(n||0); return '\u20b9'+nf(n); }
+  function pad(n){ return (n<10?'0':'')+n; }
+  function today(){ var t=new Date(); return t.getFullYear()+'-'+pad(t.getMonth()+1)+'-'+pad(t.getDate()); }
+  function days(a,b){ if(!a||!b) return null; try{ return Math.round((Date.parse(b)-Date.parse(a))/86400000); }catch(e){ return null; } }
+  function toast(m){ try{ if(typeof showToast==='function') showToast(m); }catch(e){} }
+
+  var EV=/vida|vx2|evooter|dirt\.?e|^v[12]\b/i;
+  function isICE(e){
+    var t=String(e.model||'')+' '+String(e.variant||'');
+    if(EV.test(t)) return false;
+    try{ if(typeof segmentOf==='function' && segmentOf(e.model)==='VIDA') return false; }catch(_){}
+    return true;
+  }
+  /* the dashboard's own segment logic where it exists, with a fallback that
+     matches how Hero actually splits the range */
+  function segOf(model){
+    try{ if(typeof segmentOf==='function'){ var s=segmentOf(model); if(s) return s; } }catch(_){}
+    var t=String(model||'').toUpperCase();
+    if(/HF\s*100|HF\s*DELUXE/.test(t)) return 'Entry';
+    if(/PASSION|SPLENDOR\s*\+|SPLENDOR\+/.test(t)) return 'Deluxe';
+    if(/SUPER\s*SPLENDOR|GLAMOUR|XTREME\s*125/.test(t)) return '125cc';
+    if(/DESTINI|PLEASURE|MAESTRO|XOOM/.test(t)) return 'Scooter';
+    if(/KARIZMA|XPULSE|XTREME\s*(160|200)|HARLEY|X440|MAVRICK/.test(t)) return 'Premium';
+    return 'Other';
+  }
+  function allEnq(){ try{ if(typeof enquiries!=='undefined'&&enquiries) return enquiries; }catch(e){} return []; }
+
+  function data(){
+    var t=today(), rows=[];
+    allEnq().forEach(function(e){
+      if(!e||e.stage!=='Booked'||!isICE(e)) return;
+      var due=e.deliveryDate||'';
+      var model=String(e.model||'').trim()||'(blank)';
+      rows.push({id:e.id||'',cust:e.customer||'',phone:e.phone||'',model:model,
+        seg:segOf(model), counter:e.counter||'(unassigned)', rep:e.rep||'',
+        amt:parseFloat(e.bookingAmt)||0, due:due,
+        late:!!(due&&due<t), dleft:due?days(t,due):null,
+        age:days(e.createdAt,t)||0, fin:e.financeRequired||'', created:e.createdAt||''});
+    });
+    var segs={}, models={}, counters=[];
+    rows.forEach(function(r){
+      var g=segs[r.seg]||(segs[r.seg]={seg:r.seg,n:0,late:0,soon:0,amt:0,oldest:0});
+      g.n++; g.amt+=r.amt;
+      if(r.late) g.late++; else if(r.dleft!==null&&r.dleft<=7) g.soon++;
+      if(r.age>g.oldest) g.oldest=r.age;
+      var k=r.seg+'|'+r.model;
+      var m=models[k]||(models[k]={seg:r.seg,model:r.model,n:0,late:0,soon:0,amt:0,ctr:{},oldest:0});
+      m.n++; m.amt+=r.amt;
+      if(r.late) m.late++; else if(r.dleft!==null&&r.dleft<=7) m.soon++;
+      if(r.age>m.oldest) m.oldest=r.age;
+      m.ctr[r.counter]=(m.ctr[r.counter]||0)+1;
+      if(counters.indexOf(r.counter)<0) counters.push(r.counter);
+    });
+    counters.sort();
+    var mlist=Object.keys(models).map(function(k){ return models[k]; });
+    mlist.sort(function(a,b){ return st.sort==='name'?a.model.localeCompare(b.model):(b.n-a.n||a.model.localeCompare(b.model)); });
+    var slist=Object.keys(segs).map(function(k){ return segs[k]; }).sort(function(a,b){ return b.n-a.n; });
+    return {rows:rows,total:rows.length,segs:slist,models:mlist,counters:counters,
+      late:rows.filter(function(r){return r.late;}).length,
+      soon:rows.filter(function(r){return !r.late&&r.dleft!==null&&r.dleft<=7;}).length,
+      nodate:rows.filter(function(r){return !r.due;}).length,
+      amt:rows.reduce(function(a,r){return a+r.amt;},0)};
+  }
+  function filtered(D){
+    return D.rows.filter(function(r){
+      if(st.seg&&r.seg!==st.seg) return false;
+      if(st.counter&&r.counter!==st.counter) return false;
+      return true;
+    });
+  }
+
+  window.ibSet=function(k,v){ st[k]=(st[k]===v?'':v); render(); };
+  window.ibSort=function(v){ st.sort=v; render(); };
+  window.ibExport=function(){
+    var D=data(), L=filtered(D);
+    if(!L.length){ toast('Nothing to export'); return; }
+    function c(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }
+    var head=['Customer','Mobile','Counter','DSE','Segment','Model','Booking amount',
+              'Booked on','Days held','Delivery date','Overdue by','Finance'];
+    var t=today();
+    var lines=[head.map(c).join(',')];
+    L.slice().sort(function(a,b){ return (b.late-a.late)||(b.age-a.age); }).forEach(function(r){
+      lines.push([r.cust,r.phone,r.counter,r.rep,r.seg,r.model,r.amt,r.created,r.age,r.due,
+        r.late?Math.abs(days(r.due,t)):'',r.fin].map(c).join(','));
+    });
+    var blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8;'});
+    var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download='ice_bookings_'+(st.counter?String(st.counter).replace(/[^A-Za-z0-9]+/g,'_')+'_':'')
+      +(st.seg?st.seg+'_':'')+t+'.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    toast('Exported '+L.length+' ICE bookings');
+  };
+
+  function kpi(v,l,color,sub){
+    return '<div class="card" style="padding:14px 16px"><div style="font-size:26px;font-weight:800;'
+      +(color?('color:'+color):'')+'">'+v+'</div>'
+      +'<div style="font-size:12px;color:var(--muted);margin-top:4px">'+l+'</div>'
+      +(sub?'<div class="help-text" style="margin-top:2px">'+sub+'</div>':'')+'</div>';
+  }
+
+  function ensureNav(){
+    if(document.getElementById('view-icebk')) return;
+    var nav=document.getElementById('nav'); if(!nav) return;
+    var btn=document.createElement('button');
+    btn.className='nav-item'; btn.setAttribute('data-view','icebk');
+    btn.innerHTML='<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+      +'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg>ICE Bookings';
+    btn.onclick=function(){ window.setView('icebk'); };
+    var vb=nav.querySelector('[data-view="vidabk"]');
+    if(vb && vb.nextSibling) nav.insertBefore(btn,vb.nextSibling);
+    else { var setup=nav.querySelector('.nav-section');
+           if(setup) nav.insertBefore(btn,setup); else nav.appendChild(btn); }
+    var views=document.querySelectorAll('.view');
+    var sec=document.createElement('section');
+    sec.className='view'; sec.id='view-icebk';
+    sec.innerHTML='<div id="icebk-root"></div>';
+    if(views.length) views[views.length-1].parentNode.appendChild(sec); else document.body.appendChild(sec);
+  }
+
+  function render(){
+    var root=document.getElementById('icebk-root'); if(!root) return;
+    var D=data();
+    if(!D.total){
+      root.innerHTML='<div class="card"><h3>ICE bookings</h3>'
+        +'<p class="help-text">No petrol enquiries are sitting at stage <b>Booked</b> right now. '
+        +'This tab reads the enquiry registers directly \u2014 a booking appears the moment a counter '
+        +'marks it BOOKED in its own sheet.</p></div>';
+      return;
+    }
+    var h='<div class="grid grid-4">'
+      + kpi(nf(D.total),'Open ICE bookings','#5b9eff',D.models.length+' model line'+(D.models.length===1?'':'s'))
+      + kpi(nf(D.late),'Past delivery date',D.late?'#ff5c5c':'#2bd47d',D.late?'bill or chase these first':'nothing overdue')
+      + kpi(nf(D.soon),'Due within 7 days','#ffb02e',(D.nodate?nf(D.nodate)+' with no date set':'all dated'))
+      + kpi(INRs(D.amt),'Booking amount held','#2bd47d','across '+D.counters.length+' counter'+(D.counters.length===1?'':'s'))
+      +'</div>';
+
+    /* segment first - that is how stock and the F100 plan are organised */
+    h+='<div class="card" style="margin-top:14px"><h3>By segment</h3>'
+      +'<p class="help-text">Click a segment to filter everything below it. Bookings are counted whenever '
+      +'they were taken, not by the month selector \u2014 an order still needs a vehicle.</p>'
+      +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Segment</th><th>Open</th>'
+      +'<th>Past due</th><th>Due in 7d</th><th>Oldest</th><th>Amount held</th></tr></thead><tbody>';
+    D.segs.forEach(function(g){
+      var on=st.seg===g.seg;
+      h+='<tr'+(on?' style="background:rgba(91,158,255,.10)"':'')+'>'
+        +'<td><b style="cursor:pointer;border-bottom:1px dashed currentColor" onclick="ibSet(\'seg\',\''
+        +esc(g.seg).replace(/'/g,"\\'")+'\')">'+esc(g.seg)+'</b></td>'
+        +'<td><b>'+g.n+'</b></td>'
+        +'<td style="color:'+(g.late?'#ff5c5c':'var(--muted)')+'">'+g.late+'</td>'
+        +'<td style="color:'+(g.soon?'#ffb02e':'var(--muted)')+'">'+g.soon+'</td>'
+        +'<td'+(g.oldest>30?' style="color:#ff5c5c"':'')+'>'+g.oldest+'d</td>'
+        +'<td style="color:var(--muted)">'+INRs(g.amt)+'</td></tr>';
+    });
+    h+='</tbody></table></div></div>';
+
+    /* model detail */
+    h+='<div class="card" style="margin-top:14px"><h3>Model wise &mdash; exactly as booked</h3>'
+      +'<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0">'
+      +'<select class="filter-select" onchange="ibSet(\'counter\',this.value)"><option value="">All counters</option>'
+      + D.counters.map(function(c){ return '<option value="'+esc(c)+'"'+(st.counter===c?' selected':'')+'>'+esc(c)+'</option>'; }).join('')
+      +'</select>'
+      +'<select class="filter-select" onchange="ibSort(this.value)">'
+      +'<option value="n"'+(st.sort==='n'?' selected':'')+'>Most booked first</option>'
+      +'<option value="name"'+(st.sort==='name'?' selected':'')+'>Model name</option></select>'
+      +((st.seg||st.counter)?'<button class="btn" onclick="ibSet(\'seg\',st.seg);ibSet(\'counter\',st.counter)">Clear</button>':'')
+      +'<span style="flex:1"></span>'
+      +'<button class="btn" onclick="ibExport()">&#11015; Export ICE bookings</button></div>';
+
+    h+='<div style="overflow-x:auto"><table class="table"><thead><tr><th>Model</th><th>Segment</th>'
+      +'<th>Open</th><th>Past due</th><th>Due in 7d</th><th>Oldest</th><th>Counters</th></tr></thead><tbody>';
+    var shown=0;
+    D.models.forEach(function(m){
+      if(st.seg&&m.seg!==st.seg) return;
+      if(st.counter&&!m.ctr[st.counter]) return;
+      shown++;
+      var ks=Object.keys(m.ctr).sort(function(a,b){ return m.ctr[b]-m.ctr[a]; });
+      h+='<tr><td><b>'+esc(m.model)+'</b></td><td style="color:var(--muted)">'+esc(m.seg)+'</td>'
+        +'<td><b>'+(st.counter?m.ctr[st.counter]:m.n)+'</b></td>'
+        +'<td style="color:'+(m.late?'#ff5c5c':'var(--muted)')+'">'+m.late+'</td>'
+        +'<td style="color:'+(m.soon?'#ffb02e':'var(--muted)')+'">'+m.soon+'</td>'
+        +'<td'+(m.oldest>30?' style="color:#ff5c5c"':'')+'>'+m.oldest+'d</td>'
+        +'<td style="color:var(--muted);font-size:12px">'
+        + ks.slice(0,4).map(function(k){ return esc(k)+' '+m.ctr[k]; }).join(' \u00b7 ')+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+    if(!shown) h+='<p class="help-text">Nothing matches that filter.</p>';
+
+    /* the orders actually at risk */
+    var risk=filtered(D).filter(function(r){ return r.late||(r.dleft!==null&&r.dleft<=7)||r.age>30; })
+      .sort(function(a,b){ return (b.late-a.late)||(b.age-a.age); });
+    if(risk.length){
+      h+='<h4 style="margin:16px 0 6px;font-size:14px">'+risk.length+' bookings at risk</h4>'
+        +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Customer</th><th>Mobile</th>'
+        +'<th>Counter</th><th>DSE</th><th>Model</th><th>Booked</th><th>Held</th><th>Delivery</th>'
+        +'</tr></thead><tbody>';
+      risk.slice(0,120).forEach(function(r){
+        h+='<tr><td><b>'+esc(r.cust)+'</b></td>'
+          +'<td>'+(r.phone?('<a href="tel:'+esc(r.phone)+'" style="color:var(--accent)">'+esc(r.phone)+'</a>'):'\u2014')+'</td>'
+          +'<td>'+esc(r.counter)+'</td><td>'+esc(r.rep||'\u2014')+'</td><td>'+esc(r.model)+'</td>'
+          +'<td style="color:var(--muted)">'+esc(r.created||'\u2014')+'</td>'
+          +'<td'+(r.age>30?' style="color:#ff5c5c"':'')+'>'+r.age+'d</td>'
+          +'<td style="color:'+(r.late?'#ff5c5c':'#ffb02e')+'">'
+          +(r.due?(esc(r.due)+(r.late?' <b>overdue</b>':'')):'<span style="color:#a05bff">no date</span>')+'</td></tr>';
+      });
+      h+='</tbody></table></div>';
+      if(risk.length>120) h+='<p class="help-text">Showing the first 120 \u2014 export for the rest.</p>';
+    }
+    h+='<p class="help-text" style="margin-top:8px">A booking is counted as ICE when its model does not read '
+      +'as an EV, so Harley and Karizma sit under Premium here and VIDA stays on its own tab. '
+      +'<b>No date</b> is the one worth watching: an order with no promised delivery is the one that quietly '
+      +'ages past the festival.</p></div>';
+    root.innerHTML=h;
+  }
+
+  var prev=window.setView;
+  window.setView=function(n){
+    var r; try{ r=prev.apply(this,arguments); }catch(e){ try{ console.warn('[icebook]',e); }catch(_){} }
+    if(n==='icebk'){ setTimeout(function(){ try{ render(); }catch(e){} },60); }
+    return r;
+  };
+  document.addEventListener('DOMContentLoaded',function(){
+    setTimeout(function(){ try{ ensureNav(); }catch(e){} },1500);
+    setTimeout(function(){ try{ var a=document.querySelector('.nav-item.active');
+      if(a&&a.dataset.view==='icebk') render(); }catch(e){} },1900);
+  });
+
+  window.__ICEBOOK__=function(){ return data(); };
+})();
+
+</script>
+
+<script>
+/* ===========================================================================
+   DUPLICATE SALES CHECK                                              (v101)
+
+   The overnight import mail reports "N units marked Won on more than one row
+   (same phone). Sales totals are overstated by that much." Across the whole
+   financial year that is 109 extra rows - but the mail's conclusion is too
+   strong, and acting on it blindly would delete real sales.
+
+   Splitting them tells a different story:
+
+       67  same phone AND same model   one sale typed twice, almost certainly
+       42  same phone, different model a second vehicle on the same number,
+                                        which in a family is completely normal
+
+   And some of the biggest are not duplicates at all. JUBILENT FOOD LTD has six
+   HF Deluxe on one number in August; KM ENTERPRICESS has two. Those are fleet
+   orders - deduplicating them would erase six genuine sales.
+
+   So this page does not delete anything and never will. It lists the groups,
+   sorts them by how likely they are to be a typing error, marks the ones that
+   look like a company, and leaves the judgement where it belongs.
+   =========================================================================== */
+(function(){
+  if (window.__DUPCHECK__) return;
+
+  var FLEET=/\b(ltd|limited|pvt|private|enterpri|traders?|motors?|agenc|compan|corp|industr|foods?|hotel|school|college|hospital|associat|infra|construct|transport|logistic|service?s)\b/i;
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function ten(v){ var d=String(v==null?'':v).replace(/\D/g,''); return d.length>=10?d.slice(-10):''; }
+  function norm(s){ return String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+  function toast(m){ try{ if(typeof showToast==='function') showToast(m); }catch(e){} }
+
+  function groups(){
+    var by={};
+    (enquiries||[]).forEach(function(e){
+      if(e.stage!=='Won') return;
+      var p=ten(e.phone); if(!p) return;
+      (by[p]=by[p]||[]).push(e);
+    });
+    var out=[];
+    Object.keys(by).forEach(function(p){
+      var rows=by[p]; if(rows.length<2) return;
+      var models={}, months={}, counters={};
+      rows.forEach(function(e){
+        models[norm(e.model)]=1;
+        months[String(e.createdAt||'').slice(0,7)]=1;
+        counters[e.counter||'']=1;
+      });
+      var names=rows.map(function(e){ return String(e.customer||''); });
+      var fleet=names.some(function(n){ return FLEET.test(n); });
+      var sameModel=Object.keys(models).length===1;
+      var sameMonth=Object.keys(months).length===1;
+      out.push({phone:p, rows:rows, extra:rows.length-1,
+        fleet:fleet, sameModel:sameModel, sameMonth:sameMonth,
+        kind: fleet ? 'fleet' : (sameModel&&sameMonth ? 'likely' : (sameModel ? 'maybe' : 'probably real')),
+        counters:Object.keys(counters)});
+    });
+    var rank={likely:0,maybe:1,'probably real':2,fleet:3};
+    out.sort(function(a,b){ return (rank[a.kind]-rank[b.kind]) || (b.extra-a.extra); });
+    return out;
+  }
+
+  window.dupExport=function(){
+    var G=groups(); if(!G.length){ toast('No repeated phone numbers among Won rows'); return; }
+    function c(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }
+    var lines=[['Verdict','Mobile','Customer','Counter','DSE','Model','Booked/created','Rows on this number','Extra rows']
+      .map(c).join(',')];
+    G.forEach(function(g){
+      g.rows.forEach(function(e){
+        lines.push([g.kind,g.phone,e.customer,e.counter,e.rep,e.model,e.createdAt,
+          g.rows.length,g.extra].map(c).join(','));
+      });
+    });
+    var blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8;'});
+    var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    var t=new Date(); a.download='duplicate_sales_check_'+t.getFullYear()+'-'
+      +('0'+(t.getMonth()+1)).slice(-2)+'-'+('0'+t.getDate()).slice(-2)+'.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    toast('Exported '+G.length+' groups for checking');
+  };
+
+  function html(){
+    var G=groups();
+    var h='<div class="card" style="margin-top:14px"><div class="card-header"><div>'
+      +'<h3 class="card-title">Duplicate sales check</h3>'
+      +'<p class="help-text" style="margin:2px 0 0">Customers marked <b>Won</b> on more than one row with the '
+      +'same mobile. Nothing here is deleted — some of these are real.</p></div>'
+      +(G.length?'<button class="btn" onclick="dupExport()">Export for checking</button>':'')+'</div>';
+
+    if(!G.length) return h+'<p class="help-text" style="color:var(--ok)">No repeated numbers among the Won rows. '
+      +'Nothing is being double counted.</p></div>';
+
+    var cnt={likely:0,maybe:0,'probably real':0,fleet:0}, ex={likely:0,maybe:0,'probably real':0,fleet:0};
+    G.forEach(function(g){ cnt[g.kind]++; ex[g.kind]+=g.extra; });
+
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">'
+      +tile(ex.likely,'one sale typed twice','#ff5c5c','same number, same model, same month')
+      +tile(ex.maybe,'worth a look','#ffb02e','same model, different month')
+      +tile(ex['probably real'],'probably real','var(--muted)','different model — a second vehicle')
+      +tile(ex.fleet,'fleet or company','#5b9eff','one number, several bikes, on purpose')
+      +'</div>';
+
+    h+='<div style="overflow-x:auto"><table class="table"><thead><tr>'
+      +'<th>Verdict</th><th>Mobile</th><th>Customer</th><th>Counter</th><th>Model</th>'
+      +'<th>Rows</th><th>Extra</th></tr></thead><tbody>';
+    G.slice(0,150).forEach(function(g){
+      var col=g.kind==='likely'?'#ff5c5c':g.kind==='maybe'?'#ffb02e':g.kind==='fleet'?'#5b9eff':'var(--muted)';
+      var names={}; g.rows.forEach(function(e){ names[String(e.customer||'').trim()]=1; });
+      var mods={}; g.rows.forEach(function(e){ mods[String(e.model||'').trim()]=1; });
+      h+='<tr><td style="color:'+col+'"><b>'+esc(g.kind)+'</b></td>'
+        +'<td><a href="tel:'+esc(g.phone)+'" style="color:var(--accent)">'+esc(g.phone)+'</a></td>'
+        +'<td>'+esc(Object.keys(names).join(' / ').slice(0,42))+'</td>'
+        +'<td style="color:var(--muted)">'+esc(g.counters.join(', '))+'</td>'
+        +'<td style="color:var(--muted)">'+esc(Object.keys(mods).join(' / ').slice(0,36))+'</td>'
+        +'<td>'+g.rows.length+'</td>'
+        +'<td style="color:'+col+'"><b>+'+g.extra+'</b></td></tr>';
+    });
+    h+='</tbody></table></div>';
+    if(G.length>150) h+='<p class="help-text">Showing the first 150 — export for the rest.</p>';
+
+    h+='<p class="help-text" style="margin-top:8px">The import mail calls all of these double counting and says '
+      +'sales are overstated by the total. That is too strong. <b>One sale typed twice</b> is the only group worth '
+      +'correcting on sight — fix those in the counter’s own register and they vanish from here on the next '
+      +'read. A <b>fleet</b> row is a company buying several bikes on one number and must be left alone; deleting '
+      +'those would erase real sales.</p></div>';
+    return h;
+  }
+  function tile(v,l,c,sub){
+    return '<div style="flex:1 1 150px;min-width:150px;padding:10px 12px;border-radius:8px;border:1px solid var(--line)">'
+      +'<div style="font-size:22px;font-weight:700;color:'+c+'">'+v+'</div>'
+      +'<div style="font-size:12px;opacity:.75">'+l+'</div>'
+      +'<div class="help-text" style="font-size:11px;margin-top:2px">'+sub+'</div></div>';
+  }
+
+  function ensure(){
+    var view=document.getElementById('view-counters'); if(!view) return false;
+    var d=document.getElementById('dupcheck-root');
+    if(!d){ d=document.createElement('div'); d.id='dupcheck-root'; }
+    if(d.parentNode!==view) view.appendChild(d);
+    return true;
+  }
+  function render(){ var d=document.getElementById('dupcheck-root'); if(d) d.innerHTML=html(); }
+
+  var prev=window.setView;
+  window.setView=function(n){
+    var r; try{ r=prev.apply(this,arguments); }catch(e){ try{ console.warn('[dupcheck]',e); }catch(_){} }
+    if(n==='counters'){ setTimeout(function(){ try{ if(ensure()) render(); }catch(e){} },150); }
+    return r;
+  };
+  document.addEventListener('DOMContentLoaded',function(){
+    setTimeout(function(){ try{ var a=document.querySelector('.nav-item.active');
+      if(a&&a.dataset.view==='counters'&&ensure()) render(); }catch(e){} },1900);
+  });
+
+  window.__DUPCHECK__=function(){ return groups(); };
 })();
 
 </script>
