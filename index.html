@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v103 &middot; 5 Oct 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v105 &middot; 5 Oct 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -8166,19 +8166,30 @@ document.addEventListener('DOMContentLoaded', initApp);
      Three outcomes, not two:
        Answered        somebody picked up
        Missed          it rang an agent (or the customer) and went unanswered
-       Caller dropped  the caller hung up before anything connected - Airtel
-                       still reports this as Missed, but nobody had the chance
-                       to answer, so it is counted on its own.
+       Not connected   the call reached no handset at all - the sheet leaves
+                       ConnectedTo blank. Airtel's own portal rolls these into
+                       its Missed headline; here they stay a status of their
+                       own, because nobody ever had the chance to answer.
      ========================================================================= -->
 <script>
 (function(){
   var PKEY='hero-iq-v1', DKEY='hero-iq-dir-v1', FKEY='hero-iq-files-v1';
   var MS=86400000;
   var SEED=window.IQ_SEED||{epoch:'2026-05-01',agents:[],custs:[],rows:[],at:''};
-  var OC=['Answered','Missed','Caller dropped'];
+  /* v105: the three CallStatus values the Airtel IQ export actually writes.
+     Verified against all five CDR files - 4,348 Answered, 6,249 Missed,
+     1,410 NotConnected, and nothing else. Missed always carries a ConnectedTo
+     (a handset rang and nobody picked up); NotConnected never does (the call
+     reached no handset at all). */
+  var OC=['Answered','Missed','Not connected'];
 
-  var p={month:'', ctr:'', dir:'', noService:1, dropMissed:0, tab:'overview', chase:7, agent:''};
+  var p={month:'', ctr:'', dir:'in', noService:1, dropMissed:1, tab:'overview', chase:7, agent:'', v:0};
   try{ var s=JSON.parse(localStorage.getItem(PKEY)); if(s) for(var k in s) p[k]=s[k]; }catch(e){}
+  /* v103: this tab is an INBOUND, answered-or-missed view. A customer ringing and
+     not being picked up is what costs an enquiry; us dialling out is the response
+     to that, not the measure of it. Saved preferences from an earlier build would
+     have overridden the new default, so they are migrated once. */
+  if(!(p.v>=2)){ p.dir='in'; p.dropMissed=1; p.v=2; save(); }
   function save(){ try{ localStorage.setItem(PKEY,JSON.stringify(p)); }catch(e){} }
 
   /* the directory the user can correct - number -> {name, counter} */
@@ -8402,14 +8413,20 @@ document.addEventListener('DOMContentLoaded', initApp);
     return _ours;
   }
 
-  function view(){
+  /* opt.anyDir ignores the direction filter - used by the inbound-against-outbound
+     card, which has to see both sides even while the tab is pinned to inbound, and
+     by the drill-down, which applies the direction the clicked figure was counting. */
+  function view(opt){
+    opt=opt||{};
     return calls().filter(function(c){
       if(p.noService && isService(c)) return false;
       if(p.month && c.ym!==p.month) return false;
       if(p.ctr==='_none'){ if(c.ctr) return false; }
       else if(p.ctr && c.ctr!==p.ctr) return false;
-      if(p.dir==='in' && c.out) return false;
-      if(p.dir==='out' && !c.out) return false;
+      if(!opt.anyDir){
+        if(p.dir==='in' && c.out) return false;
+        if(p.dir==='out' && !c.out) return false;
+      }
       if(p.agent && c.num!==p.agent) return false;
       return true;
     });
@@ -8426,8 +8443,12 @@ document.addEventListener('DOMContentLoaded', initApp);
       if(c.oc===0){ t.a++; t.talk+=c.talk; } else if(c.oc===2) t.d++; else t.m++;
       t.wait+=c.wait;
     });
-    t.missTotal = p.dropMissed? (t.m+t.d) : t.m;
-    t.conn = pctv(t.a, t.n - (p.dropMissed?0:t.d));
+    /* the sheet's own three states, and they add up: answered + missed +
+       not connected = calls. t.unans is the two that failed, which is what the
+       chase list and the never-reached figures are built on - it is a derived
+       total, never a fourth status. */
+    t.unans = t.m + t.d;
+    t.conn = pctv(t.a, t.n);
     t.avgTalk = t.a? t.talk/t.a : 0;
     t.avgWait = t.n? t.wait/t.n : 0;
     return t;
@@ -8458,6 +8479,234 @@ document.addEventListener('DOMContentLoaded', initApp);
     return out;
   }
 
+  /* ================= DRILL-DOWN: every figure opens its people =============
+     A count on its own cannot be acted on. Every clickable figure carries the
+     exact filter that produced it, and the drill re-runs that same filter rather
+     than deriving the list a second way - so the list can never disagree with the
+     number that was clicked. Click "10 missed" on Napier Town and you get those
+     10 calls and the customers behind them, with whether anyone ever reached them.
+     ========================================================================= */
+  var DRILL=null;
+
+  /* one pass over every call, per customer: is this someone we have ever reached,
+     and did anyone ring them after the last time they were left unanswered? */
+  var _hist=null, _histK='';
+  function histIndex(){
+    var C=calls(), k=String(C.length);
+    if(_hist && _histK===k) return _hist;
+    var H={};
+    C.forEach(function(c){
+      if(!c.cust) return;
+      var e=H[c.cust]||(H[c.cust]={n:0,ans:0,inMiss:0,lastMissIn:'',lastOut:''});
+      e.n++;
+      if(c.oc===0) e.ans++;
+      if(!c.out && c.oc!==0){ e.inMiss++; if(c.iso>e.lastMissIn) e.lastMissIn=c.iso; }
+      if(c.out && c.iso>e.lastOut) e.lastOut=c.iso;
+    });
+    Object.keys(H).forEach(function(m){ var e=H[m];
+      e.rangBack=(e.lastMissIn && e.lastOut && e.lastOut>=e.lastMissIn)?1:0; });
+    _hist=H; _histK=k; return H;
+  }
+
+  /* the enquiry register, by mobile - so the drill can say whether this caller was
+     ever written down at all. That is the whole point of the exercise. */
+  var _reg=null, _regK='';
+  function regIndex(){
+    var n=0; try{ n=(enquiries||[]).length; }catch(e){ n=-1; }
+    var k=String(n);
+    if(_reg && _regK===k) return _reg;
+    _reg={};
+    try{
+      (enquiries||[]).forEach(function(e){
+        var t=String(e.phone==null?'':e.phone).replace(/\D/g,'');
+        if(t.length<10) return; t=t.slice(-10);
+        var cur=_reg[t];
+        if(!cur || String(e.createdAt||'')>String(cur.createdAt||'')) _reg[t]=e;
+      });
+    }catch(err){}
+    _regK=k; return _reg;
+  }
+
+  function stText(c){ return OC[c.oc]||'?'; }
+  function stWhy(c){ return c.oc===0?'Answered'
+    : c.oc===2?'Not connected &mdash; reached no handset'
+    : 'Missed &mdash; rang out, nobody picked up'; }
+  function stColour(oc){ return oc===0?'#2bd47d':oc===2?'#ffb02e':'#ff5c5c'; }
+
+  /* the calls behind a clicked figure */
+  function drillRows(sp){
+    var dir = sp.dir==='any' ? '' : (sp.dir || p.dir || '');
+    return view({anyDir:true}).filter(function(c){
+      if(dir==='in'  && c.out) return false;
+      if(dir==='out' && !c.out) return false;
+      if(sp.ctr!=null   && (c.ctr||'Not assigned')!==sp.ctr) return false;
+      if(sp.agent!=null && (c.num?(c.name||c.num):'Nobody picked up')!==sp.agent) return false;
+      if(sp.iso         && c.iso!==sp.iso) return false;
+      if(sp.oc==='a' && c.oc!==0) return false;   /* answered */
+      if(sp.oc==='m' && c.oc!==1) return false;   /* missed - a handset rang */
+      if(sp.oc==='n' && c.oc!==2) return false;   /* not connected - none did */
+      if(sp.oc==='x' && c.oc===0) return false;   /* either failure */
+      return true;
+    }).sort(function(a,b){ return a.iso<b.iso?1:a.iso>b.iso?-1:b.min-a.min; });
+  }
+
+  /* those calls rolled up to one row per customer */
+  function drillPeople(L){
+    var O=ours(), H=histIndex(), R=regIndex(), by={};
+    L.forEach(function(c){
+      var m=c.cust; if(!m || O[m]) return;          /* our own handsets are not customers */
+      var e=by[m]||(by[m]={mob:m,n:0,ans:0,miss:0,drop:0,wait:0,last:'',lastMin:-1,ctr:''});
+      e.n++;
+      if(c.oc===0) e.ans++; else if(c.oc===2) e.drop++; else e.miss++;
+      e.wait+=c.wait||0;
+      if(c.iso>e.last || (c.iso===e.last && c.min>e.lastMin)){ e.last=c.iso; e.lastMin=c.min; }
+      if(!e.ctr && c.ctr) e.ctr=c.ctr;
+    });
+    var out=Object.keys(by).map(function(m){
+      var e=by[m], h=H[m]||{}, r=R[m];
+      e.everAns=h.ans||0; e.rangBack=h.rangBack||0; e.tot=h.n||0; e.inMiss=h.inMiss||0;
+      e.reg=r||null;
+      return e;
+    });
+    out.sort(function(a,b){ return b.n-a.n || (a.last<b.last?1:-1); });
+    return out;
+  }
+
+  function hhmm(min){ return Math.floor(min/60)+':'+('0'+(min%60)).slice(-2); }
+
+  function drillHtml(){
+    var sp=DRILL; if(!sp) return '';
+    var L=drillRows(sp), P=drillPeople(L);
+    var unreached=P.filter(function(x){ return !x.everAns; }).length;
+    var noReg=P.filter(function(x){ return !x.reg; }).length;
+
+    var h='<div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">'
+      +'<div><h2 style="margin:0">'+esc(sp.label||'Calls')+'</h2>'
+      +'<p class="help-text" style="margin:4px 0 0"><b>'+nf(L.length)+'</b> call'+(L.length===1?'':'s')
+      +' from <b>'+nf(P.length)+'</b> customer'+(P.length===1?'':'s')
+      + (unreached?(' &middot; <b style="color:#ff5c5c">'+nf(unreached)+'</b> have never been reached at all'):'')
+      + (noReg?(' &middot; <b style="color:#ffb02e">'+nf(noReg)+'</b> are in no register'):'')
+      +'.</p>'
+      + (sp.note?('<p class="help-text" style="margin:4px 0 0">'+sp.note+'</p>'):'')
+      +'</div>'
+      +'<div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">'
+      +'<button class="btn btn-sm'+(sp.mode!=='calls'?' btn-primary':'')+'" onclick="iqDrillMode(\'people\')">Customers ('+nf(P.length)+')</button>'
+      +'<button class="btn btn-sm'+(sp.mode==='calls'?' btn-primary':'')+'" onclick="iqDrillMode(\'calls\')">Every call ('+nf(L.length)+')</button>'
+      +'<button class="btn btn-sm" onclick="iqDrillExport()">&#11015;&#65039; Export</button>'
+      +'<button class="btn btn-sm" onclick="iqDrillClose()">Close</button>'
+      +'</div></div>';
+
+    if(!L.length){
+      return h+'<p class="help-text" style="margin-top:14px">No calls match that figure. If the number above it '
+        +'was not zero, tell me &mdash; the two are built from the same filter and must agree.</p>';
+    }
+
+    h+='<div style="overflow:auto;max-height:62vh;margin-top:12px">';
+    if(sp.mode==='calls'){
+      h+='<table class="table"><thead><tr><th>Date</th><th>Time</th><th>Customer</th><th>Status</th>'
+        +'<th>Rang</th><th>Counter</th><th style="text-align:right">Waited</th>'
+        +'<th style="text-align:right">Talked</th></tr></thead><tbody>';
+      L.slice(0,600).forEach(function(c){
+        h+='<tr><td>'+esc(dmy(c.iso))+'</td><td>'+hhmm(c.min)+'</td>'
+          +'<td style="font-family:monospace">'+esc(c.cust||'&mdash;')+'</td>'
+          +'<td style="color:'+stColour(c.oc)+'">'+stWhy(c)+'</td>'
+          +'<td>'+esc(c.name||c.num||'&mdash;')+'</td><td>'+esc(c.ctr||'&mdash;')+'</td>'
+          +'<td style="text-align:right">'+mmss(c.wait)+'</td>'
+          +'<td style="text-align:right">'+(c.oc===0?mmss(c.talk):'&mdash;')+'</td></tr>';
+      });
+      h+='</tbody></table>';
+      if(L.length>600) h+='<p class="help-text">Showing the newest 600. The export has all '+nf(L.length)+'.</p>';
+    } else {
+      h+='<table class="table"><thead><tr><th>Customer</th><th>Last rang</th>'
+        +'<th style="text-align:right">Calls here</th><th style="text-align:right">Missed</th>'
+        +'<th style="text-align:right">Not connected</th><th>Ever reached</th><th>Rang back</th><th>In a register</th><th>Counter</th></tr></thead><tbody>';
+      P.slice(0,600).forEach(function(x){
+        var reg=x.reg;
+        h+='<tr><td style="font-family:monospace"><b>'+esc(x.mob)+'</b></td>'
+          +'<td>'+esc(dmy(x.last))+'</td>'
+          +'<td style="text-align:right"><b>'+x.n+'</b>'+(x.tot>x.n?('<span style="color:var(--muted)"> of '+x.tot+'</span>'):'')+'</td>'
+          +'<td style="text-align:right;color:'+(x.miss?'#ff5c5c':'var(--muted)')+'">'+(x.miss||'&middot;')+'</td>'
+          +'<td style="text-align:right;color:'+(x.drop?'#ffb02e':'var(--muted)')+'">'+(x.drop||'&middot;')+'</td>'
+          +'<td style="color:'+(x.everAns?'#2bd47d':'#ff5c5c')+'">'+(x.everAns?'yes':'never')+'</td>'
+          +'<td style="color:'+(x.inMiss?(x.rangBack?'#2bd47d':'#ff5c5c'):'var(--muted)')+'">'
+          + (x.inMiss? (x.rangBack?'yes':'no') : '&mdash;')+'</td>'
+          +'<td>'+(reg?('<span style="color:#2bd47d">'+esc(reg.counter||'yes')+'</span>'
+                        +(reg.stage?(' <span style="color:var(--muted)">'+esc(reg.stage)+'</span>'):''))
+                     :'<span style="color:#ffb02e">no</span>')+'</td>'
+          +'<td style="color:var(--muted)">'+esc(x.ctr||'&mdash;')+'</td></tr>';
+      });
+      h+='</tbody></table>';
+      if(P.length>600) h+='<p class="help-text">Showing the busiest 600. The export has all '+nf(P.length)+'.</p>';
+    }
+    h+='</div>';
+    h+='<p class="help-text" style="margin-top:10px"><b>Ever reached</b> and <b>Rang back</b> look at that '
+      +'customer’s whole history, not just the calls in this list &mdash; somebody can be missed here and '
+      +'picked up the next day. <b>Rang back</b> is yes when one of our numbers dialled them after the last '
+      +'time they were left unanswered. <b>In a register</b> is a match on the mobile in the enquiry register.</p>';
+    return h;
+  }
+
+  function drillNode(){
+    var d=document.getElementById('iq-drill');
+    if(!d){
+      d=document.createElement('div'); d.id='iq-drill'; d.className='modal-bg'; d.style.zIndex='400';
+      d.onclick=function(ev){ if(ev.target===d) window.iqDrillClose(); };
+      document.body.appendChild(d);
+      document.addEventListener('keydown',function(ev){
+        if(ev.key==='Escape' && DRILL) window.iqDrillClose();
+      });
+    }
+    return d;
+  }
+  function paintDrill(){
+    var d=drillNode();
+    d.innerHTML='<div class="modal" style="width:min(96vw,1060px)">'+drillHtml()+'</div>';
+    d.style.display='flex';
+  }
+  window.iqDrill=function(enc){
+    try{ DRILL=JSON.parse(decodeURIComponent(enc)); }catch(e){ return; }
+    if(!DRILL.mode) DRILL.mode='people';
+    paintDrill();
+  };
+  window.iqDrillMode=function(m){ if(DRILL){ DRILL.mode=m; paintDrill(); } };
+  window.iqDrillClose=function(){ DRILL=null;
+    var d=document.getElementById('iq-drill'); if(d){ d.style.display='none'; d.innerHTML=''; } };
+  window.iqDrillExport=function(){
+    if(!DRILL) return;
+    var L=drillRows(DRILL), head, body;
+    if(DRILL.mode==='calls'){
+      head=['Date','Time','Customer','Status','Why','Rang (agent)','Counter','Waited (s)','Talked (s)'];
+      body=L.map(function(c){ return [dmy(c.iso),hhmm(c.min),c.cust,stText(c),
+        (c.oc===0?'answered':(c.oc===2?'reached no handset':'rang out, nobody picked up')),
+        c.name||c.num,c.ctr,c.wait,c.oc===0?c.talk:0]; });
+    } else {
+      head=['Customer','Last rang','Calls in this list','Missed in this list','Not connected in this list','Calls all time',
+            'Ever reached','We rang back','In a register','Register counter','Register stage','Counter rung'];
+      body=drillPeople(L).map(function(x){ return [x.mob,dmy(x.last),x.n,x.miss,x.drop,x.tot,
+        x.everAns?'yes':'never', x.inMiss?(x.rangBack?'yes':'no'):'', x.reg?'yes':'no',
+        x.reg?(x.reg.counter||''):'', x.reg?(x.reg.stage||''):'', x.ctr]; });
+    }
+    var tag=String(DRILL.label||'drill').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+    try{ downloadCsv('airtel_iq_'+tag+'_'+(DRILL.mode==='calls'?'calls':'customers')+'.csv',head,body); }
+    catch(e){ alert('Export failed: '+e.message); }
+  };
+
+  /* a clickable figure: the number, plus the filter that produced it */
+  function dnum(v,sp,colour){
+    if(!v) return '<span style="color:var(--muted)">0</span>';
+    var enc=encodeURIComponent(JSON.stringify(sp));
+    return '<span onclick="iqDrill(\''+enc+'\')" title="Open the '+esc(String(sp.label||''))
+      +' behind this figure" style="cursor:pointer;text-decoration:underline dotted;'
+      +'text-underline-offset:3px'+(colour?(';color:'+colour):'')+'">'+nf(v)+'</span>';
+  }
+  function dtxt(t,sp,colour){
+    var enc=encodeURIComponent(JSON.stringify(sp));
+    return '<span onclick="iqDrill(\''+enc+'\')" title="Open the '+esc(String(sp.label||''))
+      +' behind this figure" style="cursor:pointer;text-decoration:underline dotted;'
+      +'text-underline-offset:3px'+(colour?(';color:'+colour):'')+'">'+t+'</span>';
+  }
+  function dirWord(){ return p.dir==='out'?'outbound':p.dir==='in'?'inbound':'all'; }
+
   window.iqSet=function(k,v){ p[k]=v; save(); render(); };
   window.iqTog=function(k){ p[k]=p[k]?0:1; save(); render(); };
   window.iqDir=function(num,field,v){
@@ -8468,12 +8717,15 @@ document.addEventListener('DOMContentLoaded', initApp);
   window.iqExport=function(what){
     var head, body;
     if(what==='chase'){
-      head=['Customer','Last unanswered call','Rang','Counter','Times they tried','Called back since','Days ago','Caller dropped'];
+      head=['Customer','Last unanswered call','Rang','Counter','Times they tried','Called back since','Days ago','Never connected'];
       body=chase().map(function(r){ return [r.mob,r.when,r.name,r.ctr,r.tries,r.calledBack,r.age,r.dropped?'yes':'']; });
     } else {
-      head=['Date','Time','Direction','Agent','Counter','Customer','Outcome','Talk (s)','Ring wait (s)','IVR'];
+      head=['Date','Time','Direction','Agent','Counter','Customer','Status','Why','Talk (s)','Ring wait (s)','IVR'];
       body=view().map(function(c){ return [c.iso,Math.floor(c.min/60)+':'+('0'+(c.min%60)).slice(-2),
-        c.out?'Outbound':'Inbound',c.name||c.num,c.ctr,c.cust,OC[c.oc],c.talk,c.wait,['','Sales','Service'][c.ivr]]; });
+        c.out?'Outbound':'Inbound',c.name||c.num,c.ctr,c.cust,
+        OC[c.oc],
+        c.oc===0?'answered':(c.oc===2?'reached no handset':'rang out, nobody picked up'),
+        c.talk,c.wait,['','Sales','Service'][c.ivr]]; });
     }
     try{ downloadCsv('airtel_iq_'+what+'.csv',head,body); }catch(e){ alert('Export failed: '+e.message); }
   };
@@ -8529,7 +8781,7 @@ document.addEventListener('DOMContentLoaded', initApp);
             /* Airtel labels the agent only on inbound calls. Take the name it uses
                MOST for a number, not the first one seen - one mislabelled row at the
                top of the file would otherwise name that agent for the whole month. */
-            var tally={}, names={}, agents=[], aidx={}, custs=[], cidx={}, rows=[];
+            var tally={}, names={}, agents=[], aidx={}, custs=[], cidx={}, rows=[], unknown={};
             A.slice(1).forEach(function(r){
               if(!r||!r[cD]) return;
               if(r[cTy]==='INBOUND'){ var a=nrm(r[cTo]), n=String(r[cNm]||'').trim();
@@ -8554,7 +8806,16 @@ document.addEventListener('DOMContentLoaded', initApp);
               var inb=r[cTy]==='INBOUND';
               var an=inb?r[cTo]:r[cCust], cu=inb?r[cCust]:r[cTo];
               var ct=nrm(r[cTo]);
-              var oc=(r[cSt]==='Answered')?0:(ct?1:2);
+              /* v105: take the status the sheet states. The old code inferred it from
+                 whether ConnectedTo was filled; that happened to agree on all 12,007
+                 rows checked, but an inference silently absorbs any status Airtel adds
+                 later. Reading the column means a new one shows up as a warning on the
+                 import instead of being quietly filed as Missed. */
+              var sv=String(r[cSt]==null?'':r[cSt]).trim(), oc;
+              if(/^answered$/i.test(sv)) oc=0;
+              else if(/^missed$/i.test(sv)) oc=1;
+              else if(/^not\s*connected$/i.test(sv)) oc=2;
+              else { oc = ct?1:2; if(sv) unknown[sv]=(unknown[sv]||0)+1; }
               var iv=String(r[cIv]||'').trim().toLowerCase();
               rows.push([day,hh*60+mi,inb?0:1,agent(an),cust(cu),oc,
                          secOf(r[cDur]),secOf(r[cW]), iv==='sales'?1:iv==='service'?2:0]);
@@ -8571,6 +8832,10 @@ document.addEventListener('DOMContentLoaded', initApp);
                                  days:Object.keys(fDays).length,
                                  importedAt:new Date().toISOString()};
             report.push(f.name+': '+rows.length+' calls, '+fFrom+' to '+fTo);
+            var uk=Object.keys(unknown);
+            if(uk.length) report.push('    note - CallStatus value(s) this build does not know: '
+              + uk.map(function(k){ return k+' ('+unknown[k]+')'; }).join(', ')
+              + '. Filed by whether a handset was reached. Tell me and they get their own column.');
           }catch(err){ report.push(f.name+': could not read ('+err.message+')'); }
           step();
         };
@@ -8617,9 +8882,8 @@ document.addEventListener('DOMContentLoaded', initApp);
       + C.map(function(c){ return '<option value="'+esc(c)+'"'+(p.ctr===c?' selected':'')+'>'+esc(c)+'</option>'; }).join('')
       +'<option value="_none"'+(p.ctr==='_none'?' selected':'')+'>Not assigned yet</option>'
       +'</select></span>'
-      +'<span><b>Direction</b> &nbsp;'+b('dir','','Both')+b('dir','in','Inbound')+b('dir','out','Outbound')+'</span>'
+      +'<span><b>Calls</b> &nbsp;'+b('dir','in','Inbound')+b('dir','out','Outbound')+b('dir','','Both')+'</span>'
       +'<span><label style="cursor:pointer"><input type="checkbox" onchange="iqTog(\'noService\')"'+(p.noService?' checked':'')+'> Leave out service calls</label></span>'
-      +'<span><label style="cursor:pointer"><input type="checkbox" onchange="iqTog(\'dropMissed\')"'+(p.dropMissed?' checked':'')+'> Count caller-dropped as missed</label></span>'
       +'<span style="margin-left:auto;display:flex;gap:6px">'
       +'<button class="btn btn-sm" onclick="iqImport()">&#128228; Import CDR</button>'
       +'<button class="btn btn-sm" onclick="iqExport(\'calls\')">&#11015;&#65039; Export</button></span>'
@@ -8641,32 +8905,54 @@ document.addEventListener('DOMContentLoaded', initApp);
     var V=view(), T=tally(V);
     var h='<div class="card" style="margin-bottom:14px;border-left:4px solid #e2001a">'
       +'<h2 style="margin:0">&#128222; Airtel IQ &mdash; are the calls getting through?</h2>'
-      +'<p class="help-text" style="margin-top:6px">Every call through the dealership virtual number. '
-      +'<b>Answered</b> means somebody picked up. <b>Missed</b> means it rang and nobody did. '
-      +'<b>Caller dropped</b> means the caller hung up before it connected &mdash; Airtel still files those as missed, '
-      +'but no one had the chance to answer, so they are counted separately unless you tick the box.</p></div>';
+      +'<p class="help-text" style="margin-top:6px">Set to <b>inbound</b> calls: customers ringing the dealership '
+      +'numbers. The three statuses are the ones the Airtel IQ sheet writes in its <b>CallStatus</b> column, '
+      +'taken exactly as it writes them: <b style="color:#2bd47d">Answered</b> &mdash; somebody picked up; '
+      +'<b style="color:#ff5c5c">Missed</b> &mdash; a handset rang and nobody picked up; '
+      +'<b style="color:#ffb02e">Not connected</b> &mdash; the call reached no handset at all, so nobody had the '
+      +'chance to answer. The three add up to the call count on every row of every table here. '
+      +'<b>Every figure on this tab opens the customers behind it &mdash; click it.</b></p></div>';
     h+=coverCard();
     h+=filters()+tabs();
 
     if(p.tab==='overview'){
       function tile(v,l,c,s){ return '<div class="card kpi"><h3>'+l+'</h3><div class="kpi-value" style="color:'+c+'">'+v+'</div>'
         +'<div class="kpi-trend">'+(s||'&nbsp;')+'</div></div>'; }
+      var W=dirWord();
       h+='<div class="kpi-grid" style="margin-bottom:14px">'
-        + tile(nf(T.n),'Calls','#5b9eff',nf(T.inb)+' in &middot; '+nf(T.outb)+' out')
-        + tile(T.conn+'%','Connected',connColour(T.conn),nf(T.a)+' answered')
-        + tile(nf(T.missTotal),'Missed','#ff5c5c','nobody picked up')
-        + tile(nf(T.d),'Caller dropped','#ffb02e','hung up before connecting')
+        + tile(dnum(T.n,{oc:'',label:'all '+W+' calls'}),'Calls','#5b9eff',
+               (p.dir===''?(nf(T.inb)+' in &middot; '+nf(T.outb)+' out'):'click to see who'))
+        + tile(dnum(T.a,{oc:'a',label:W+' calls answered'},'#2bd47d'),'Answered','#2bd47d','somebody picked up')
+        + tile(dnum(T.m,{oc:'m',label:W+' calls missed'},'#ff5c5c'),'Missed','#ff5c5c','a handset rang, nobody picked up')
+        + tile(dnum(T.d,{oc:'n',label:W+' calls not connected'},'#ffb02e'),
+               'Not connected','#ffb02e','reached no handset at all')
+        + tile(dtxt(T.conn+'%',{oc:'a',label:W+' calls answered'},connColour(T.conn)),
+               'Connect rate',connColour(T.conn),'answered as a share of all '+nf(T.n)+' calls')
         + tile(mmss(T.avgTalk),'Average talk','#2bd47d','on answered calls')
         + tile(mmss(T.avgWait),'Average ring','#a05bff','before it was picked up or given up')
         +'</div>';
-      var inb=tally(V.filter(function(c){ return !c.out; })), out=tally(V.filter(function(c){ return c.out; }));
+      /* both sides, whatever the direction filter says - this card exists to compare */
+      var AV=view({anyDir:true});
+      var inb=tally(AV.filter(function(c){ return !c.out; })), out=tally(AV.filter(function(c){ return c.out; }));
       h+='<div class="card" style="margin-bottom:14px"><h3>Inbound against outbound</h3>'
-        + tbl(['','Calls','Answered','Missed','Caller dropped','Connected','Avg talk'],
-            [['<b>Inbound &mdash; customers calling us</b>',nf(inb.n),nf(inb.a),nf(inb.missTotal),nf(inb.d),
+        + tbl(['','Calls','Answered','Missed','Not connected','Connected','Avg talk'],
+            [['<b>Inbound &mdash; customers calling us</b>',
+              dnum(inb.n,{dir:'in',oc:'',label:'inbound calls'}),
+              dnum(inb.a,{dir:'in',oc:'a',label:'inbound calls answered'},'#2bd47d'),
+              dnum(inb.m,{dir:'in',oc:'m',label:'inbound calls missed'},'#ff5c5c'),
+              dnum(inb.d,{dir:'in',oc:'n',label:'inbound calls not connected'},'#ffb02e'),
               '<b style="color:'+connColour(inb.conn)+'">'+inb.conn+'%</b>',mmss(inb.avgTalk)],
-             ['<b>Outbound &mdash; us calling customers</b>',nf(out.n),nf(out.a),nf(out.missTotal),nf(out.d),
+             ['<b>Outbound &mdash; us calling customers</b>',
+              dnum(out.n,{dir:'out',oc:'',label:'outbound calls'}),
+              dnum(out.a,{dir:'out',oc:'a',label:'outbound calls answered'},'#2bd47d'),
+              dnum(out.m,{dir:'out',oc:'m',label:'outbound calls missed'},'#ff5c5c'),
+              dnum(out.d,{dir:'out',oc:'n',label:'outbound calls not connected'},'#ffb02e'),
               '<b style="color:'+connColour(out.conn)+'">'+out.conn+'%</b>',mmss(out.avgTalk)]],
-            'Inbound connect rate is the one that costs enquiries: a customer who rings and is not picked up rarely rings twice.')
+            'Answered + Missed + Not connected = Calls, on every row and in every table on this tab. '
+            +'<b>Connected</b> is answered as a share of all calls. Airtel\u2019s own portal rolls Not connected '
+            +'into its Missed headline, so its missed figure is this table\u2019s Missed plus Not connected. '
+            +'Inbound connect rate is the one that costs enquiries: a customer who rings and is not picked up rarely rings twice. '
+            +'This card always shows both directions, whatever the Calls filter above is set to.')
         +'</div>';
     }
 
@@ -8677,16 +8963,34 @@ document.addEventListener('DOMContentLoaded', initApp);
       var rows=Object.keys(g).map(function(k){ var t=tally(g[k]); t.k=k;
         if(p.tab==='agents'){ t.num=g[k][0].num; t.ctr=g[k][0].ctr; } return t; })
         .sort(function(a,b){ return b.n-a.n; });
+      var isAg=(p.tab==='agents');
+      function sp(t,oc,what,dir){
+        var o={oc:oc,label:(isAg?t.k:t.k)+' — '+what};
+        if(isAg) o.agent=t.k; else o.ctr=t.k;
+        if(dir) o.dir=dir;
+        return o;
+      }
       h+='<div class="card"><h3>'+(p.tab==='counters'?'Counter by counter':'Who is on the phone')+'</h3>'
         + tbl((p.tab==='agents'?['Agent','Number','Counter']:['Counter'])
-                .concat(['Calls','In','Out','Answered','Missed','Caller dropped','Connected','Avg talk','Avg ring']),
+                .concat(['Calls','In','Out','Answered','Missed','Not connected','Connected','Avg talk','Avg ring']),
             rows.map(function(t){
               var base=p.tab==='agents' ? ['<b>'+esc(t.k)+'</b>',t.num?esc(t.num):'&mdash;',t.ctr?esc(t.ctr):'&mdash;'] : ['<b>'+esc(t.k)+'</b>'];
-              return base.concat([nf(t.n),nf(t.inb),nf(t.outb),nf(t.a),nf(t.missTotal),nf(t.d),
+              return base.concat([
+                dnum(t.n,sp(t,'','all calls')),
+                dnum(t.inb,sp(t,'','inbound calls','in')),
+                dnum(t.outb,sp(t,'','outbound calls','out')),
+                dnum(t.a,sp(t,'a','calls answered'),'#2bd47d'),
+                dnum(t.m,sp(t,'m','calls missed'),'#ff5c5c'),
+                dnum(t.d,sp(t,'n','calls not connected'),'#ffb02e'),
                 '<b style="color:'+connColour(t.conn)+'">'+t.conn+'%</b>',mmss(t.avgTalk),mmss(t.avgWait)]);
             }),
             p.tab==='counters'
-              ? 'A counter is assigned from the number the call rang. Numbers you have not named yet fall into &ldquo;Not assigned&rdquo; &mdash; name them under Number directory and they move here.'
+              ? 'A counter is assigned from the number the call rang. Two kinds of call cannot be: a handset you have '
+                +'not named yet (name it under <b>Number directory</b> and every call it ever made moves here), and a '
+                +'<b>Not connected</b> call &mdash; no handset ever rang, so the sheet leaves ConnectedTo blank and '
+                +'there is no counter to attribute it to. Both sit in <b>Not assigned</b>, which is why the Not '
+                +'connected column reads 0 on every named counter, and why a counter’s missed figure counts only '
+                +'the calls that actually rang its number. Click Not assigned to see who those callers were.'
               : 'Outbound rows are the handset that dialled; inbound rows are the handset that answered. '
                 +'<b>Nobody picked up</b> collects the inbound calls that rang out with no one answering, so they belong to no handset.')
         +'</div>';
@@ -8696,11 +9000,18 @@ document.addEventListener('DOMContentLoaded', initApp);
       var g={}; V.forEach(function(c){ (g[c.iso]=g[c.iso]||[]).push(c); });
       var ks=Object.keys(g).sort().reverse();
       h+='<div class="card"><h3>Day by day</h3>'
-        + tbl(['Date','Calls','In','Out','Answered','Missed','Caller dropped','Connected'],
-            ks.map(function(k){ var t=tally(g[k]);
-              return ['<b>'+k.split('-').reverse().join('/')+'</b>',nf(t.n),nf(t.inb),nf(t.outb),nf(t.a),
-                nf(t.missTotal),nf(t.d),'<b style="color:'+connColour(t.conn)+'">'+t.conn+'%</b>']; }),
-            'Newest first.')
+        + tbl(['Date','Calls','In','Out','Answered','Missed','Not connected','Connected'],
+            ks.map(function(k){ var t=tally(g[k]), d=dmy(k);
+              function sd(oc,what,dir){ var o={iso:k,oc:oc,label:d+' — '+what}; if(dir) o.dir=dir; return o; }
+              return ['<b>'+dtxt(d,sd('','all calls'))+'</b>',
+                dnum(t.n,sd('','all calls')),
+                dnum(t.inb,sd('','inbound calls','in')),
+                dnum(t.outb,sd('','outbound calls','out')),
+                dnum(t.a,sd('a','calls answered'),'#2bd47d'),
+                dnum(t.m,sd('m','calls missed'),'#ff5c5c'),
+                dnum(t.d,sd('n','calls not connected'),'#ffb02e'),
+                '<b style="color:'+connColour(t.conn)+'">'+t.conn+'%</b>']; }),
+            'Newest first. Click any figure &mdash; or the date &mdash; to see the customers behind it.')
         +'</div>';
     }
 
@@ -8710,7 +9021,7 @@ document.addEventListener('DOMContentLoaded', initApp);
         +'<h3 style="margin:0">Customers who rang, were not picked up, and were never called back '
         +'<span style="color:#ff5c5c">('+L.length+')</span></h3>'
         +'<button class="btn btn-sm" style="margin-left:auto" onclick="iqExport(\'chase\')">&#11015;&#65039; Export the list</button></div>'
-        + tbl(['Customer','Last tried us','Rang','Counter','Times they tried','We called back since','Days ago','Caller dropped'],
+        + tbl(['Customer','Last tried us','Rang','Counter','Times they tried','We called back since','Days ago','Never connected'],
             L.slice(0,400).map(function(r){
               return ['<b>'+esc(r.mob)+'</b>',r.when.split('-').reverse().join('/'),r.name?esc(r.name):'&mdash;',r.ctr?esc(r.ctr):'&mdash;',
                 '<b style="color:'+(r.tries>1?'#ff5c5c':'inherit')+'">'+r.tries+'</b>',
