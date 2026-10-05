@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v102 &middot; 5 Oct 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v103 &middot; 5 Oct 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -8223,6 +8223,175 @@ document.addEventListener('DOMContentLoaded', initApp);
     _cache=out; _key=key;
     return out;
   }
+  /* ---- what this dashboard actually holds, and what to pull next ----------
+     The header used to print SEED.at - the end date of the BAKED months. Import
+     a fresh CDR and that line kept saying 28 Sep, so there was no way to tell
+     how far the data really ran. This reads the merged call list instead, so it
+     is right whatever has been imported since. */
+  function isoL(d){ return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate()); }
+  function pad2(n){ return (n<10?'0':'')+n; }
+  function dmy(iso){ var q=String(iso||'').split('-'); return q.length<3?'':(q[2]+'/'+q[1]+'/'+q[0]); }
+  function pretty(iso){ var q=String(iso||'').split('-'); if(q.length<3) return '';
+    return (+q[2])+' '+MONN[+q[1]-1]+' '+q[0]; }
+  function dow(iso){ return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
+    [new Date(Date.parse(iso+'T00:00:00Z')).getUTCDay()]; }
+
+  function coverage(){
+    var C=calls(); if(!C.length) return null;
+    var by={}; C.forEach(function(c){ by[c.iso]=(by[c.iso]||0)+1; });
+    var ks=Object.keys(by).sort();
+    var first=ks[0], last=ks[ks.length-1];
+    var t0=Date.parse(first+'T00:00:00Z'), t1=Date.parse(last+'T00:00:00Z');
+    var span=Math.round((t1-t0)/MS)+1;
+    /* missing days inside the window, as runs */
+    var gaps=[], run=null;
+    for(var i=0;i<span;i++){
+      var iso=new Date(t0+i*MS).toISOString().slice(0,10);
+      if(by[iso]){ if(run){ gaps.push(run); run=null; } }
+      else if(run) run.to=iso; else run={from:iso,to:iso};
+    }
+    if(run) gaps.push(run);
+    /* did the export stop mid-day? compare the last day with the fortnight before it */
+    var prev=ks.slice(-15,-1).map(function(k){ return by[k]; }).sort(function(a,b){ return a-b; });
+    var med=prev.length?prev[Math.floor(prev.length/2)]:0;
+    var today=isoL(new Date());
+    var behind=Math.round((Date.parse(today+'T00:00:00Z')-t1)/MS);
+    /* a typical day of each weekday, so a gap can be judged rather than guessed.
+       This dealership trades on Sundays - 27 Sep carried 234 calls - so "it was a
+       Sunday" is not an explanation for a missing day. The number is. */
+    var dw={};
+    ks.forEach(function(k){
+      var w=new Date(Date.parse(k+'T00:00:00Z')).getUTCDay();
+      (dw[w]||(dw[w]=[])).push(by[k]);
+    });
+    var dwMed={};
+    Object.keys(dw).forEach(function(w){
+      var a=dw[w].slice().sort(function(x,y){ return x-y; });
+      dwMed[w]=a[Math.floor(a.length/2)];
+    });
+    return {by:by, days:ks.length, calls:C.length, first:first, last:last, span:span,
+            gaps:gaps, med:med, lastN:by[last], today:today, behind:behind,
+            dwMed:dwMed, thin:(med>0 && by[last] < med*0.5)};
+  }
+
+  /* the imported files, newest first, with when each one landed */
+  function importLog(){
+    var out=[];
+    try{ var f=JSON.parse(localStorage.getItem(FKEY));
+      if(f&&f.files) Object.keys(f.files).forEach(function(k){
+        var x=f.files[k];
+        out.push({name:x.name||k, from:x.from||'', to:x.to||x.at||'', n:x.n||(x.rows||[]).length,
+                  days:x.days||0, importedAt:x.importedAt||''});
+      });
+    }catch(e){}
+    out.sort(function(a,b){ return String(b.importedAt||'').localeCompare(String(a.importedAt||'')); });
+    return out;
+  }
+
+  window.iqCopyRange=function(a,b){
+    var t=a+' to '+b;
+    function done(){ if(typeof showToast==='function') showToast('Copied: '+t); else alert('Copied: '+t); }
+    try{ navigator.clipboard.writeText(t).then(done,function(){ fall(); }); }catch(e){ fall(); }
+    function fall(){ try{ var x=document.createElement('textarea'); x.value=t;
+      document.body.appendChild(x); x.select(); document.execCommand('copy'); x.remove(); done();
+    }catch(_){ alert(t); } }
+  };
+
+  function coverCard(){
+    var V=coverage();
+    if(!V) return '<div class="card" style="margin-bottom:14px"><h3>&#128197; No call data loaded</h3>'
+      +'<p class="help-text">Press <b>Import CDR</b> and pick the report you downloaded from Airtel IQ.</p></div>';
+    var late=V.behind>1;
+    var pullFrom=V.last;                 /* re-pull the last day on purpose - see note */
+    var h='<div class="card" style="margin-bottom:14px;border-left:4px solid '+(late?'#ffb02e':'#2bd47d')+'">'
+      +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<h3 style="margin:0">&#128197; What this dashboard already holds</h3>'
+      +'<button class="btn btn-sm btn-primary" style="margin-left:auto" onclick="iqImport()">&#128228; Import CDR export</button>'
+      +'</div>';
+    h+='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">'
+      +'<div style="flex:1 1 150px;min-width:150px;padding:10px 12px;border-radius:8px;border:1px solid var(--line)">'
+      +'<div style="font-size:19px;font-weight:800">'+esc(pretty(V.last))+'</div>'
+      +'<div style="font-size:12px;opacity:.75">last call in the data</div></div>'
+      +'<div style="flex:1 1 150px;min-width:150px;padding:10px 12px;border-radius:8px;border:1px solid '
+      +(late?'#ffb02e':'var(--line)')+'">'
+      +'<div style="font-size:19px;font-weight:800;color:'+(late?'#ffb02e':'#2bd47d')+'">'
+      +(V.behind<=0?'up to date':V.behind+' day'+(V.behind===1?'':'s')+' behind')+'</div>'
+      +'<div style="font-size:12px;opacity:.75">against today, '+esc(pretty(V.today))+'</div></div>'
+      +'<div style="flex:1 1 130px;min-width:130px;padding:10px 12px;border-radius:8px;border:1px solid var(--line)">'
+      +'<div style="font-size:19px;font-weight:800">'+V.days+'</div>'
+      +'<div style="font-size:12px;opacity:.75">days held'+(V.gaps.length?(', '+(V.span-V.days)+' missing'):', no gaps')+'</div></div>'
+      +'<div style="flex:1 1 130px;min-width:130px;padding:10px 12px;border-radius:8px;border:1px solid var(--line)">'
+      +'<div style="font-size:19px;font-weight:800">'+nf(V.calls)+'</div>'
+      +'<div style="font-size:12px;opacity:.75">calls, '+esc(pretty(V.first))+' onward</div></div></div>';
+
+    /* the answer to "from which date do I import" */
+    if(V.behind>0){
+      h+='<div style="margin-top:12px;padding:10px 12px;border-radius:8px;background:rgba(255,176,46,.08);'
+        +'border:1px solid rgba(255,176,46,.35)">'
+        +'<div style="font-weight:700">Pull <span style="font-family:monospace">'+dmy(pullFrom)+'</span> to '
+        +'<span style="font-family:monospace">'+dmy(V.today)+'</span> from the Airtel IQ report page '
+        +'<button class="btn btn-sm" onclick="iqCopyRange(\''+dmy(pullFrom)+'\',\''+dmy(V.today)+'\')">Copy</button></div>'
+        +'<p class="help-text" style="margin:6px 0 0">Start on <b>'+esc(pretty(pullFrom))+'</b>, the day already held, '
+        +'not the day after. An export taken mid-day holds only part of that day, and re-importing a day you '
+        +'already have costs nothing &mdash; a call that is already in here is recognised and dropped, so '
+        +'nothing is counted twice.'
+        + (V.thin?(' That matters here: <b>'+esc(pretty(V.last))+' shows only '+V.lastN+' calls against a typical '
+            +V.med+'</b>, so that last day looks cut off.'):'')
+        +'</p></div>';
+    } else {
+      h+='<p class="help-text" style="margin-top:10px">Current to today. Nothing to import.</p>';
+    }
+
+    if(V.gaps.length){
+      h+='<p class="help-text" style="margin-top:10px"><b>Missing days inside the window</b> &mdash; '
+        +'these are not in the data at all, so any call on them is invisible:</p>'
+        +'<div style="display:flex;flex-direction:column;gap:4px">';
+      V.gaps.slice(0,12).forEach(function(g){
+        var one=g.from===g.to;
+        var w=new Date(Date.parse(g.from+'T00:00:00Z')).getUTCDay(), typ=V.dwMed[w];
+        h+='<div style="font-size:13px;color:var(--muted)">'
+          +'<span style="font-family:monospace;color:var(--text)">'+dmy(g.from)+(one?'':' to '+dmy(g.to))+'</span> '
+          +(one?('('+dow(g.from)+(typ?(' &mdash; normally '+nf(typ)+' calls'):'')+')'):'')
+          +' <button class="btn btn-sm" onclick="iqCopyRange(\''+dmy(g.from)+'\',\''+dmy(g.to)+'\')">Copy</button></div>';
+      });
+      if(V.gaps.length>12) h+='<div class="help-text">and '+(V.gaps.length-12)+' more.</div>';
+      h+='</div>';
+    }
+
+    /* where each slice of the data came from */
+    var log=importLog();
+    h+='<p class="help-text" style="margin-top:12px"><b>Where this data came from</b></p>'
+      +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Source</th><th>Covers</th>'
+      +'<th style="text-align:right">Calls</th><th>Loaded</th></tr></thead><tbody>'
+      +'<tr><td><b>Built in</b></td><td style="color:var(--muted)">up to '+esc(pretty(SEED.at||''))+'</td>'
+      +'<td style="text-align:right">'+nf((SEED.rows||[]).length)+'</td>'
+      +'<td style="color:var(--muted)">with the dashboard build</td></tr>';
+    log.forEach(function(x){
+      h+='<tr><td>'+esc(x.name)+'</td>'
+        +'<td style="color:var(--muted)">'+esc(dmy(x.from))+' to '+esc(dmy(x.to))
+        +(x.days?(' &middot; '+x.days+' days'):'')+'</td>'
+        +'<td style="text-align:right">'+nf(x.n)+'</td>'
+        +'<td style="color:var(--muted)">'+(x.importedAt
+            ? esc(new Date(x.importedAt).toLocaleString('en-IN'))
+            : '<span title="imported before v102 kept a timestamp">not recorded</span>')+'</td></tr>';
+    });
+    if(!log.length) h+='<tr><td colspan="4" class="help-text">Nothing imported yet &mdash; everything above '
+      +'is the built-in months.</td></tr>';
+    h+='</tbody></table></div>';
+
+    /* the row count above will not add up, and it should be said why rather than
+       leaving the reader to wonder which figure is wrong */
+    var raw=(SEED.rows||[]).length; log.forEach(function(x){ raw+=x.n||0; });
+    var dropped=raw-V.calls;
+    if(dropped>0){
+      h+='<p class="help-text" style="margin-top:6px">Those add to '+nf(raw)+' rows but the data holds '
+        +nf(V.calls)+' calls: <b>'+nf(dropped)+'</b> are the same call appearing twice &mdash; the same number, '
+        +'the same agent, the same minute, the same direction. That is how re-importing a range you already '
+        +'have stays safe. The cost is that a genuine instant redial inside one minute counts once.</p>';
+    }
+    return h+'</div>';
+  }
+
   function isService(c){ return c.ivr===2 || /drishti/i.test(c.name||'') || c.ctr==='Service'; }
   /* every handset that has ever appeared as one of ours - used to keep staff
      numbers out of the customer-side lists */
@@ -8323,6 +8492,20 @@ document.addEventListener('DOMContentLoaded', initApp);
     return R;
   }
   function nrm(n){ var d=String(n==null?'':n).replace(/\D/g,''); return d.length>=10?d.slice(-10):''; }
+  /* v102: the same agent-name -> counter rules the baked months were built with.
+     Without these an imported file stored every agent with an empty counter, so a
+     freshly imported month showed up in the totals but vanished from every
+     counter-wise breakdown - the data was there and the attribution was not. */
+  var COUNTER_OF=[[/NAPIER/i,'Napier Town'],[/DAMOH|^DN\b/i,'Damoh Naka'],
+                  [/MADAN|MML/i,'Madan Mahal'],[/ADHA+R?TA?A?L|ADRTL|^AT\b/i,'Adhartal'],
+                  [/VIDA|HUB/i,'VIDA Hub'],[/DRISHTI/i,'Service']];
+  var SCREEN={'9111100344':'Napier town','9770501700':'Damoh Naka',
+              '9111100352':'MADAN MAHAL','9232619096':'adhartaal',
+              '6264912884':'Napier town','9111100342':'adhartaal','6264912886':'VIDA HUB'};
+  function counterFor(name){
+    for(var i=0;i<COUNTER_OF.length;i++) if(COUNTER_OF[i][0].test(name||'')) return COUNTER_OF[i][1];
+    return '';
+  }
   function secOf(v){ var q=String(v||'').split(':').map(Number);
     if(q.length===3) return (q[0]*3600+q[1]*60+q[2])||0;
     if(q.length===2) return (q[0]*60+q[1])||0; return q[0]||0; }
@@ -8343,14 +8526,22 @@ document.addEventListener('DOMContentLoaded', initApp);
                 cTy=col('Call_Type'), cSt=col('CallStatus'), cDur=col('DurationPostPicked'),
                 cW=col('CallerWaitTime'), cIv=col('IVRName'), cNm=col('Destination_Name');
             if(cD<0||cCust<0||cTo<0||cTy<0){ report.push(f.name+': not an Airtel IQ CDR export'); step(); return; }
-            var names={}, agents=[], aidx={}, custs=[], cidx={}, rows=[];
+            /* Airtel labels the agent only on inbound calls. Take the name it uses
+               MOST for a number, not the first one seen - one mislabelled row at the
+               top of the file would otherwise name that agent for the whole month. */
+            var tally={}, names={}, agents=[], aidx={}, custs=[], cidx={}, rows=[];
             A.slice(1).forEach(function(r){
               if(!r||!r[cD]) return;
               if(r[cTy]==='INBOUND'){ var a=nrm(r[cTo]), n=String(r[cNm]||'').trim();
-                if(a&&n&&!/^(A|NA|N\/A)$/i.test(n)) names[a]=names[a]||n; }
+                if(a&&n&&!/^(A|NA|N\/A)$/i.test(n)){ var t=tally[a]||(tally[a]={}); t[n]=(t[n]||0)+1; } }
             });
+            Object.keys(tally).forEach(function(a){
+              names[a]=Object.keys(tally[a]).sort(function(x,y){ return tally[a][y]-tally[a][x]; })[0];
+            });
+            Object.keys(SCREEN).forEach(function(k){ if(!names[k]) names[k]=SCREEN[k]; });
             function agent(num){ num=nrm(num); if(!num) return -1;
-              if(!(num in aidx)){ aidx[num]=agents.length; agents.push([num,names[num]||'','']); } return aidx[num]; }
+              if(!(num in aidx)){ aidx[num]=agents.length;
+                agents.push([num,names[num]||'',counterFor(names[num]||'')]); } return aidx[num]; }
             function cust(num){ num=nrm(num); if(!num) return -1;
               if(!(num in cidx)){ cidx[num]=custs.length; custs.push(num); } return cidx[num]; }
             var ep=Date.UTC(2026,4,1), lo=null, hi=null;
@@ -8370,18 +8561,28 @@ document.addEventListener('DOMContentLoaded', initApp);
               if(lo==null||day<lo) lo=day; if(hi==null||day>hi) hi=day;
             });
             if(!rows.length){ report.push(f.name+': no call rows found'); step(); return; }
+            var fFrom=new Date(ep+lo*MS).toISOString().slice(0,10),
+                fTo  =new Date(ep+hi*MS).toISOString().slice(0,10);
+            var fDays={}; rows.forEach(function(r){ fDays[r[0]]=1; });
             store.files[f.name]={epoch:'2026-05-01',agents:agents,custs:custs,rows:rows,
-                                 at:new Date(ep+hi*MS).toISOString().slice(0,10),name:f.name};
-            report.push(f.name+': '+rows.length+' calls, '+new Date(ep+lo*MS).toISOString().slice(0,10)
-                        +' to '+new Date(ep+hi*MS).toISOString().slice(0,10));
+                                 at:fTo,name:f.name,
+                                 /* v102: so "when was the last upload" has an answer */
+                                 from:fFrom,to:fTo,n:rows.length,
+                                 days:Object.keys(fDays).length,
+                                 importedAt:new Date().toISOString()};
+            report.push(f.name+': '+rows.length+' calls, '+fFrom+' to '+fTo);
           }catch(err){ report.push(f.name+': could not read ('+err.message+')'); }
           step();
         };
         function step(){
           if(++done===files.length){
+            var saved=true;
             try{ localStorage.setItem(FKEY,JSON.stringify(store)); }
-            catch(e){ alert('Too much call data for browser storage - remove an older month first.'); }
-            _cache=null; render(); alert('Airtel IQ:\n\n'+report.join('\n'));
+            catch(e){ saved=false; }
+            _cache=null; render();
+            alert('Airtel IQ:\n\n'+report.join('\n')
+              +(saved?'':'\n\nNOT SAVED — browser storage is full, so this will be gone when you '
+                        +'reload. Press "Remove imported CDR files" to clear older months, then import again.'));
           }
         }
         fr.readAsText(f);
@@ -8443,8 +8644,8 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'<p class="help-text" style="margin-top:6px">Every call through the dealership virtual number. '
       +'<b>Answered</b> means somebody picked up. <b>Missed</b> means it rang and nobody did. '
       +'<b>Caller dropped</b> means the caller hung up before it connected &mdash; Airtel still files those as missed, '
-      +'but no one had the chance to answer, so they are counted separately unless you tick the box.'
-      +' Data to '+esc(SEED.at||'')+'.</p></div>';
+      +'but no one had the chance to answer, so they are counted separately unless you tick the box.</p></div>';
+    h+=coverCard();
     h+=filters()+tabs();
 
     if(p.tab==='overview'){
