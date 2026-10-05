@@ -77,7 +77,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 </div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v101 &middot; 5 Oct 2026</div></div></div>
+    <div class="brand"><div class="brand-logo">H</div><div>Hero MotoCorp<div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;margin-top:2px;">build v102 &middot; 5 Oct 2026</div></div></div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
@@ -11330,19 +11330,32 @@ document.addEventListener('DOMContentLoaded', initApp);
 
 <script>
 /* ===========================================================================
-   VIDA STOCK — concise, under Stock                                  (v99)
+   VIDA STOCK — concise, under Stock                                 (v102)
 
    The EV stock lives on its own tab of Sales_Sudarshan Hero (tab id
    899600674), kept separately from the ICE stock and not to the same column
    headings. Rather than assume what those headings are, this resolves them at
-   render time by meaning - a model-ish column, a quantity-ish column, and
-   optionally colour, location and ageing - and says on the card which ones it
-   used. If it picks wrong, the fix is one line here rather than a guess that
-   silently reports the wrong number.
+   render time by meaning and then PROVES the guess before trusting it.
+
+   v102 fixes a real failure: the quantity regex matched "VIN Physical Status",
+   a text column, so every row scored 0 and was skipped — the card reported 0
+   units with a full tab behind it. Two changes stop that whole class of bug:
+
+     1. A column is only accepted as the quantity if the cells under it
+        actually parse as numbers (60% of non-blank cells, at least one > 0).
+        Headings that are obviously something else - status, date, name,
+        location, colour, VIN, model - are never even candidates.
+     2. That tab is one row per VIN, so when no numeric quantity column
+        survives the test each row counts as one unit, and the status column
+        becomes a filter instead: anything reading sold / invoiced / delivered
+        / dispatched out is off the floor and is excluded, everything else is
+        counted. The full status tally is printed on the card, so if a status
+        belongs on the other side of that line it is visible rather than
+        buried.
 
    Concise on purpose: a model-by-model count, split by colour only where the
-   sheet carries colour, with the total and the thin lines called out. The full
-   grid stays where it already is, on the SKU x location table.
+   sheet carries colour, with the total, the thin lines and a one-line ageing
+   strip. The full grid stays where it already is, on the SKU x location table.
    =========================================================================== */
 (function(){
   if (window.__VIDASTOCK__) return;
@@ -11352,10 +11365,24 @@ document.addEventListener('DOMContentLoaded', initApp);
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
   function toast(m){ try{ if(typeof showToast==='function') showToast(m); }catch(e){} }
-  function num(v){ var n=parseFloat(String(v==null?'':v).replace(/[^0-9.\-]/g,'')); return isFinite(n)?n:0; }
+
+  /* A cell is numeric only if what is left after stripping separators is the
+     whole cell - "In Stock" must not become 0, it must come back as not a
+     number at all. */
+  function numOrNull(v){
+    var s=String(v==null?'':v).trim();
+    if(!s) return null;
+    s=s.replace(/[,\s]/g,'').replace(/^\+/,'');
+    if(!/^-?\d+(\.\d+)?$/.test(s)) return null;
+    var n=parseFloat(s); return isFinite(n)?n:null;
+  }
+  function num(v){ var n=numOrNull(v); return n==null?0:n; }
+
+  /* rows reading as "no longer on the floor" */
+  var GONE=/\bsold\b|invoic|retail(ed)?\b|deliver|billed|\bbooked\s*out\b|dispatch(ed)?\s*out|transfer(red)?\s*out|\bout\b\s*ward|cancel/i;
 
   /* ----------------------------------------------- resolve columns by meaning */
-  function cols(head){
+  function cols(head,rows){
     var H=head.map(function(h){ return String(h==null?'':h).trim(); });
     function pick(){
       var res=Array.prototype.slice.call(arguments);
@@ -11364,43 +11391,101 @@ document.addEventListener('DOMContentLoaded', initApp);
       }
       return -1;
     }
+    /* every column matching a pattern, in header order */
+    function all(re,veto){
+      var out=[];
+      for(var i=0;i<H.length;i++){ if(H[i] && re.test(H[i]) && !(veto&&veto.test(H[i]))) out.push(i); }
+      return out;
+    }
+    /* does column i actually hold numbers - and are they counts rather than a
+       running serial? "Sr No" is numeric, positive and useless: summing it gave
+       465 units out of 27 in testing, so a strictly rising column of distinct
+       integers is rejected on sight. */
+    function numeric(i){
+      var seen=0, ok=0, pos=0, vals=[];
+      for(var r=0;r<rows.length && seen<200;r++){
+        var v=rows[r][i];
+        if(v==null || String(v).trim()==='') continue;
+        seen++;
+        var n=numOrNull(v);
+        if(n!=null){ ok++; if(n>0) pos++; vals.push(n); }
+      }
+      if(!(seen>0 && ok/seen>=0.6 && pos>0)) return false;
+      if(vals.length>=5){
+        var rising=true, distinct={}, dn=0;
+        for(var k=0;k<vals.length;k++){
+          if(k && vals[k]<=vals[k-1]) rising=false;
+          if(!distinct[vals[k]]){ distinct[vals[k]]=1; dn++; }
+        }
+        if(rising && dn===vals.length) return false;      // a serial, not a count
+      }
+      return true;
+    }
+
     var ix={};
     ix.model = pick(/^(model|variant|sku\s*desc|description|item)/i, /model/i, /sku/i);
     ix.colour= pick(/^colou?r$/i, /colou?r/i);
     ix.loc   = pick(/location|godown|branch|counter|store|warehouse/i);
-    /* a quantity column: prefer an explicit closing/net stock over anything else */
-    ix.qty   = pick(/closing\s*stock|net\s*stock|^stock$|^qty$|quantity|available|balance|physical/i,
-                    /stock/i, /qty|count|nos?\b/i);
-    ix.age   = pick(/age|days|ageing|aging/i);
-    ix.vin   = pick(/^vin$|chassis|engine\s*no/i);
-    return {ix:ix, H:H};
+    ix.age   = pick(/age\s*\(|^age$|ageing|aging|days\s*in\s*stock|^days$/i, /age|days/i);
+    ix.vin   = pick(/^vin$|^vin\s*(no|number)\b|chassis|frame\s*no/i);
+    ix.status= pick(/status/i);
+
+    /* a quantity column, but only if it survives the numeric test. Anything
+       whose heading is plainly not a count is never a candidate - that is what
+       let "VIN Physical Status" through in v99. */
+    var VETO=/status|date|remark|name|colou?r|location|vin|chassis|engine|frame|model|variant|segment|dealer|invoice|customer|sku|description|age\b|days|^s\.?\s*no|^sr\.?\s*no|^sl\.?\s*no|serial|^#|^row|^index$|^id$/i;
+    var cands=[]
+      .concat(all(/closing\s*stock|net\s*stock|^stock$|^qty$|^quantity$/i,VETO))
+      .concat(all(/quantity|available|balance/i,VETO))
+      .concat(all(/stock/i,VETO))
+      .concat(all(/\bqty\b|\bnos\.?\b|no\.?\s*of\b|count|units?\b|pcs\b/i,VETO));
+    ix.qty=-1; var rejected=[];
+    for(var k=0;k<cands.length;k++){
+      if(ix.qty>=0 || cands.indexOf(cands[k])!==k) continue;   // de-dupe
+      if(numeric(cands[k])) ix.qty=cands[k]; else rejected.push(H[cands[k]]);
+    }
+    return {ix:ix, H:H, rejected:rejected};
   }
 
-  /* One row per vehicle, or one row per model with a count - the tab could be
-     either, so both are handled: if there is no quantity column but there are
-     VIN-like rows, each row counts as one unit. */
+  /* One row per vehicle, or one row per model with a count — the tab could be
+     either, so both are handled. Per-VIN tabs use the status column to tell
+     what is still on the floor. */
   function parse(head,rows){
-    var c=cols(head), ix=c.ix;
+    var c=cols(head,rows), ix=c.ix;
     if(ix.model<0) return {err:'no model or SKU column found on that tab', H:c.H};
     var perRow = (ix.qty<0);
-    var by={}, total=0, n=0, ages=[];
+    var by={}, total=0, n=0, ages=[], st={}, gone=0, bands={'0-30':0,'31-60':0,'61-90':0,'90+':0};
     for(var i=0;i<rows.length;i++){
       var r=rows[i];
       var m=String(r[ix.model]==null?'':r[ix.model]).trim();
       if(!m || /^(total|grand\s*total|model|sku)$/i.test(m)) continue;
+
+      var sv = ix.status>=0 ? String(r[ix.status]==null?'':r[ix.status]).trim() : '';
+      if(perRow && sv) st[sv]=(st[sv]||0)+1;
+      if(perRow && sv && GONE.test(sv)){ gone++; continue; }   // off the floor
+
       var q = perRow ? 1 : num(r[ix.qty]);
       if(!perRow && q<=0) continue;
+
       var col = ix.colour>=0 ? String(r[ix.colour]||'').trim() : '';
       var loc = ix.loc>=0 ? String(r[ix.loc]||'').trim() : '';
       var key=m+(col?(' · '+col):'');
-      var g=by[key]||(by[key]={model:m,colour:col,qty:0,locs:{}});
+      var g=by[key]||(by[key]={model:m,colour:col,qty:0,locs:{},old:0});
       g.qty+=q; total+=q; n++;
       if(loc) g.locs[loc]=(g.locs[loc]||0)+q;
-      if(ix.age>=0){ var a=num(r[ix.age]); if(a>0) ages.push(a); }
+      if(ix.age>=0){
+        var a=num(r[ix.age]);
+        if(a>0){
+          ages.push(a);
+          bands[a<=30?'0-30':a<=60?'31-60':a<=90?'61-90':'90+']+=q;
+          if(a>60) g.old+=q;
+        }
+      }
     }
     var list=Object.keys(by).map(function(k){ return by[k]; })
              .sort(function(a,b){ return b.qty-a.qty || a.model.localeCompare(b.model); });
-    return {list:list,total:total,rows:n,perRow:perRow,ages:ages,ix:ix,H:c.H};
+    return {list:list,total:total,rows:n,perRow:perRow,ages:ages,bands:bands,
+            status:st,gone:gone,ix:ix,H:c.H,rejected:c.rejected};
   }
 
   /* ------------------------------------------------------------------ fetch */
@@ -11440,7 +11525,8 @@ document.addEventListener('DOMContentLoaded', initApp);
       var p=parse(d.cols,d.rows);
       if(p.err){ if(!silent) toast('VIDA stock: '+p.err); return; }
       S={at:d.at,via:d.via,total:p.total,rows:p.rows,perRow:p.perRow,
-         list:p.list.slice(0,60),cols:p.H,ix:p.ix,ages:p.ages};
+         list:p.list.slice(0,60),cols:p.H,ix:p.ix,ages:p.ages,bands:p.bands,
+         status:p.status,gone:p.gone,rejected:p.rejected,read:(d.rows||[]).length};
       try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){}
       if(!silent) toast('VIDA stock: '+p.total+' units across '+p.list.length+' lines');
       render();
@@ -11462,6 +11548,7 @@ document.addEventListener('DOMContentLoaded', initApp);
     }
 
     var thin=S.list.filter(function(x){ return x.qty<=2; }).length;
+    var oldUnits=S.bands?((S.bands['61-90']||0)+(S.bands['90+']||0)):0;
     h+='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">'
       +'<div style="flex:1 1 120px;min-width:120px;padding:10px 12px;border-radius:8px;border:1px solid var(--line)">'
       +'<div style="font-size:24px;font-weight:700;color:#a05bff">'+S.total+'</div>'
@@ -11472,11 +11559,27 @@ document.addEventListener('DOMContentLoaded', initApp);
       +'<div style="flex:1 1 120px;min-width:120px;padding:10px 12px;border-radius:8px;border:1px solid '
       +(thin?'#ffb02e':'var(--line)')+'">'
       +'<div style="font-size:24px;font-weight:700;color:'+(thin?'#ffb02e':'inherit')+'">'+thin+'</div>'
-      +'<div style="font-size:12px;opacity:.75">lines down to 2 or fewer</div></div></div>';
+      +'<div style="font-size:12px;opacity:.75">lines down to 2 or fewer</div></div>'
+      +'<div style="flex:1 1 120px;min-width:120px;padding:10px 12px;border-radius:8px;border:1px solid '
+      +(oldUnits?'#ff5c5c':'var(--line)')+'">'
+      +'<div style="font-size:24px;font-weight:700;color:'+(oldUnits?'#ff5c5c':'inherit')+'">'+oldUnits+'</div>'
+      +'<div style="font-size:12px;opacity:.75">units past 60 days</div></div></div>';
+
+    /* one-line ageing strip, only where the tab carries an age column */
+    if(S.bands && (S.bands['0-30']||S.bands['31-60']||oldUnits)){
+      var B=[['0-30','#2bd47d'],['31-60','#ffb02e'],['61-90','#ff8b3d'],['90+','#ff5c5c']];
+      h+='<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:-2px 0 10px;font-size:12px;color:var(--muted)">'
+        +'<span style="opacity:.8">Ageing</span>';
+      B.forEach(function(b){
+        var v=S.bands[b[0]]||0;
+        h+='<span><b style="color:'+b[1]+'">'+v+'</b> at '+b[0]+'d</span>';
+      });
+      h+='</div>';
+    }
 
     h+='<div style="overflow-x:auto"><table class="table"><thead><tr><th>Model</th>'
       +(S.list.some(function(x){return x.colour;})?'<th>Colour</th>':'')
-      +'<th>Units</th><th>Share</th><th>Where</th></tr></thead><tbody>';
+      +'<th>Units</th><th>Share</th><th>&gt;60d</th><th>Where</th></tr></thead><tbody>';
     var anyCol=S.list.some(function(x){return x.colour;});
     S.list.forEach(function(x){
       var locs=Object.keys(x.locs||{});
@@ -11484,6 +11587,7 @@ document.addEventListener('DOMContentLoaded', initApp);
         +(anyCol?('<td style="color:var(--muted)">'+esc(x.colour||'—')+'</td>'):'')
         +'<td'+(x.qty<=2?' style="color:#ffb02e"':'')+'><b>'+x.qty+'</b></td>'
         +'<td style="color:var(--muted)">'+(S.total?Math.round(x.qty/S.total*100):0)+'%</td>'
+        +'<td style="color:'+(x.old?'#ff5c5c':'var(--muted)')+'">'+(x.old||'·')+'</td>'
         +'<td style="color:var(--muted);font-size:12px">'
         + (locs.length? locs.sort(function(a,b){ return x.locs[b]-x.locs[a]; })
              .slice(0,3).map(function(k){ return esc(k)+' '+x.locs[k]; }).join(' · ') : '—')
@@ -11491,17 +11595,33 @@ document.addEventListener('DOMContentLoaded', initApp);
     });
     h+='</tbody></table></div>';
 
-    /* say what was read and from which columns, so a wrong guess is visible */
+    /* say what was read and from which columns, so a wrong guess stays visible */
     var used=[];
-    ['model','colour','loc','qty','age'].forEach(function(k){
+    ['model','colour','loc','qty','age','status'].forEach(function(k){
       if(S.ix && S.ix[k]>=0 && S.cols && S.cols[S.ix[k]]) used.push(k+' = "'+S.cols[S.ix[k]]+'"');
     });
     h+='<p class="help-text" style="margin-top:8px">Read from the '+esc(S.via||'feed')
       +(S.at?(' on '+new Date(S.at).toLocaleString('en-IN')):'')+'. '
-      +(S.perRow?'That tab lists one vehicle per row, so each row counts as one unit. '
+      +(S.perRow?('That tab lists one vehicle per row, so each row counts as one unit'
+                  +(S.gone?(' — '+S.gone+' row(s) read as already sold or dispatched and are excluded'):'')+'. ')
                 :'Quantities are summed from the sheet. ')
-      +'Columns used: <b>'+esc(used.join(', ')||'none')+'</b>. '
-      +'If any of those are the wrong column, say so and it is a one-line change.</p>';
+      +'Columns used: <b>'+esc(used.join(', ')||'none')+'</b>.'
+      +(S.rejected&&S.rejected.length?(' Ignored as a quantity column because it holds text, not numbers: <b>'
+          +esc(S.rejected.join(', '))+'</b>.'):'')
+      +'</p>';
+
+    /* the status tally — the line between "on the floor" and "gone" is visible
+       and correctable, rather than a silent assumption */
+    if(S.perRow && S.status && Object.keys(S.status).length){
+      var ks=Object.keys(S.status).sort(function(a,b){ return S.status[b]-S.status[a]; });
+      h+='<p class="help-text" style="margin-top:4px">Status as the sheet writes it: '
+        + ks.map(function(k){
+            var out=GONE.test(k);
+            return '<b style="color:'+(out?'var(--muted)':'#2bd47d')+'">'+esc(k)+' '+S.status[k]+'</b>'
+                   +(out?' <span style="opacity:.7">(not counted)</span>':'');
+          }).join(' · ')
+        +'. If one of those belongs on the other side of that line, say which and it moves.</p>';
+    }
     return h+'</div>';
   }
 
@@ -13582,29 +13702,37 @@ document.addEventListener('DOMContentLoaded', initApp);
     h+='</tbody></table></div>';
     h+='</div>';
 
-    // model x location grid
-    h+='<div class="card" style="margin-top:14px"><h3>Model &times; location availability</h3><div style="overflow-x:auto"><table class="table"><thead><tr><th>Model</th>';
-    LOCS().forEach(function(l){ h+='<th style="text-align:right">'+esc(l.replace('Festival Counter-DC','Fest-DC'))+'</th>'; });
-    h+='<th style="text-align:right">Total</th></tr></thead><tbody>';
-    Object.keys(mdl).sort(function(a,b){return mdl[b]-mdl[a];}).forEach(function(m){
-      var rowLoc={}; ops.stock.forEach(function(r){ if(r.model===m) rowLoc[r.loc]=(rowLoc[r.loc]||0)+(+r.qty||0); });
-      h+='<tr><td style="font-weight:600">'+esc(m)+'</td>';
-      LOCS().forEach(function(l){ var q=rowLoc[l]||0; h+='<td style="text-align:right'+(q===0?';color:var(--muted)':'')+'">'+(q||'&middot;')+'</td>'; });
-      h+='<td style="text-align:right;font-weight:800">'+mdl[m]+'</td></tr>';
-    });
-    h+='<tr style="border-top:2px solid var(--line)"><td style="font-weight:800">Grand total</td>';
-    LOCS().forEach(function(l){ h+='<td style="text-align:right;font-weight:800">'+(loc[l]||0)+'</td>'; });
-    h+='<td style="text-align:right;font-weight:800">'+total+'</td></tr>';
-    h+='</tbody></table></div></div>';
+    /* The model-by-location grid was removed in v102 at the dealer's request.
+       The SKU x location matrix further down already carries the same numbers
+       with filters, folding and export, so the second grid only added scroll. */
 
-    // ---------- ageing & deadstock (from row-level stock register) ----------
-    var reg=ops.stockRegister;
-    h+='<div class="card" style="margin-top:14px"><h3>Stock ageing &amp; deadstock</h3>';
-    if(!reg || !reg.count){
-      h+='<p class="help-text">Ageing is not active yet. Install <b>OpsData2.gs</b> so the dashboard reads the VIN-level stock register &mdash; it already carries <b>Vehicle Age (In Days)</b> and <b>DLP</b>, which is everything this card needs.</p>';
+    /* ---------- ageing & deadstock (from row-level stock register) ----------
+       v102: the card minimises to a single summary line, and carries a
+       variant-level breakdown underneath. Model totals hide the real problem -
+       it is almost never "SPLENDOR+ XTEC 2.0" that is stuck, it is one colour
+       or one variant of it. Grouping by variant shows which line to discount
+       and which to leave alone, and each group opens to the VINs behind it. */
+    var reg=ops.stockRegister, AG=agUI();
+    h+='<div class="card" style="margin-top:14px" id="ops-ageing-card">'
+      +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<h3 style="margin:0;cursor:pointer;user-select:none" onclick="agToggle(\'min\')">'
+      +'<span style="display:inline-block;width:15px;color:var(--muted)">'+(AG.min?'&#9656;':'&#9662;')+'</span>'
+      +'Stock ageing &amp; deadstock</h3>'
+      +'<button class="btn btn-sm" onclick="agToggle(\'min\')">'+(AG.min?'Expand':'Minimise')+'</button>';
+    if(reg && reg.count){
+      h+='<span class="help-text" style="margin-left:auto;text-align:right">'+reg.count+' units &middot; avg '
+        +reg.avgAge+'d &middot; <b style="color:#ff5c5c">'+reg.deadCount+'</b> past 60d &middot; '
+        +INR(reg.deadValue)+' blocked</span>';
+    }
+    h+='</div>';
+
+    if(AG.min){
+      /* minimised: the summary line above is the whole card */
+    } else if(!reg || !reg.count){
+      h+='<p class="help-text" style="margin-top:8px">Ageing is not active yet. Install <b>OpsData2.gs</b> so the dashboard reads the VIN-level stock register &mdash; it already carries <b>Vehicle Age (In Days)</b> and <b>DLP</b>, which is everything this card needs.</p>';
     } else {
       var bk=reg.buckets, bv=reg.bucketValue||{}, rate=(ops.finance&&ops.finance.rate)||11;
-      h+='<div class="grid grid-5" style="gap:10px">';
+      h+='<div class="grid grid-5" style="gap:10px;margin-top:10px">';
       [['0-30','#2bd47d','Fresh'],['31-45','#8fd47d','Healthy'],['46-60','#ffb02e','Watch'],['61-90','#ff8b3d','Ageing'],['90+','#ff5c5c','Deadstock']].forEach(function(t){
         var n=bk[t[0]]||0, pct=reg.count?Math.round(n/reg.count*100):0;
         h+='<div class="counter-card"><div class="counter-name">'+t[0]+' days<span style="color:var(--muted);font-weight:400;font-size:12px">'+t[2]+'</span></div>'
@@ -13620,8 +13748,90 @@ document.addEventListener('DOMContentLoaded', initApp);
         +kpi(INR(reg.deadValue),'Capital stuck &gt; 60 days','#ff5c5c','at dealer landed price')
         +kpi(INR(deadInt),'Interest on that, monthly','#ff8b3d','at '+rate+'% p.a.')
         +'</div>';
+
+      /* ---------------- variant-level breakdown ---------------- */
+      var V=agGroups(reg,AG.grp);
+      h+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:18px">'
+        +'<h3 style="margin:0;cursor:pointer;user-select:none" onclick="agToggle(\'vmin\')">'
+        +'<span style="display:inline-block;width:15px;color:var(--muted)">'+(AG.vmin?'&#9656;':'&#9662;')+'</span>'
+        +'Where it is stuck, by variant</h3>'
+        +'<button class="btn btn-sm" onclick="agToggle(\'vmin\')">'+(AG.vmin?'Expand':'Minimise')+'</button>';
+      if(!AG.vmin){
+        h+='<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px;margin-left:auto">Group by'
+          +'<select class="filter-select" onchange="agGrp(this.value)">'
+          +'<option value="colour"'+(AG.grp==='colour'?' selected':'')+'>Model + colour</option>'
+          +'<option value="model"'+(AG.grp==='model'?' selected':'')+'>Model only</option>'
+          + (V.anySku?('<option value="sku"'+(AG.grp==='sku'?' selected':'')+'>Model + variant code</option>'):'')
+          +'</select></label>'
+          +'<label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px">Show'
+          +'<select class="filter-select" onchange="agOnly(this.value)">'
+          +'<option value="0"'+(!AG.only?' selected':'')+'>Every line</option>'
+          +'<option value="60"'+(AG.only==60?' selected':'')+'>Only lines past 60 days</option>'
+          +'<option value="90"'+(AG.only==90?' selected':'')+'>Only lines past 90 days</option>'
+          +'</select></label>'
+          +'<button class="btn btn-sm" onclick="agVarExport()">&#11015;&#65039; Export</button>';
+      }
+      h+='</div>';
+
+      if(!AG.vmin){
+        var rows=V.list.filter(function(g){
+          if(AG.only==90) return g.b['90+']>0;
+          if(AG.only==60) return g.dead>0;
+          return true;
+        });
+        if(!rows.length){
+          h+='<p class="help-text" style="margin-top:8px">Nothing in stock matches that filter &mdash; on this register no '
+            + (AG.only==90?'line is past 90 days':'line is past 60 days')+'. That is the good outcome.</p>';
+        } else {
+          h+='<p class="help-text" style="margin-top:6px">Sorted by units past 60 days. Click a line to see the VINs behind it. '
+            +'<b>'+rows.length+'</b> of '+V.list.length+' lines shown.</p>';
+          h+='<div style="overflow-x:auto"><table class="table" style="min-width:860px"><thead><tr>'
+            +'<th>'+(AG.grp==='model'?'Model':AG.grp==='sku'?'Model + variant':'Model + colour')+'</th>'
+            +'<th style="text-align:right">Units</th>'
+            +'<th style="text-align:right;color:#2bd47d">0&ndash;30</th>'
+            +'<th style="text-align:right;color:#ffb02e">31&ndash;60</th>'
+            +'<th style="text-align:right;color:#ff8b3d">61&ndash;90</th>'
+            +'<th style="text-align:right;color:#ff5c5c">90+</th>'
+            +'<th style="text-align:right">Oldest</th>'
+            +'<th style="text-align:right">Capital past 60d</th>'
+            +'<th style="text-align:right">Interest / mo</th>'
+            +'</tr></thead><tbody>';
+          rows.forEach(function(g){
+            var open=!!AG.open[g.k], mi=g.deadVal*rate/100/12;
+            h+='<tr style="cursor:pointer'+(open?';background:rgba(91,158,255,.07)':'')+'" onclick="agOpen('+JSON.stringify(g.k).replace(/"/g,'&quot;')+')">'
+              +'<td><span style="display:inline-block;width:13px;color:var(--muted)">'+(open?'&#9662;':'&#9656;')+'</span>'
+              +'<b>'+esc(g.label)+'</b></td>'
+              +'<td style="text-align:right;font-weight:700">'+g.n+'</td>'
+              +'<td style="text-align:right;color:'+(g.b['0-30']?'#2bd47d':'var(--muted)')+'">'+(g.b['0-30']||'&middot;')+'</td>'
+              +'<td style="text-align:right;color:'+(g.b['31-60']?'#ffb02e':'var(--muted)')+'">'+(g.b['31-60']||'&middot;')+'</td>'
+              +'<td style="text-align:right;color:'+(g.b['61-90']?'#ff8b3d':'var(--muted)')+'">'+(g.b['61-90']||'&middot;')+'</td>'
+              +'<td style="text-align:right;font-weight:'+(g.b['90+']?'800':'400')+';color:'+(g.b['90+']?'#ff5c5c':'var(--muted)')+'">'+(g.b['90+']||'&middot;')+'</td>'
+              +'<td style="text-align:right;color:'+(g.oldest>90?'#ff5c5c':g.oldest>60?'#ff8b3d':'var(--muted)')+'">'+g.oldest+'d</td>'
+              +'<td style="text-align:right;color:'+(g.deadVal?'#ff5c5c':'var(--muted)')+'">'+(g.deadVal?INR(g.deadVal):'&mdash;')+'</td>'
+              +'<td style="text-align:right;color:var(--muted)">'+(g.deadVal?INR(mi):'&mdash;')+'</td>'
+              +'</tr>';
+            if(open){
+              h+='<tr><td colspan="9" style="padding:0 0 10px 26px;background:rgba(91,158,255,.04)">'
+                +'<table class="table" style="margin:0"><thead><tr><th>Age</th><th>Colour</th><th>Location</th>'
+                +'<th style="text-align:right">Value</th><th>Inward</th><th>VIN</th></tr></thead><tbody>';
+              g.units.slice(0,60).forEach(function(u){
+                var a=+u.age||0, c=a>90?'#ff5c5c':(a>60?'#ff8b3d':'var(--text)');
+                h+='<tr><td style="font-weight:800;color:'+c+'">'+a+'d</td><td>'+esc(u.c)+'</td><td>'+esc(u.loc)+'</td>'
+                  +'<td style="text-align:right">'+INR(u.dlp)+'</td>'
+                  +'<td style="color:var(--muted);font-size:12px">'+esc(u.inw||'')+'</td>'
+                  +'<td style="font-family:monospace;font-size:11px;color:var(--muted)">'+esc(u.vin)+'</td></tr>';
+              });
+              h+='</tbody></table>';
+              if(g.units.length>60) h+='<p class="help-text" style="margin:4px 0 0">Showing the oldest 60 of '+g.units.length+'. The export carries all of them.</p>';
+              h+='</td></tr>';
+            }
+          });
+          h+='</tbody></table></div>';
+        }
+      }
+
       var old=(reg.units||[]).slice(0,25);
-      h+='<h3 style="margin-top:16px">Oldest 25 units &mdash; clear these first</h3><div style="overflow-x:auto"><table class="table"><thead><tr><th>Age</th><th>Model</th><th>Colour</th><th>Location</th><th style="text-align:right">Value</th><th>VIN</th></tr></thead><tbody>';
+      h+='<h3 style="margin-top:18px">Oldest 25 units &mdash; clear these first</h3><div style="overflow-x:auto"><table class="table"><thead><tr><th>Age</th><th>Model</th><th>Colour</th><th>Location</th><th style="text-align:right">Value</th><th>VIN</th></tr></thead><tbody>';
       old.forEach(function(u){
         var col=u.age>90?'#ff5c5c':(u.age>60?'#ff8b3d':'var(--text)');
         h+='<tr><td style="font-weight:800;color:'+col+'">'+u.age+'d</td><td>'+esc(u.mo)+'</td><td>'+esc(u.c)+'</td><td>'+esc(u.loc)+'</td><td style="text-align:right">'+INR(u.dlp)+'</td><td style="font-family:monospace;font-size:11px;color:var(--muted)">'+esc(u.vin)+'</td></tr>';
@@ -13684,6 +13894,77 @@ document.addEventListener('DOMContentLoaded', initApp);
     if(typeof drawChart==='function') drawChart('ops-paid-chart','doughnut',{labels:pk,datasets:[{data:pk.map(function(k){return f.paid[k];}),backgroundColor:['#ff2e2e','#ffb02e','#5b9eff','#2bd47d']}]},{});
     opsRate(f.rate||11);
   }
+  /* ================= ageing card: minimise + variant view (v102) =================
+     State lives in localStorage, not in a closure variable, because renderStock()
+     is called from the background sync, the paste import and the snapshot reset as
+     well as from setView - a closure flag would be correct until the first sync
+     landed and then silently reset itself. Read at render time, it survives all of
+     them and a page reload. */
+  var AGKEY='hero-ageing-ui-v1';
+  function agUI(){
+    var d={min:false,vmin:false,grp:'colour',only:0,open:{}};
+    try{ var v=JSON.parse(localStorage.getItem(AGKEY));
+      if(v&&typeof v==='object'){ for(var k in d) if(v[k]!=null) d[k]=v[k]; }
+    }catch(e){}
+    if(!d.open||typeof d.open!=='object') d.open={};
+    return d;
+  }
+  function agSave(u){ try{ localStorage.setItem(AGKEY,JSON.stringify(u)); }catch(e){} }
+  function agRepaint(){ try{ renderStock(); }catch(e){ console.warn('[ops ageing]',e); } }
+  window.agToggle=function(f){ var u=agUI(); u[f]=!u[f]; agSave(u); agRepaint(); };
+  window.agGrp  =function(v){ var u=agUI(); u.grp=String(v||'colour'); u.open={}; agSave(u); agRepaint(); };
+  window.agOnly =function(v){ var u=agUI(); u.only=Number(v)||0; agSave(u); agRepaint(); };
+  window.agOpen =function(k){ var u=agUI(); if(u.open[k]) delete u.open[k]; else u.open[k]=1; agSave(u); agRepaint(); };
+
+  /* Group the VIN register by model, by model + colour, or by model + variant
+     code where the register carries one. A model total hides the problem: it is
+     one colour or one variant that is stuck, not the whole model. */
+  function agGroups(reg,grp){
+    var by={}, anySku=false;
+    (reg&&reg.units||[]).forEach(function(u){
+      var mo=String(u.mo==null?'':u.mo).trim().toUpperCase()||'(no model)';
+      var cl=String(u.c==null?'':u.c).trim();
+      var sk=String(u.sku==null?'':u.sku).trim().toUpperCase();
+      if(sk) anySku=true;
+      var label = grp==='model' ? mo
+                : grp==='sku'   ? (mo+(sk?(' · '+sk):' · (no code)'))
+                :                 (mo+(cl?(' · '+cl):' · (no colour)'));
+      var g=by[label]||(by[label]={k:label,label:label,mo:mo,n:0,oldest:0,val:0,dead:0,deadVal:0,
+                                   b:{'0-30':0,'31-60':0,'61-90':0,'90+':0},units:[]});
+      var a=Number(u.age)||0, dlp=Number(u.dlp)||0;
+      g.n++; g.val+=dlp;
+      g.b[a<=30?'0-30':a<=60?'31-60':a<=90?'61-90':'90+']++;
+      if(a>g.oldest) g.oldest=a;
+      if(a>60){ g.dead++; g.deadVal+=dlp; }
+      g.units.push(u);
+    });
+    var list=Object.keys(by).map(function(k){ return by[k]; });
+    list.forEach(function(g){ g.units.sort(function(x,y){ return (Number(y.age)||0)-(Number(x.age)||0); }); });
+    list.sort(function(x,y){ return y.dead-x.dead || y.oldest-x.oldest || y.n-x.n; });
+    return {list:list, anySku:anySku};
+  }
+
+  window.agVarExport=function(){
+    var reg=ops.stockRegister;
+    if(!reg||!reg.units||!reg.units.length){ if(typeof showToast==='function') showToast('No VIN-level stock to export yet'); return; }
+    var u=agUI(), V=agGroups(reg,u.grp), rate=(ops.finance&&ops.finance.rate)||11;
+    var rows=[['Line','Units','0-30','31-60','61-90','90+','Oldest (days)',
+               'Units past 60d','Capital past 60d','Interest per month',
+               'VIN','Colour','Location','Age (days)','Value (DLP)','Inward']];
+    V.list.forEach(function(g){
+      if(u.only==90 && !g.b['90+']) return;
+      if(u.only==60 && !g.dead) return;
+      rows.push([g.label,g.n,g.b['0-30'],g.b['31-60'],g.b['61-90'],g.b['90+'],g.oldest,
+                 g.dead,Math.round(g.deadVal),Math.round(g.deadVal*rate/100/12),'','','','','','']);
+      g.units.forEach(function(x){
+        rows.push(['  '+g.label,'','','','','','','','','',
+                   x.vin,x.c,x.loc,Number(x.age)||0,Math.round(Number(x.dlp)||0),x.inw||'']);
+      });
+    });
+    csvDownload('stock_ageing_by_'+(u.grp==='model'?'model':u.grp==='sku'?'variant_code':'model_colour')
+                +(u.only?('_past_'+u.only+'d'):''), rows);
+  };
+
   window.opsRate=function(v){ v=Number(v)||0; if(ops.finance){ops.finance.rate=v; save();}
     var bal=ops.finance.debitBalance; var perYear=bal*v/100, perDay=perYear/365, perMonth=perYear/12;
     var el=document.getElementById('ops-interest-out'); if(!el) return;
@@ -15517,7 +15798,7 @@ document.addEventListener('DOMContentLoaded', initApp);
 (function(){
   "use strict";
   var PREF='hero-ageing-export-prefs-v2';
-  var DEF={loc:'', model:'', st:'', minAge:180, sort:'age'};
+  var DEF={loc:'', model:'', st:'', minAge:180, sort:'age', min:false};
   var prefs; try{ prefs=Object.assign({},DEF,JSON.parse(localStorage.getItem(PREF))||{}); }catch(e){ prefs=Object.assign({},DEF); }
   function save(){ try{ localStorage.setItem(PREF,JSON.stringify(prefs)); }catch(e){} }
 
@@ -15616,6 +15897,10 @@ document.addEventListener('DOMContentLoaded', initApp);
     prefs[k]=v; save(); paint();
   };
   window.agePick=function(l){ prefs.loc = (prefs.loc===l)?'':l; save(); paint(); };
+  /* v102: this panel sits directly under the ageing card, so it gets the same
+     minimise - collapsing the ageing card and leaving a full export table open
+     underneath would not have shortened the page at all. */
+  window.ageMin=function(){ prefs.min=!prefs.min; save(); paint(); };
 
   /* ---------------- panel ---------------- */
   function panelHtml(){
@@ -15646,12 +15931,21 @@ document.addEventListener('DOMContentLoaded', initApp);
 
     var h='<div class="card" style="margin-top:14px;border-left:4px solid var(--accent)">'
       +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
-      +'<h3 style="margin:0">&#128230; Counter-wise clearance export</h3>'
-      +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+      +'<h3 style="margin:0;cursor:pointer;user-select:none" onclick="ageMin()">'
+      +'<span style="display:inline-block;width:15px;color:var(--muted)">'+(prefs.min?'&#9656;':'&#9662;')+'</span>'
+      +'&#128230; Counter-wise clearance export</h3>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+      +'<button class="btn btn-sm" onclick="ageMin()">'+(prefs.min?'Expand':'Minimise')+'</button>'
       +'<button class="btn btn-sm btn-primary" onclick="ageExport(\'filtered\')">&#11015;&#65039; Export this list</button>'
       +'<button class="btn btn-sm" onclick="ageExport(\'counter\')" title="One file, every counter, with subtotals">&#11015;&#65039; Export all counters (grouped)</button>'
-      +'</div></div>'
-      +'<p class="help-text">Pick a counter and an age threshold, then export the exact list that counter has to clear. '
+      +'</div></div>';
+    if(prefs.min){
+      return h+'<p class="help-text" style="margin:6px 0 0"><b>'+n+'</b> unit(s) above '+ageLbl()
+        +(prefs.loc?(' at '+esc(shortLoc(prefs.loc))):' across every counter')
+        +' &middot; '+INRs(val)+' blocked &middot; '+INR(mi)+' interest a month. '
+        +'Both export buttons still work from here.</p></div>';
+    }
+    h+='<p class="help-text">Pick a counter and an age threshold, then export the exact list that counter has to clear. '
       +'Every unit here is financed capital earning nothing &mdash; the monthly interest column is what it costs to keep waiting.</p>';
 
     /* filters */
