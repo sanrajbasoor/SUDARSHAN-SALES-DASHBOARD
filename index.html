@@ -18,7 +18,7 @@ function __jsq(v){ return "'" + String(v==null?"":v)
 :root{--bg:#0e1013;--panel:#171a1f;--panel-2:#1f242b;--line:#2b313a;--text:#eef1f6;--muted:#9aa3b2;--accent:#e2001a;--accent-2:#ffb02e;--ok:#2bd47d;--warn:#ffb02e;--danger:#ff5c5c;--info:#5b9eff;--shadow:0 6px 24px rgba(0,0,0,0.35);--r:12px;}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:14px;}
 a{color:var(--info);text-decoration:none;}button{font-family:inherit;}input,select,textarea{font-family:inherit;font-size:14px;}
-.app{display:grid;grid-template-columns:240px 1fr;min-height:100vh;}
+.app{display:grid;grid-template-columns:240px minmax(0,1fr);min-height:100vh;}.main,.view,.grid>*{min-width:0;}.view>*{max-width:100%;}#f100-daily table.table th:first-child,#f100-daily table.table td:first-child,#vida-daily table.table th:first-child,#vida-daily table.table td:first-child{position:sticky;left:0;z-index:2;background:var(--panel);box-shadow:1px 0 0 var(--line);}
 .lock-screen{position:fixed;inset:0;background:linear-gradient(135deg,#0e1013,#1b1214);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px;}
 .lock-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:32px 28px;width:100%;max-width:360px;box-shadow:0 20px 60px rgba(0,0,0,0.5);text-align:center;}
 .lock-emoji{font-size:48px;margin-bottom:4px;}.lock-card h2{color:var(--text);}
@@ -37,7 +37,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 .main{padding:0 0 40px;}.view{display:none;padding:20px 24px;}.view.active{display:block;}
 .grid{display:grid;gap:14px;}.grid-4{grid-template-columns:repeat(4,minmax(0,1fr));}.grid-3{grid-template-columns:repeat(3,minmax(0,1fr));}.grid-2{grid-template-columns:repeat(2,minmax(0,1fr));}
 @media(max-width:1100px){.grid-4{grid-template-columns:repeat(2,1fr);}.grid-3{grid-template-columns:1fr;}}
-@media(max-width:700px){.grid-2,.grid-4{grid-template-columns:1fr;}.app{grid-template-columns:1fr;}.sidebar{position:relative;height:auto;padding:10px;}.main{padding:12px;}.topbar{flex-wrap:wrap;gap:8px;padding:10px 12px;}.table{font-size:12px;}.table th,.table td{padding:6px 4px;}.card{padding:12px;}.kpi-value{font-size:22px;}.chart-wrap{height:220px;}#bulk-bar{flex-direction:column;align-items:stretch;}#bulk-bar .btn{width:100%;}#bulk-bar>span{display:none;}}
+@media(max-width:700px){.grid-2,.grid-4{grid-template-columns:1fr;}.app{grid-template-columns:minmax(0,1fr);}.card{max-width:100%;}.actions{flex-wrap:wrap;min-width:0;}.sidebar{position:relative;height:auto;padding:10px;}.main{padding:12px;}.topbar{flex-wrap:wrap;gap:8px;padding:10px 12px;}.table{font-size:12px;}.table th,.table td{padding:6px 4px;}.card{padding:12px;}.kpi-value{font-size:22px;}.chart-wrap{height:220px;}#bulk-bar{flex-direction:column;align-items:stretch;}#bulk-bar .btn{width:100%;}#bulk-bar>span{display:none;}}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;box-shadow:var(--shadow);}
 .card h3{margin:0 0 12px;font-size:14px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;}
 .kpi{display:flex;flex-direction:column;gap:4px;}.kpi-value{font-size:28px;font-weight:700;}.kpi-trend{font-size:12px;color:var(--muted);}.kpi-trend.up{color:var(--ok);}.kpi-trend.down{color:var(--danger);}
@@ -60,6 +60,184 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
 .help-text{color:var(--muted);font-size:12px;margin-top:4px;}.pb{background:var(--panel-2);height:8px;border-radius:4px;overflow:hidden;margin-top:4px;}.pb-fill{height:100%;background:var(--accent);transition:width 0.3s;}.pb-fill.ok{background:var(--ok);}.pb-fill.warn{background:var(--warn);}
 .counter-card{padding:14px;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;}.counter-name{font-weight:600;font-size:14px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;}.counter-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px;}.counter-stat{font-size:12px;color:var(--muted);}.counter-stat strong{display:block;color:var(--text);font-size:16px;font-weight:700;}
 </style>
+
+<!-- ===== STORAGE GUARD ========================================================
+     Installed BEFORE every other script on purpose. It wraps localStorage.setItem,
+     so each module that follows - and the shared-store hook at the end of the file,
+     which binds whatever setItem it finds - writes through it. Load it later and
+     the modules bound ahead of it would bypass the guard entirely.
+     ======================================================================== -->
+<script>
+/* ===========================================================================
+   STORAGE GUARD — what to sacrifice when the browser runs out      (v114)
+
+   THE FAULT THIS FIXES
+
+   A browser gives one site about 5 MB of localStorage. This dashboard keeps a
+   lot there: the enquiry register, the counter registers, the stock and sale
+   registers, the network sheet, the imported call records. When the total
+   crosses the limit the browser throws QuotaExceededError on the next write.
+
+   Almost every module in this file swallows that error:
+
+       function save(){ try{ localStorage.setItem(KEY, ...); }catch(e){} }
+
+   So the write failed, nothing was said, and the figure on screen was not the
+   figure in storage - it reverted on the next reload with no explanation. The
+   Airtel IQ import was the honest one: it checked, and told the user the
+   import had not been saved. Its advice was wrong though. It said to delete
+   imported CDR files, which are the ONE thing in there that cannot be fetched
+   again - re-importing means finding the download again. Meanwhile megabytes
+   of pure cache sat untouched.
+
+   WHAT THIS DOES
+
+   It wraps localStorage.setItem once, for every module at once. On a quota
+   failure it does not fail and it does not ask. It evicts what the dashboard
+   can rebuild by itself - undo snapshots first, then the caches that refill
+   from the sheet or from data/registers.json on the next sync - retrying after
+   each one, and says afterwards what it dropped.
+
+   What it will never evict, because nothing can rebuild it:
+     * the typed-in daily trackers and plans that have not yet synced
+     * the outbox of changes waiting to reach the other devices
+     * the imported CDR files
+     * the saved settings, including the Apps Script URL
+
+   If every rebuildable byte is gone and the write still does not fit, the
+   error is re-thrown so the caller's own message is true rather than this
+   quietly swallowing it.
+   =========================================================================== */
+(function(){
+  if (window.__STORAGE__) return;
+
+  var raw;
+  try{ raw = localStorage.setItem.bind(localStorage); }catch(e){ return; }
+
+  /* Rebuildable, in the order they should be given up. Everything here comes
+     back on the next sync without anybody re-typing or re-importing. */
+  var EVICT = [
+    'hero-ctrreg-undo',        /* a single undo step for the register adopt */
+    'hero-septreg-undo',
+    'hero-enqcube-v1',         /* derived cube, rebuilt from the enquiries */
+    'hero-ctrseg-v1',
+    'hero-vidastock-v1',       /* re-read from the feed */
+    'hero-skustock-v1',
+    'hero-vidaconv-v1',
+    'hero-vidareg-v1',
+    'hero-vidaenq-v1',
+    'hero-network-v1',         /* seeded in the build, re-synced from the sheet */
+    'hero-ctrreg-v1',          /* the counter registers - data/registers.json */
+    'hero-ops-v1',             /* stock + sale register - comes back on sync */
+    'hero-sales-enquiries-v1'  /* replaced from the sheet every five minutes */
+  ];
+
+  /* Never evicted: the only copy of something a person produced. */
+  var KEEP = {
+    'hero-f100daily-v1':1, 'hero-vidadaily-v1':1, 'hero-f100-v1':1,
+    'hero-f100p2-v1':1, 'hero-vidaplan-v1':1, 'hero-orderplan-v1':1,
+    'hero-navratri-v1':1,       /* corrections to the WhatsApp demand lines */
+    'hero-share-meta-v1':1,     /* the outbox - dropping it loses typed figures */
+    'hero-iq-files-v1':1,       /* imported call records; only copy */
+    'hero-iq-issued-v1':1, 'hero-iq-dir-v1':1,
+    'hero-sales-config-v1':1,   /* settings, including the Apps Script URL */
+    'hero-dashboard-auth-v1':1
+  };
+
+  function isQuota(e){
+    if(!e) return false;
+    return e.name==='QuotaExceededError' || e.name==='NS_ERROR_DOM_QUOTA_REACHED'
+        || e.code===22 || e.code===1014 || /quota|exceed/i.test(String(e.message||''));
+  }
+  function size(k){ try{ var v=localStorage.getItem(k); return v?v.length:0; }catch(e){ return 0; } }
+  function toast(m){ try{ if(typeof showToast==='function') showToast(m); }catch(e){} }
+
+  var evicted=[];      /* what was dropped this session, for the report */
+
+  localStorage.setItem=function(k,v){
+    try{ raw(k,v); return; }catch(e){
+      if(!isQuota(e)) throw e;
+    }
+    /* Out of room. Give up the biggest rebuildable thing first, and retry after
+       each one rather than clearing more than is needed. */
+    /* EVICT is a priority list, cheapest to lose first - an undo snapshot
+       costs nothing, the enquiry register costs a full re-sync. Sorting it by
+       size would throw that away and surrender the enquiry register first just
+       because it is the largest, which is what the first run of this did. Keep
+       the list order and retry after each one, so the cheapest thing that makes
+       the write fit is the only thing lost. */
+    var pool=EVICT.filter(function(x){ return x!==k && !KEEP[x] && size(x)>0; });
+    for(var i=0;i<pool.length;i++){
+      var kb=Math.round(size(pool[i])/1024);
+      try{ localStorage.removeItem(pool[i]); }catch(e){}
+      evicted.push({k:pool[i], kb:kb, at:Date.now()});
+      try{
+        raw(k,v);
+        toast('Storage was full — cleared '+evicted.length+' cached item'
+              +(evicted.length===1?'':'s')+' ('+evicted.reduce(function(a,x){return a+x.kb;},0)
+              +' KB). They rebuild on the next sync; nothing typed in was touched.');
+        return;
+      }catch(e2){ if(!isQuota(e2)) throw e2; }
+    }
+    /* Nothing rebuildable is left. Let the caller's own handling run, so the
+       message the user sees is accurate rather than invented here. */
+    var err=new Error('Browser storage is full and everything re-fetchable has already been cleared.');
+    err.name='QuotaExceededError';
+    throw err;
+  };
+
+  /* ------------------------------------------------------------ the report */
+  function report(){
+    var rows=[], total=0;
+    try{
+      for(var i=0;i<localStorage.length;i++){
+        var k=localStorage.key(i), n=size(k);
+        total+=n;
+        rows.push({k:k, bytes:n, keep:!!KEEP[k], rebuildable:EVICT.indexOf(k)>=0});
+      }
+    }catch(e){}
+    rows.sort(function(a,b){ return b.bytes-a.bytes; });
+    return {rows:rows, total:total, evicted:evicted.slice()};
+  }
+  window.__STORAGE__=report;
+
+  function kb(n){ return n<1024?(n+' B'):(n<1048576?((n/1024).toFixed(0)+' KB'):((n/1048576).toFixed(2)+' MB')); }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+  window.storageReportHtml=function(){
+    var R=report();
+    /* roughly what a browser allows one site; used only to draw the bar */
+    var LIMIT=5*1024*1024, pct=Math.min(100, Math.round(R.total/LIMIT*100));
+    var col=pct>85?'#ff5c5c':pct>65?'#ffb02e':'#2bd47d';
+    var h='<div class="card" style="margin-top:14px"><h3>&#128190; Browser storage</h3>'
+      +'<p class="help-text">The dashboard keeps its data in this browser. A browser allows a site about '
+      +'5 MB. When that fills, a write fails &mdash; which is what stopped the Airtel IQ import. The dashboard '
+      +'now gives up cached data instead of refusing the write, but this is where to see the pressure.</p>'
+      +'<div style="margin:10px 0 4px;font-size:22px;font-weight:800;color:'+col+'">'+kb(R.total)
+      +' <span style="font-size:13px;font-weight:400;opacity:.75">of roughly 5 MB &mdash; '+pct+'%</span></div>'
+      +'<div class="pb"><div class="pb-fill" style="width:'+pct+'%;background:'+col+'"></div></div>';
+    h+='<div style="overflow-x:auto;margin-top:12px"><table class="table"><thead><tr><th>What</th>'
+      +'<th style="text-align:right">Size</th><th>If storage fills</th></tr></thead><tbody>';
+    R.rows.slice(0,18).forEach(function(r){
+      h+='<tr><td style="font-family:monospace;font-size:12px">'+esc(r.k)+'</td>'
+        +'<td style="text-align:right">'+kb(r.bytes)+'</td>'
+        +'<td style="font-size:12px;color:'+(r.keep?'#2bd47d':(r.rebuildable?'var(--muted)':'var(--muted)'))+'">'
+        +(r.keep?'kept — nothing else holds it'
+                :(r.rebuildable?'can be dropped, rebuilds on sync':'left alone'))
+        +'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+    if(R.evicted.length){
+      h+='<p class="help-text" style="margin-top:8px;color:#ffb02e">Cleared this session to make room: '
+        + R.evicted.map(function(x){ return '<b>'+esc(x.k)+'</b> ('+x.kb+' KB)'; }).join(', ')
+        +'. Each one rebuilds on the next sync.</p>';
+    }
+    return h+'</div>';
+  };
+})();
+</script>
+
 </head>
 <body>
 <div id="lock-screen" class="lock-screen">
@@ -85,7 +263,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
     <div class="brand" style="flex-direction:column;align-items:flex-start;gap:7px;">
       <img src="data:image/png;base64,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" alt="Sudarshan Hero"
            style="width:100%;max-width:198px;height:auto;display:block;"/>
-      <div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;">build v112 &middot; 8 Oct 2026</div>
+      <div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;">build v115 &middot; 9 Oct 2026</div>
     </div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
@@ -1606,8 +1784,19 @@ function renderSettings() {
   const tcl=document.getElementById('target-counter-list');
   if(tcl) tcl.innerHTML=config.counters.map(c=>'<div style="background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;"><label style="font-size:12px;color:var(--muted);margin-bottom:4px;display:block;">'+escapeHtml(c)+'</label><input type="number" min="0" data-counter="'+escapeHtml(c)+'" class="target-counter-input" value="'+((config.targets&&config.targets.counters&&config.targets.counters[c])||'')+'" placeholder="e.g. 40" style="width:100%;background:var(--panel);border:1px solid var(--line);color:var(--text);padding:6px 10px;border-radius:8px;"/></div>').join('');
   const sui=document.getElementById('script-url-input');
+  /* NB: this key is never written by anything; updateScriptSyncUI() below is
+     what actually fills the box, from config.script.url. Left in place only so
+     the order is not disturbed - it must stay BEFORE that call. */
   if(sui) sui.value=localStorage.getItem('hero-apps-script-url-v1')||'';
   updateScriptSyncUI();
+  try{
+    const view=document.getElementById('view-settings');
+    if(view && typeof storageReportHtml==='function'){
+      let box=document.getElementById('storage-report');
+      if(!box){ box=document.createElement('div'); box.id='storage-report'; view.appendChild(box); }
+      box.innerHTML=storageReportHtml();
+    }
+  }catch(e){}
 }
 function addCounter(){const v=document.getElementById('new-counter')?.value.trim();if(!v)return;config.counters.push(v);document.getElementById('new-counter').value='';saveData();renderSettings();showToast('Counter added.');}
 function addRep(){const v=document.getElementById('new-rep')?.value.trim();if(!v)return;config.reps.push(v);document.getElementById('new-rep').value='';saveData();renderSettings();showToast('Rep added.');}
@@ -6216,8 +6405,6 @@ document.addEventListener('DOMContentLoaded', initApp);
 })();
 </script>
 
-
-</body> in index.html ===== -->
 <!-- Makes the dashboard pull the latest server feed on every open AND every 5 minutes, with no button click. -->
 <script>
 (function(){
@@ -8855,8 +9042,10 @@ document.addEventListener('DOMContentLoaded', initApp);
             catch(e){ saved=false; }
             _cache=null; render();
             alert('Airtel IQ:\n\n'+report.join('\n')
-              +(saved?'':'\n\nNOT SAVED — browser storage is full, so this will be gone when you '
-                        +'reload. Press "Remove imported CDR files" to clear older months, then import again.'));
+              +(saved?'':'\n\nNOT SAVED — browser storage is full even after clearing everything the '
+                        +'dashboard can fetch again.\n\nImported CDR files are the one thing here that '
+                        +'cannot be rebuilt, so do NOT clear them first. Open Settings and look at '
+                        +'Browser storage to see what is taking the room.'));
           }
         }
         fr.readAsText(f);
@@ -13077,7 +13266,6 @@ document.addEventListener('DOMContentLoaded', initApp);
 })();
 
 </script>
-</body>
 <script>
 // Auto-pull live data on every open so management/team always see the
 // Google Sheets data, never the demo/seed data.
@@ -19790,6 +19978,454 @@ document.addEventListener('DOMContentLoaded', initApp);
 
 </script>
 
+<!-- ===== NAVRATRI VEHICLE DEMAND ==========================================
+     The three counter heads sent their festive demand on WhatsApp. This
+     carries those lists verbatim, maps each line to a model the stock
+     register uses, and sets the total against free stock - so the indent is
+     the shortfall and not somebody's memory of it. Quantities are editable
+     and the edits are shared across devices.
+     ===================================================================== -->
+<script>
+/* ===========================================================================
+   NAVRATRI VEHICLE DEMAND — what the counters asked for, against stock (v114)
+
+   The three counter heads sent their festive demand on WhatsApp, each in their
+   own shorthand. This carries those lists verbatim, maps every line to a model
+   the stock register actually uses, and sets the total against what is on the
+   floor - so the indent is the shortfall, not somebody's memory of it.
+
+   TRANSCRIPTION RULES, because this came off a phone screen and not a sheet:
+     * The manager's own wording is kept on every row, under "as written".
+       Nothing is tidied away; if the shorthand is ambiguous the row says so
+       rather than resolving it quietly.
+     * Quantities are what was written. Where a line gave no number it is 0 and
+       flagged, never guessed.
+     * Every quantity is editable and the edit is shared to the other devices,
+       so correcting a misread costs one keystroke and the counters see it.
+
+   THREE THINGS FOUND WHILE TRANSCRIBING - all three are in the managers'
+   messages, not in this code, and all three change the order:
+     * NT's Deluxe block is headed "Total: 78" but its own lines add to 83.
+     * DN's Deluxe block is headed "Total 19" but its own lines add to 44.
+     * DN's 125cc block is headed "25" but its own lines add to 22.
+   Ordering off the heading or off the lines gives two different trucks. The
+   page shows both and will not pick one.
+
+   Napier Town's Entry (40), 125cc (25) and Scooter (27) blocks and DN's Entry
+   block (19) each add up to exactly what their heading says, which is the
+   reason to trust the rest of the transcription.
+
+   WHICH LINES A HEADING COVERS - g
+   A heading is only compared against the lines that sat under it, named by the
+   "g" field. Some lines arrived outside every heading - DN's two Passion+
+   lines came after the numbered block, and MML's message carried no segment
+   headings at all. Those are counted in the demand but compared against
+   nothing, because folding them into the nearest heading is what made DN's
+   Deluxe gap look like 29 when the manager's own block says 25.
+
+   ORDER vs TRANSFER - the distinction that saves the money:
+   A model short at Napier Town while sitting at Adhartal is a transfer, not a
+   purchase. So the table carries the stock AT the asking counter beside the
+   demand, and the dealership-wide figure beside that. Only the dealership-wide
+   shortfall becomes "to order".
+   =========================================================================== */
+(function(){
+  "use strict";
+  if (window.__NAVRATRI__) return;
+  var KEY='hero-navratri-v1';
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function nf(n){ return (Math.round(Number(n))||0).toLocaleString('en-IN'); }
+
+  /* ---- the demand, exactly as the three managers sent it -------------------
+     d  = line as written on WhatsApp
+     m  = the model name the stock register uses, so the two can be joined
+     q  = quantity asked for
+     n  = note where the shorthand does not resolve to one variant            */
+  var D=[
+   /* ---- Napier Town — "Amaan NT Sales Head" ---- */
+   {c:'Napier Town',s:'Entry',   m:'HF DELUXE',           d:'HF Deluxe All Black: 25', q:25, g:'NT-E'},
+   {c:'Napier Town',s:'Entry',   m:'HF DELUXE',           d:'HF Deluxe BHG: 6', q:6, g:'NT-E'},
+   {c:'Napier Town',s:'Entry',   m:'HF DELUXE',           d:'HF Pro BHG: 5', q:5, n:'Pro i3s variant', g:'NT-E'},
+   {c:'Napier Town',s:'Entry',   m:'HF DELUXE',           d:'HF Pro Red: 2', q:2, n:'Pro i3s variant', g:'NT-E'},
+   {c:'Napier Town',s:'Entry',   m:'HF DELUXE',           d:'HF Pro Blue: 2', q:2, n:'Pro i3s variant', g:'NT-E'},
+   {c:'Napier Town',s:'Deluxe',  m:'SPLENDOR +',          d:'Splendor+ All Black: 28', q:28, g:'NT-D'},
+   {c:'Napier Town',s:'Deluxe',  m:'SPLENDOR +',          d:'Splendor+ BHG: 25', q:25, g:'NT-D'},
+   {c:'Napier Town',s:'Deluxe',  m:'SPLENDOR+ XTEC 2.0',  d:'Splendor+ 2.0 BHG: 15', q:15, g:'NT-D'},
+   {c:'Napier Town',s:'Deluxe',  m:'SPLENDOR+ XTEC 2.0',  d:'Splendor+ 2.0 MGM: 5', q:5, g:'NT-D'},
+   {c:'Napier Town',s:'Deluxe',  m:'SPLENDOR+ XTEC',      d:'Splendor+ XTEC Disc TGB: 5', q:5, g:'NT-D'},
+   {c:'Napier Town',s:'Deluxe',  m:'SPLENDOR +',          d:'Splendor+ 01: 5', q:5, n:'"01" is not a variant this dashboard knows', g:'NT-D'},
+   {c:'Napier Town',s:'125cc',   m:'XTREME 125R',         d:'Xtreme 125R Single ABS Black: 7', q:7, g:'NT-125'},
+   {c:'Napier Town',s:'125cc',   m:'XTREME 125R',         d:'Xtreme 125R Dual ABS Grey: 6', q:6, g:'NT-125'},
+   {c:'Napier Town',s:'125cc',   m:'XTREME 125R',         d:'Xtreme 125R Dual ABS Red: 2', q:2, g:'NT-125'},
+   {c:'Napier Town',s:'125cc',   m:'SUPER SPLENDOR XTEC 2.0', d:'Super Splendor 2.0 Drum: 3', q:3, g:'NT-125'},
+   {c:'Napier Town',s:'125cc',   m:'SUPER SPLENDOR XTEC 2.0', d:'Super Splendor 2.0 Disc: 2', q:2, g:'NT-125'},
+   {c:'Napier Town',s:'125cc',   m:'GLAMOUR XTEC',        d:'Glamour XTEC Drum: 3', q:3, g:'NT-125'},
+   {c:'Napier Town',s:'125cc',   m:'GLAMOUR XTEC',        d:'Glamour XTEC Disc: 2', q:2, g:'NT-125'},
+   {c:'Napier Town',s:'Scooter', m:'DESTINI 110',         d:'Destini 110 MAG: 7', q:7, g:'NT-S'},
+   {c:'Napier Town',s:'Scooter', m:'DESTINI 110',         d:'Destini 110 White: 3', q:3, g:'NT-S'},
+   {c:'Napier Town',s:'Scooter', m:'DESTINI 125',         d:'Destini 125 Disc White: 2', q:2, g:'NT-S'},
+   {c:'Napier Town',s:'Scooter', m:'DESTINI 125',         d:'Destini 125 Disc GMM: 2', q:2, g:'NT-S'},
+   {c:'Napier Town',s:'Scooter', m:'PLEASURE+',           d:'Pleasure+: 5', q:5, g:'NT-S'},
+   {c:'Napier Town',s:'Scooter', m:'DESTINI PRIME',       d:'Destini Prime: 5', q:5, g:'NT-S'},
+   {c:'Napier Town',s:'Scooter', m:'XOOM 125',            d:'Xoom: 3', q:3, g:'NT-S'},
+
+   /* ---- DN — "Manish Sales Head DN" ---- */
+   {c:'DN',s:'Entry',   m:'HF DELUXE',           d:'HF Deluxe All Black: 15', q:15, g:'DN-E'},
+   {c:'DN',s:'Entry',   m:'HF DELUXE',           d:'HF Pro Red: 2', q:2, n:'Pro i3s variant', g:'DN-E'},
+   {c:'DN',s:'Entry',   m:'HF DELUXE',           d:'HF Pro Blue: 2', q:2, n:'Pro i3s variant', g:'DN-E'},
+   {c:'DN',s:'Deluxe',  m:'SPLENDOR +',          d:'Splendor+ All Black: 15', q:15, g:'DN-D'},
+   {c:'DN',s:'Deluxe',  m:'SPLENDOR +',          d:'Splendor+ BHG: 5', q:5, g:'DN-D'},
+   {c:'DN',s:'Deluxe',  m:'SPLENDOR+ XTEC 2.0',  d:'Splendor+ 2.0 BHG: 15', q:15, g:'DN-D'},
+   {c:'DN',s:'Deluxe',  m:'SPLENDOR+ XTEC 2.0',  d:'Splendor+ 2.0 MGM: 2', q:2, g:'DN-D'},
+   {c:'DN',s:'Deluxe',  m:'SPLENDOR+ XTEC',      d:'Splendor+ XTEC Disc TGB: 2', q:2, g:'DN-D'},
+   {c:'DN',s:'Deluxe',  m:'SPLENDOR+ XTEC',      d:'Drum -02', q:2, n:'sits under the XTEC lines; read as XTEC Drum', g:'DN-D'},
+   {c:'DN',s:'Deluxe',  m:'SPLENDOR +',          d:'Splendor+ 01: 3', q:3, n:'"01" is not a variant this dashboard knows', g:'DN-D'},
+   {c:'DN',s:'125cc',   m:'XTREME 125R',         d:'Xtreme 125R Single ABS Black: 3', q:3, g:'DN-125'},
+   {c:'DN',s:'125cc',   m:'XTREME 125R',         d:'Xtreme 125R Dual ABS Grey: 4', q:4, g:'DN-125'},
+   {c:'DN',s:'125cc',   m:'XTREME 125R',         d:'Xtreme 125R Dual ABS Red: 1', q:1, g:'DN-125'},
+   {c:'DN',s:'125cc',   m:'SUPER SPLENDOR XTEC 2.0', d:'Super Splendor 2.0 gary Drum: 2', q:2, n:'"gary" read as Grey', g:'DN-125'},
+   {c:'DN',s:'125cc',   m:'SUPER SPLENDOR XTEC 2.0', d:'Super Splendor 2.0 gary Disc: 2', q:2, n:'"gary" read as Grey', g:'DN-125'},
+   {c:'DN',s:'125cc',   m:'SUPER SPLENDOR XTEC 2.0', d:'Black 02 drum', q:2, n:'follows the Super Splendor lines; read as Black Drum', g:'DN-125'},
+   {c:'DN',s:'125cc',   m:'SUPER SPLENDOR XTEC 2.0', d:'Black 02 dc', q:2, n:'"dc" read as Disc', g:'DN-125'},
+   {c:'DN',s:'125cc',   m:'GLAMOUR XTEC',        d:'Glamour XTEC Drum: 2 black red', q:2, g:'DN-125'},
+   {c:'DN',s:'125cc',   m:'GLAMOUR XTEC',        d:'Glamour XTEC Disc: 2', q:2, g:'DN-125'},
+   {c:'DN',s:'125cc',   m:'GLAMOUR XTEC',        d:'Glamour ABS -02', q:2, g:'DN-125'},
+   {c:'DN',s:'Scooter', m:'DESTINI 110',         d:'Destini 110 White: 3', q:3},
+   {c:'DN',s:'Scooter', m:'DESTINI 125',         d:'Destini 125 Disc White: 2', q:2},
+   {c:'DN',s:'Scooter', m:'DESTINI 125',         d:'Destini 125 Disc GMM: 2', q:2},
+   {c:'DN',s:'Scooter', m:'PLEASURE+',           d:'Pleasure+: 3', q:3},
+   {c:'DN',s:'Scooter', m:'XOOM 125',            d:'Xoom: 2', q:2},
+   {c:'DN',s:'Deluxe',  m:'PASSION +',           d:'Passion+ Black Red -02', q:2},
+   {c:'DN',s:'Deluxe',  m:'PASSION +',           d:'Passion+ Blue -02', q:2},
+
+   /* ---- MML — "Danish share mml demand" ---- */
+   {c:'MML',s:'Deluxe',  m:'SPLENDOR+ XTEC 2.0', d:'Splendor xtec 2.0 (10)', q:10},
+   {c:'MML',s:'Deluxe',  m:'SPLENDOR+ XTEC',     d:'Splendor xtec drum/ disc (5)', q:5, n:'drum / disc split not given'},
+   {c:'MML',s:'Scooter', m:'DESTINI 125',        d:'Destini 125/110 mix (10) Drum', q:10, n:'125 / 110 split not given — booked to 125'},
+   {c:'MML',s:'Scooter', m:'DESTINI PRIME',      d:'Destini Prime (6)', q:6},
+   {c:'MML',s:'Entry',   m:'HF DELUXE',          d:'Hf/dlx BKG-5', q:5, n:'"BKG" — colour code not on the stock list'},
+   {c:'MML',s:'Entry',   m:'HF DELUXE',          d:'Hf/dlx BHG-5', q:5},
+   {c:'MML',s:'Deluxe',  m:'PASSION +',          d:'Passion -10 mix', q:10, n:'"mix" — colours not given'}
+  ];
+
+  /* the counter's own showroom in the stock register, so "short here but sitting
+     there" reads as a transfer rather than an order */
+  var LOC={'Napier Town':'NT','DN':'DN','MML':'MM'};
+
+  /* What each manager's own heading claimed. "g" names the block, and only the
+     lines carrying that same g are added up against it - so a line that arrived
+     outside every heading is never silently charged to one. */
+  var STATED=[
+    {g:'NT-E',  c:'Napier Town',s:'Entry',   said:40},
+    {g:'NT-D',  c:'Napier Town',s:'Deluxe',  said:78},
+    {g:'NT-125',c:'Napier Town',s:'125cc',   said:25},
+    {g:'NT-S',  c:'Napier Town',s:'Scooter', said:27},
+    {g:'DN-E',  c:'DN',         s:'Entry',   said:19},
+    {g:'DN-D',  c:'DN',         s:'Deluxe',  said:19},
+    {g:'DN-125',c:'DN',         s:'125cc',   said:25}
+  ];
+
+  /* Re-read rather than cache. Every other module on this page read its store
+     once into a closure and rendered from that copy, which is exactly why a
+     figure typed on the office desktop reached this browser's storage and the
+     grid still showed the old one until somebody reloaded. The shared store
+     merges into localStorage behind the page's back, so the only copy worth
+     trusting is the one on disk at the moment of drawing. A parse of a few
+     hundred bytes per view switch is not worth caching. */
+  var ST={};
+  function load(){
+    try{ ST=JSON.parse(localStorage.getItem(KEY))||{}; }catch(e){ ST={}; }
+    if(!ST.q || typeof ST.q!=='object') ST.q={};
+    return ST;
+  }
+  load();
+  function save(){
+    try{ localStorage.setItem(KEY,JSON.stringify(ST)); }
+    catch(e){ try{ if(typeof showToast==='function')
+      showToast('That quantity could not be saved — browser storage is full. Settings shows what is using it.'); }catch(_){} }
+  }
+  /* The stored record is {q:{<index>:<number>}} rather than flat keys so the
+     shared-store diff sees one leaf per line. A flat 'q12' key would also work,
+     but nesting keeps the sheet rows readable. */
+  function qty(i){ var v=ST.q&&ST.q[i]; return (v==null||v==='')?D[i].q:(+v||0); }
+  function edited(i){ var v=ST.q&&ST.q[i]; return !(v==null||v===''); }
+
+  window.nvSet=function(i,v){
+    load();                      /* merge onto what is on disk now, not a copy */
+    if(v===''||v==null) delete ST.q[i];
+    else ST.q[i]=Math.max(0,parseInt(v,10)||0);
+    save(); render();
+  };
+  window.nvReset=function(){
+    if(!confirm('Put every quantity back to what the managers sent?')) return;
+    load(); ST.q={}; save(); render();
+  };
+
+  /* ------------------------------------------------- stock, by model name */
+  function stock(){
+    var I=null; try{ I=window.__SKUSTOCK__&&window.__SKUSTOCK__(); }catch(e){}
+    if(!I||!I.by) return null;
+    var by={}, any=false;
+    Object.keys(I.by).forEach(function(k){
+      var e=I.by[k], m=String(e.model||'').toUpperCase().trim();
+      if(!m) return;
+      any=true;
+      var g=by[m]||(by[m]={net:0,transit:0,loc:{}});
+      /* e.net is already free stock excluding DC, which is challaned to the
+         sub-dealer network and is not ours to sell from a counter */
+      g.net+=e.net||0; g.transit+=e.transit||0;
+      Object.keys(e.loc||{}).forEach(function(l){
+        if(l==='DC') return;
+        g.loc[l]=(g.loc[l]||0)+e.loc[l];
+      });
+    });
+    return any?{by:by}:null;
+  }
+
+  function counters(){ var s={}, o=[]; D.forEach(function(r){ if(!s[r.c]){ s[r.c]=1; o.push(r.c); } }); return o; }
+
+  /* demand folded to one row per model, plus the per-counter split */
+  function fold(){
+    var byModel={}, order=[], total=0;
+    D.forEach(function(r,i){
+      var q=qty(i); total+=q;
+      var g=byModel[r.m];
+      if(!g){ g=byModel[r.m]={m:r.m,seg:r.s,tot:0,per:{},lines:0}; order.push(r.m); }
+      g.tot+=q; g.per[r.c]=(g.per[r.c]||0)+q; g.lines++;
+    });
+    order.sort(function(a,b){ return byModel[b].tot-byModel[a].tot || (a<b?-1:1); });
+    return {by:byModel, order:order, total:total};
+  }
+
+  /* ------------------------------------------------------------- the view */
+  function render(){
+    var root=document.getElementById('navratri-root'); if(!root) return;
+    load();                      /* pick up anything another device has sent */
+    var S=stock(), CS=counters(), F=fold(), models=F.order, byModel=F.by, total=F.total;
+
+    var haveAll=0, shortAll=0, netT=0, trT=0;
+    models.forEach(function(m){
+      var st=S&&S.by[m], net=st?st.net:0;
+      netT+=net; trT+=st?st.transit:0;
+      haveAll+=Math.min(net, byModel[m].tot);
+      shortAll+=Math.max(0, byModel[m].tot-net);
+    });
+
+    var h='<div class="card" style="margin-bottom:14px;border-left:4px solid var(--accent)">'
+      +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<h2 style="margin:0">Navratri vehicle demand</h2>'
+      +'<button class="btn btn-sm" style="margin-left:auto" onclick="nvExport()">Export the order list</button>'
+      +'<button class="btn btn-sm" onclick="nvReset()">Reset to what was sent</button></div>'
+      +'<p class="help-text" style="margin-top:6px">What the counter heads asked for on WhatsApp, set against what is on the floor. '
+      +'Every quantity below can be corrected and the correction reaches the other devices. '
+      +'<b>To order</b> is demand less free stock across the dealership &mdash; it is the indent, not a target.</p></div>';
+
+    h+='<div class="grid grid-4" style="margin-bottom:14px">'
+      +'<div class="card kpi"><h3>Asked for</h3><div class="kpi-value" style="color:#5b9eff">'+nf(total)+'</div>'
+      +'<div class="kpi-trend">'+D.length+' lines from '+CS.length+' counters</div></div>'
+      +'<div class="card kpi"><h3>Can be served now</h3><div class="kpi-value" style="color:'+(S?'#2bd47d':'var(--muted)')+'">'
+      +(S?nf(haveAll):'&mdash;')+'</div><div class="kpi-trend">'+(S?'from free stock on hand':'stock not synced')+'</div></div>'
+      +'<div class="card kpi"><h3>Short</h3><div class="kpi-value" style="color:'+(S?'#ff5c5c':'var(--muted)')+'">'
+      +(S?nf(shortAll):'&mdash;')+'</div><div class="kpi-trend">'+(S?'this is the indent':'needs the stock sync')+'</div></div>'
+      +'<div class="card kpi"><h3>Models</h3><div class="kpi-value">'+models.length+'</div>'
+      +'<div class="kpi-trend">across '+CS.length+' counters</div></div>'
+      +'</div>';
+
+    if(!S){
+      h+='<div class="card" style="margin-bottom:14px;border-left:4px solid #ffb02e">'
+        +'<h3 style="margin:0">Stock has not been synced into this browser</h3>'
+        +'<p class="help-text" style="margin-top:6px">The demand is all here, but there is nothing to set it against yet. '
+        +'Open <b>Stock</b> and sync from the sheet, then come back &mdash; the order column fills in by itself.</p></div>';
+    }
+
+    /* ---------------- the order list ---------------- */
+    h+='<div class="card" style="margin-bottom:14px"><h3>The order list &mdash; demand against stock</h3>'
+      +'<div style="overflow-x:auto"><table class="table" style="min-width:'+(760+CS.length*150)+'px"><thead><tr>'
+      +'<th rowspan="2">Model</th><th rowspan="2">Segment</th>';
+    CS.forEach(function(c){ h+='<th colspan="2" style="text-align:center;border-left:1px solid var(--line)">'+esc(c)+'</th>'; });
+    h+='<th rowspan="2" style="text-align:right;border-left:1px solid var(--line)">Asked</th>'
+      +'<th rowspan="2" style="text-align:right">On hand<br><span style="font-weight:400;color:var(--muted);font-size:11px">dealership</span></th>'
+      +'<th rowspan="2" style="text-align:right">In transit</th>'
+      +'<th rowspan="2" style="text-align:right">To order</th></tr><tr>';
+    CS.forEach(function(c){
+      h+='<th style="text-align:right;font-weight:400;font-size:11px;color:var(--muted);border-left:1px solid var(--line)">asked</th>'
+        +'<th style="text-align:right;font-weight:400;font-size:11px;color:var(--muted)">at counter</th>';
+    });
+    h+='</tr></thead><tbody>';
+
+    models.forEach(function(m){
+      var g=byModel[m], st=S&&S.by[m], net=st?st.net:0, tr=st?st.transit:0;
+      var short=Math.max(0,g.tot-net);
+      h+='<tr><td><b>'+esc(m)+'</b></td><td style="color:var(--muted)">'+esc(g.seg)+'</td>';
+      CS.forEach(function(c){
+        var v=g.per[c]||0, here=(S&&st)?(st.loc[LOC[c]]||0):null;
+        h+='<td style="text-align:right;border-left:1px solid var(--line);color:'+(v?'inherit':'var(--muted)')+'">'
+          +(v||'&middot;')+'</td>'
+          +'<td style="text-align:right;font-size:12px;color:'
+          +(here==null?'var(--muted)':(v&&here>=v)?'#2bd47d':here?'#ffb02e':'var(--muted)')+'">'
+          +(here==null?'&mdash;':(here||'&middot;'))+'</td>';
+      });
+      h+='<td style="text-align:right;font-weight:800;border-left:1px solid var(--line)">'+nf(g.tot)+'</td>'
+        +'<td style="text-align:right;color:'+(!S?'var(--muted)':net>=g.tot?'#2bd47d':net?'#ffb02e':'#ff5c5c')+'">'
+        +(S?nf(net):'&mdash;')+'</td>'
+        +'<td style="text-align:right;color:var(--muted)">'+(S?(tr||'&middot;'):'&mdash;')+'</td>'
+        +'<td style="text-align:right;font-weight:800;color:'+(!S?'var(--muted)':short?'#ff5c5c':'#2bd47d')+'">'
+        +(S?(short?nf(short):'nil'):'&mdash;')+'</td></tr>';
+    });
+
+    h+='<tr style="border-top:2px solid var(--line)"><td style="font-weight:800">All models</td><td></td>';
+    CS.forEach(function(c){
+      var t=0, hh=0;
+      models.forEach(function(m){ t+=byModel[m].per[c]||0;
+        var st=S&&S.by[m]; if(st) hh+=st.loc[LOC[c]]||0; });
+      h+='<td style="text-align:right;font-weight:800;border-left:1px solid var(--line)">'+nf(t)+'</td>'
+        +'<td style="text-align:right;font-weight:800;font-size:12px;color:var(--muted)">'+(S?nf(hh):'&mdash;')+'</td>';
+    });
+    h+='<td style="text-align:right;font-weight:800;border-left:1px solid var(--line)">'+nf(total)+'</td>'
+      +'<td style="text-align:right;font-weight:800">'+(S?nf(netT):'&mdash;')+'</td>'
+      +'<td style="text-align:right;font-weight:800">'+(S?nf(trT):'&mdash;')+'</td>'
+      +'<td style="text-align:right;font-weight:800;color:#ff5c5c">'+(S?nf(shortAll):'&mdash;')+'</td></tr>'
+      +'</tbody></table></div>'
+      +'<p class="help-text" style="margin-top:8px"><b>On hand</b> is free stock across every location except DC, which is already '
+      +'challaned to the sub-dealer network. <b>At counter</b> is what is standing at that counter&rsquo;s own showroom: a model '
+      +'wanted at Napier Town but sitting at Adhartal is a transfer, not a purchase, so only the dealership-wide shortfall '
+      +'reaches <b>To order</b>. Godown stock counts as on hand and is not shown against any one counter.</p></div>';
+
+    /* ---------------- what the managers actually wrote ---------------- */
+    h+='<div class="card" style="margin-bottom:14px"><h3>Line by line, as it was sent</h3>'
+      +'<p class="help-text">The wording is the manager&rsquo;s own. Change a figure here if a line was read wrong &mdash; '
+      +'it saves straight away and travels to the other devices. A changed figure is marked.</p>';
+    CS.forEach(function(c){
+      var rows=[]; D.forEach(function(r,i){ if(r.c===c) rows.push([r,i]); });
+      var sub=rows.reduce(function(a,x){ return a+qty(x[1]); },0);
+      h+='<h3 style="margin:14px 0 6px;font-size:14px">'+esc(c)
+        +' <span style="color:var(--muted);font-weight:400">'+rows.length+' lines &middot; '+nf(sub)+' vehicles</span></h3>'
+        +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Segment</th><th>As written</th>'
+        +'<th>Model it maps to</th><th style="text-align:right">Qty</th><th>Note</th></tr></thead><tbody>';
+      rows.forEach(function(x){
+        var r=x[0], i=x[1], ed=edited(i);
+        h+='<tr><td style="color:var(--muted)">'+esc(r.s)+'</td>'
+          +'<td>'+esc(r.d)+'</td>'
+          +'<td style="font-size:12px">'+esc(r.m)+'</td>'
+          +'<td style="text-align:right;white-space:nowrap">'
+          +'<input type="number" min="0" step="1" value="'+qty(i)+'" '
+          +'onchange="nvSet('+i+',this.value)" aria-label="quantity" '
+          +'style="width:64px;text-align:right;background:var(--panel-2);'
+          +'border:1px solid '+(ed?'#5b9eff':'var(--line)')+';color:var(--text);padding:4px 6px;border-radius:6px">'
+          +(ed?' <span title="changed from '+D[i].q+'" style="color:#5b9eff;font-size:11px">&bull;</span>':'')
+          +'</td>'
+          +'<td style="font-size:12px;color:'+(r.n?'#ffb02e':'var(--muted)')+'">'+esc(r.n||'')+'</td></tr>';
+      });
+      h+='</tbody></table></div>';
+    });
+    h+='</div>';
+
+    /* ---------------- where the managers' own totals disagree ------------- */
+    var bad=[], agree=0, loose=0, looseN=0;
+    STATED.forEach(function(x){
+      var sum=0, n=0;
+      D.forEach(function(r,i){ if(r.g===x.g){ sum+=qty(i); n++; } });
+      if(sum!==x.said) bad.push({c:x.c,s:x.s,said:x.said,sum:sum,n:n});
+      else agree++;
+    });
+    D.forEach(function(r,i){ if(!r.g){ loose++; looseN+=qty(i); } });
+
+    if(bad.length){
+      h+='<div class="card" style="border-left:4px solid #ff5c5c"><h3 style="margin:0;color:#ff5c5c">'
+        +'Check these before the order goes</h3>'
+        +'<p class="help-text" style="margin-top:6px">A segment heading in the message gives a total that its own lines do not add to. '
+        +'Ordering off the heading and ordering off the lines give two different trucks, so this page uses the <b>lines</b> '
+        +'and shows you the difference rather than choosing for you.</p>'
+        +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Counter</th><th>Segment</th>'
+        +'<th style="text-align:right">Heading said</th><th style="text-align:right">Lines add to</th>'
+        +'<th style="text-align:right">Difference</th></tr></thead><tbody>';
+      bad.forEach(function(b){
+        h+='<tr><td><b>'+esc(b.c)+'</b></td><td>'+esc(b.s)+'</td>'
+          +'<td style="text-align:right">'+nf(b.said)+'</td>'
+          +'<td style="text-align:right">'+nf(b.sum)+'<span style="color:var(--muted);font-size:11px"> over '+b.n+' lines</span></td>'
+          +'<td style="text-align:right;font-weight:800;color:#ff5c5c">'
+          +(b.sum>b.said?'+':'')+nf(b.sum-b.said)+'</td></tr>';
+      });
+      h+='</tbody></table></div>'
+        +'<p class="help-text" style="margin-top:8px">'
+        +(agree? 'The other '+agree+' headed block'+(agree===1?'':'s')+' add'+(agree===1?'s':'')
+                 +' up to exactly what the heading says, which is the reason to trust the rest of the reading. ' : '')
+        +(loose? 'A further <b>'+nf(looseN)+'</b> vehicles across '+loose+' lines arrived outside every heading &mdash; '
+                 +'DN&rsquo;s Passion+ lines came after the numbered block and MML&rsquo;s message carried no segment totals. '
+                 +'They are counted in the demand above but compared against nothing, because charging them to the nearest '
+                 +'heading is what would make a gap look bigger than the manager wrote.' : '')
+        +'</p></div>';
+    }
+    root.innerHTML=h;
+  }
+
+  window.nvExport=function(){
+    var S=stock(), CS=counters(), F=fold();
+    var head=['Model','Segment'];
+    CS.forEach(function(c){ head.push(c+' asked'); head.push(c+' at counter'); });
+    head=head.concat(['Asked for','On hand (dealership)','In transit','To order']);
+    var body=F.order.map(function(m){
+      var g=F.by[m], st=S&&S.by[m], net=st?st.net:0, row=[m,g.seg];
+      CS.forEach(function(c){ row.push(g.per[c]||0); row.push(st?(st.loc[LOC[c]]||0):''); });
+      return row.concat([g.tot, S?net:'', S?(st?st.transit:0):'', S?Math.max(0,g.tot-net):'']);
+    });
+    body.push([]);
+    body.push(['Line by line, as sent']);
+    body.push(['Counter','Segment','As written','Maps to','Qty','Originally sent','Note']);
+    D.forEach(function(r,i){ body.push([r.c,r.s,r.d,r.m,qty(i),r.q,r.n||'']); });
+    try{ downloadCsv('navratri_demand_vs_stock_'+new Date().toISOString().slice(0,10)+'.csv',head,body); }
+    catch(e){ try{ if(typeof showToast==='function') showToast('Export failed: '+e.message); }catch(_){} }
+  };
+
+  /* ------------------------------------------------------------- mounting
+     Same shape as every other added view: a nav button inserted above the
+     Setup section, and a sibling <section class="view"> the host's setView
+     switches to. Nothing the host renders is replaced, so a host re-render
+     never wipes this. */
+  function ensure(){
+    if(document.getElementById('view-navratri')) return true;
+    var nav=document.getElementById('nav'); if(!nav) return false;
+    if(!document.querySelector('.nav-item[data-view="navratri"]')){
+      var btn=document.createElement('button');
+      btn.className='nav-item'; btn.setAttribute('data-view','navratri');
+      btn.innerHTML='<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+        +'<path d="M3 7h13l2 4h3v7h-2a2 2 0 1 1-4 0H9a2 2 0 1 1-4 0H3z"/><path d="M3 11h13"/></svg>Navratri Demand';
+      btn.onclick=function(){ window.setView('navratri'); };
+      var setup=nav.querySelector('.nav-section');
+      if(setup) nav.insertBefore(btn,setup); else nav.appendChild(btn);
+    }
+    var views=document.querySelectorAll('.view');
+    var sec=document.createElement('section'); sec.className='view'; sec.id='view-navratri';
+    sec.innerHTML='<div id="navratri-root"></div>';
+    if(views.length) views[views.length-1].parentNode.appendChild(sec); else document.body.appendChild(sec);
+    return true;
+  }
+  var prev=window.setView;
+  window.setView=function(n){
+    var r;
+    try{ r=(typeof prev==='function')?prev.apply(this,arguments):undefined; }
+    catch(e){ try{ console.warn('[navratri] host setView',e); }catch(_){} }
+    if(n==='navratri'){ setTimeout(function(){
+      try{ if(ensure()) render(); }catch(e){ try{ console.warn('[navratri]',e); }catch(_){} } },60); }
+    return r;
+  };
+  document.addEventListener('DOMContentLoaded',function(){ setTimeout(ensure,1000); });
+
+  window.__NAVRATRI__=function(){
+    load();
+    var out=[]; D.forEach(function(r,i){
+      out.push({c:r.c,s:r.s,m:r.m,d:r.d,q:qty(i),sent:r.q,edited:edited(i),g:r.g||'',n:r.n||''}); });
+    var head=STATED.map(function(x){
+      var sum=0,n=0; D.forEach(function(r,i){ if(r.g===x.g){ sum+=qty(i); n++; } });
+      return {g:x.g,c:x.c,s:x.s,said:x.said,sum:sum,lines:n};
+    });
+    return {lines:out, fold:fold(), stock:stock(), stated:STATED, headings:head};
+  };
+})();
+</script>
+
 <!-- ===== SHARED STORE — the hand-typed figures, on every device ==============
      localStorage is one browser on one device. Everything typed into the daily
      trackers and the plans lived there and nowhere else, so a phone or a
@@ -19798,7 +20434,7 @@ document.addEventListener('DOMContentLoaded', initApp);
      ========================================================================= -->
 <script>
 /* ===========================================================================
-   SHARED STORE — the hand-typed figures, on every device              (v111)
+   SHARED STORE — the hand-typed figures, on every device              (v114)
 
    THE FAULT THIS FIXES
 
@@ -19848,7 +20484,12 @@ document.addEventListener('DOMContentLoaded', initApp);
     {k:'hero-f100-v1',      n:'Festival 100 — plan'},
     {k:'hero-f100p2-v1',    n:'Festival 100 — phase 2'},
     {k:'hero-vidaplan-v1',  n:'VIDA — plan'},
-    {k:'hero-orderplan-v1', n:'Order planner'}
+    {k:'hero-orderplan-v1', n:'Order planner'},
+    /* the Navratri demand lines came off three WhatsApp screens, so some of
+       them will be corrected by the people who sent them. A correction typed
+       at one counter has to reach the other two before the indent is raised,
+       which is exactly what this store is for. */
+    {k:'hero-navratri-v1',  n:'Navratri demand — corrected quantities'}
   ];
   var KEYS={}; STORES.forEach(function(s){ KEYS[s.k]=s.n; });
 
@@ -20170,4 +20811,5 @@ document.addEventListener('DOMContentLoaded', initApp);
 })();
 </script>
 
+</body>
 </html>
