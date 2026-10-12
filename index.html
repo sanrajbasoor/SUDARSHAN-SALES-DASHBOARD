@@ -137,6 +137,8 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
     'hero-f100daily-v1':1, 'hero-vidadaily-v1':1, 'hero-f100-v1':1,
     'hero-f100p2-v1':1, 'hero-vidaplan-v1':1, 'hero-orderplan-v1':1,
     'hero-navratri-v1':1,       /* corrections to the WhatsApp demand lines */
+    'hero-mop-v1':1,            /* the month's allotment file; only copy */
+    'hero-mop-prefs-v1':1,
     'hero-share-meta-v1':1,     /* the outbox - dropping it loses typed figures */
     'hero-iq-files-v1':1,       /* imported call records; only copy */
     'hero-iq-issued-v1':1, 'hero-iq-dir-v1':1,
@@ -263,7 +265,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
     <div class="brand" style="flex-direction:column;align-items:flex-start;gap:7px;">
       <img src="data:image/png;base64,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" alt="Sudarshan Hero"
            style="width:100%;max-width:198px;height:auto;display:block;"/>
-      <div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;">build v118 &middot; 12 Oct 2026</div>
+      <div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;">build v120 &middot; 12 Oct 2026</div>
     </div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
@@ -8144,13 +8146,14 @@ document.addEventListener('DOMContentLoaded', initApp);
   /* ---- stock, by segment and by counter ---------------------------------- */
   function stock(){
     var I=null; try{ I=window.__SKUSTOCK__ && window.__SKUSTOCK__(); }catch(e){}
-    var out={seg:{}, ctr:{}, any:false, src:(I&&I.S)||null};
+    var out={seg:{}, ctr:{}, any:false, src:(I&&I.S)||null, gdToCounter:1};
     if(!I||!I.by) return out;
     var T=targets(), share={}, tot=0;
     CTRKEYS.forEach(function(k){ tot+=T.ty[k]||0; });
     CTRKEYS.forEach(function(k){ share[k]=tot?(T.ty[k]||0)/tot:0; });
     var ctrTY=T.ty._counter||0, netTY=T.ty._network||0, both=ctrTY+netTY;
     var gdToCounter = p.godown==='counter'?1 : p.godown==='network'?0 : (both?ctrTY/both:1);
+    out.gdToCounter=gdToCounter;
 
     Object.keys(I.by).forEach(function(k){
       var e=I.by[k]; if(e.seg==='VIDA') return;
@@ -8221,10 +8224,22 @@ document.addEventListener('DOMContentLoaded', initApp);
         segs[sg].s += S.seg[sg][c].s; segs[sg].t += S.seg[sg][c].t;
       });
     });
+    /* Vehicles already allotted against the monthly order plan and not yet
+       dispatched are stock the dealership has bought. Leaving them out made
+       "balance to source" the need less only what is on the floor, which
+       orders the same month twice. */
+    var MOP=null; try{ MOP=window.__MOP__&&window.__MOP__(); }catch(e){}
+    /* A vehicle still to be dispatched is not yet promised to a counter or to
+       the network, exactly like godown stock - so it is divided on the same
+       ratio the godown buttons set. Showing the whole dealership's inbound
+       against a counter-only need would hide a real shortfall. */
+    var gd=(S&&S.gdToCounter!=null)?S.gdToCounter:1;
+    var orderShare = ch==='Both' ? 1 : (ch==='Counter' ? gd : (1-gd));
     Object.keys(segs).forEach(function(sg){
       var r=segs[sg]; r.seg=sg;
       r.s=Math.round(r.s); r.t=Math.round(r.t);
-      r.avail=r.s+r.t;
+      r.order=Math.round(((MOP&&MOP.seg&&MOP.seg[sg]&&MOP.seg[sg].bal)||0)*orderShare);
+      r.avail=r.s+r.t+r.order;
       r.bal=r.need-r.avail;
       r.ratio=r.need? r.avail/r.need : (r.avail?9:0);
       r.rate=r.need/P2DAYS;
@@ -8234,6 +8249,18 @@ document.addEventListener('DOMContentLoaded', initApp);
     rows.sort(function(a,b){ return b.need-a.need; });
     return {rows:rows, S:S, T:T};
   }
+
+  /* The MOP panel bases next cycle's ask on this, so it has to be readable
+     from outside rather than living only inside render(). */
+  window.__F100P2__=function(){
+    var B=build();
+    return {rows:B.rows.map(function(r){
+              return {seg:r.seg, need:r.need, ly:r.ly, s:r.s, t:r.t, order:r.order||0,
+                      avail:r.avail, bal:r.bal}; }),
+            total:B.rows.reduce(function(a,r){ return a+r.need; },0),
+            channel:p.ch, days:P2DAYS,
+            label:'Festival 100 Phase 2 need ('+p.ch.toLowerCase()+')'};
+  };
 
   window.p2Set=function(k,v){ p[k]=v; save(); render(); };
   window.p2Trend=function(v){ p.trendOv=(v===''?'':Math.max(0,parseFloat(v)||0)); save(); render(); };
@@ -8306,7 +8333,9 @@ document.addEventListener('DOMContentLoaded', initApp);
     } else {
       h+='<div style="overflow-x:auto"><table class="table"><thead><tr><th>Segment</th>'
         +'<th style="text-align:right">LY same window</th><th style="text-align:right">Phase 2 need</th><th style="text-align:right">Share</th>'
-        +'<th style="text-align:right">In stock</th><th style="text-align:right">In transit</th><th style="text-align:right">Available</th>'
+        +'<th style="text-align:right">In stock</th><th style="text-align:right">In transit</th>'
+        +'<th style="text-align:right">On order<br><span style="font-weight:400;color:var(--muted);font-size:11px">MOP balance</span></th>'
+        +'<th style="text-align:right">Available</th>'
         +'<th style="text-align:right">Balance to source</th><th style="text-align:right">Stock vs need</th><th style="text-align:right">Days of cover</th></tr></thead><tbody>';
       B.rows.forEach(function(r){
         if(p.seg && r.seg!==p.seg) return;
@@ -8317,22 +8346,29 @@ document.addEventListener('DOMContentLoaded', initApp);
           +'<td style="text-align:right;color:var(--muted)">'+pct(r.need,need)+'%</td>'
           +'<td style="text-align:right">'+nf(r.s)+'</td>'
           +'<td style="text-align:right;color:#5b9eff">'+nf(r.t)+'</td>'
+          +'<td style="text-align:right;color:'+(r.order?'#9b8cff':'var(--muted)')+'">'+(r.order?nf(r.order):'&middot;')+'</td>'
           +'<td style="text-align:right"><b>'+nf(r.avail)+'</b></td>'
           +'<td style="text-align:right"><b style="color:'+(r.bal>0?'#ff5c5c':'#2bd47d')+'">'
             +(r.bal>0? nf(r.bal) : ('+'+nf(-r.bal)+' spare'))+'</b></td>'
           +'<td style="text-align:right;color:'+(r.need?col:'var(--muted)')+'"><b>'+(r.need?Math.round(r.ratio*100)+'%':'&mdash;')+'</b></td>'
           +'<td style="text-align:right;color:'+(r.need?col:'var(--muted)')+'">'+(r.need?Math.round(r.cover):'&mdash;')+'</td></tr>';
       });
-      var tN=0,tL=0,tS=0,tT=0,tB=0;
-      B.rows.forEach(function(r){ if(p.seg&&r.seg!==p.seg) return; tN+=r.need; tL+=r.ly; tS+=r.s; tT+=r.t; tB+=r.bal; });
+      var tN=0,tL=0,tS=0,tT=0,tB=0,tO=0;
+      B.rows.forEach(function(r){ if(p.seg&&r.seg!==p.seg) return;
+        tN+=r.need; tL+=r.ly; tS+=r.s; tT+=r.t; tB+=r.bal; tO+=r.order||0; });
       h+='<tr style="border-top:2px solid var(--border)"><td><b>Total</b></td>'
         +'<td style="text-align:right;color:var(--muted)"><b>'+nf(tL)+'</b></td><td style="text-align:right"><b>'+nf(tN)+'</b></td>'
         +'<td style="text-align:right"></td><td style="text-align:right"><b>'+nf(tS)+'</b></td>'
-        +'<td style="text-align:right;color:#5b9eff"><b>'+nf(tT)+'</b></td><td style="text-align:right"><b>'+nf(tS+tT)+'</b></td>'
+        +'<td style="text-align:right;color:#5b9eff"><b>'+nf(tT)+'</b></td>'
+        +'<td style="text-align:right;color:'+(tO?'#9b8cff':'var(--muted)')+'"><b>'+(tO?nf(tO):'&middot;')+'</b></td>'
+        +'<td style="text-align:right"><b>'+nf(tS+tT+tO)+'</b></td>'
         +'<td style="text-align:right"><b style="color:'+(tB>0?'#ff5c5c':'#2bd47d')+'">'+(tB>0?nf(tB):('+'+nf(-tB)+' spare'))+'</b></td>'
-        +'<td style="text-align:right"><b>'+pct(tS+tT,tN)+'%</b></td><td></td></tr>';
+        +'<td style="text-align:right"><b>'+pct(tS+tT+tO,tN)+'%</b></td><td></td></tr>';
       h+='</tbody></table></div>'
-        +'<p class="help-text" style="margin-top:8px"><b>Balance to source</b> is the Phase 2 need less everything you already hold, stock plus transit. '
+        +'<p class="help-text" style="margin-top:8px"><b>On order</b> is the monthly order plan&rsquo;s balance &mdash; vehicles '
+        +'already allotted by the company for this cycle and not yet dispatched. They are bought, so they count towards '
+        +'the season. <b>Balance to source</b> is the Phase 2 need less everything you hold <i>and</i> everything already '
+        +'on order &mdash; it is what is genuinely still to be asked for. '
         +'<b>Stock vs need</b> is the same thing as a ratio &mdash; under 100% means the season outruns the stock. '
         +'<b>Days of cover</b> is how far what you hold lasts at the retail rate this phase demands, against the '+P2DAYS+' days it has to last.</p>';
     }
@@ -20057,6 +20093,501 @@ document.addEventListener('DOMContentLoaded', initApp);
 
 </script>
 
+<!-- ===== MONTHLY ORDER PLAN (MOP) ========================================
+     Hero's monthly allotment: what was planned, what has been dispatched and
+     what is still owed. The balance is stock already bought, so Festival 100
+     subtracts it before saying what is still to source. VIDA is excluded.
+     ===================================================================== -->
+<script>
+/* ===========================================================================
+   MONTHLY ORDER PLAN (MOP) — what the company has allotted, and what is
+   still to come                                                       (v119)
+
+   WHAT THIS IS
+
+   Hero sends a monthly allotment against the plan the dealership asked for:
+
+       Plan Cycle | Version | Model | SKU Code | SKU Description
+                  | Plan Qty | Dispatch Qty | Balance Qty
+
+   Plan Qty is what was asked for, Dispatch Qty is what has actually come, and
+   Balance Qty is what is still owed against this cycle. That balance is the
+   piece the dashboard was blind to: it is stock the dealership has already
+   bought and will receive, so counting it as "still to source" orders it twice.
+
+   WHY IT CHANGES THE ARITHMETIC
+
+   Festival 100 was working out the gap as
+
+       need  -  (free stock + in transit)
+
+   The October cycle has 833 ICE vehicles still to be dispatched. Ignoring them
+   overstates the indent by that whole figure. With the MOP in, the gap becomes
+
+       need  -  (free stock + in transit + MOP balance)
+
+   which is the number to actually put on an order.
+
+   HOW IT JOINS TO THE STOCK
+
+   Hero's model code is 11 characters and the SKU code is that plus a 3-letter
+   colour - exactly the shape the DMS stock export uses, so the join is by code
+   and not by name. The SKU *description* is no good for this: it writes SPL+,
+   SUP SPL, PLR+ and XTR, none of which the dashboard's segment classifier
+   recognises, so every Splendor and Super Splendor would land in "Other". The
+   model code is mapped once, below, and checked against the sheet's own totals.
+
+   VIDA
+
+   VIDA lines carry Plan 0 against real dispatches, so their balance is
+   negative - they are dispatched outside this plan. They are excluded from
+   every figure here, as asked, and shown only as a footnote so that leaving
+   them out is visible rather than silent.
+   =========================================================================== */
+(function(){
+  "use strict";
+  if (window.__MOP__) return;
+  var KEY='hero-mop-v1';
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function nf(n){ return (Math.round(Number(n))||0).toLocaleString('en-IN'); }
+  function pc(a,b){ return b? Math.round(a/b*100) : 0; }
+
+  var SEED={"cycle":"10.2026","ver":"P05","codes":["HDESHDRLMFI","HDESYDSZCFI","HDLFZDRSCFI","HDLHADRSCFI","HDLHCDRSCFI","HDSTMDRVCFI","HDSTMDSZCFI","HDSTRHSZCFI","HGLMBTSSCFI","HGLMRDRSCFI","HGLMRDSSCFI","HPLNCDRZCFI","HPPLBIRSCFI","HPPLDISSCFI","HSPFLIRSCFI","HSPLMDRSCFI","HSPLMTRSCFI","HSPLMTSSCFI","HSPPLHRSCFI","HSPSFDRSCFI","HSPSFDSSCFI","HSPUNHRSCFI","HSPUNIRSCFI","HXOMWIRSCFI","HXOMWISSCFI","HXTRCDDSCFI","HXTRCPDSCFI","HXTRPSSSCFI","HXTRSASSCFI","V3GOBSEFCEL","V3GODRARCEL","V3PLDSARCEL","V3PLJSCRCEL"],"map":{"HDSTMDRVCFI":["DESTINI 110","Scooter"],"HDSTMDSZCFI":["DESTINI 110","Scooter"],"HDESYDSZCFI":["DESTINI 125","Scooter"],"HDSTRHSZCFI":["DESTINI 125","Scooter"],"HDESHDRLMFI":["DESTINI PRIME","Scooter"],"HGLMBTSSCFI":["GLAMOUR X","125cc"],"HGLMRDSSCFI":["GLAMOUR X","125cc"],"HGLMRDRSCFI":["GLAMOUR X","125cc"],"HDLHCDRSCFI":["HF DELUXE","Entry"],"HDLHADRSCFI":["HF DELUXE","Entry"],"HDLFZDRSCFI":["HF DELUXE","Entry"],"HPPLBIRSCFI":["PASSION +","Deluxe"],"HPPLDISSCFI":["PASSION +","Deluxe"],"HPLNCDRZCFI":["PLEASURE+","Scooter"],"HSPLMDRSCFI":["SPLENDOR +","Deluxe"],"HSPFLIRSCFI":["SPLENDOR +","Deluxe"],"HSPUNIRSCFI":["SPLENDOR +","Deluxe"],"HSPUNHRSCFI":["SPLENDOR +","Deluxe"],"HSPPLHRSCFI":["SPLENDOR+ XTEC 2.0","Deluxe"],"HSPLMTRSCFI":["SPLENDOR+ XTEC","Deluxe"],"HSPLMTSSCFI":["SPLENDOR+ XTEC","Deluxe"],"HSPSFDRSCFI":["SUPER SPLENDOR XTEC 2.0","125cc"],"HSPSFDSSCFI":["SUPER SPLENDOR XTEC 2.0","125cc"],"HXOMWIRSCFI":["XOOM 125","Scooter"],"HXOMWISSCFI":["XOOM 125","Scooter"],"HXTRCDDSCFI":["XTREME 160R 4V","Premium"],"HXTRCPDSCFI":["XTREME 160R 4V","Premium"],"HXTRSASSCFI":["XTREME 125R","125cc"],"HXTRPSSSCFI":["XTREME 125R","125cc"]},"rows":[[5,"MAG",33,16,17,"DESTINI 110 FI VX DRSC MAT AXIS GRAY MET"],[5,"MNB",22,8,14,"DESTINI 110 FI VX DRSC METLK NEXUS BLUE"],[5,"FWT",11,11,0,"DESTINI 110 FI VX DRSC PEARL FADLESS WHT"],[6,"BRD",4,0,4,"DESTINI 110 FI ZX DSSC CANDY BLAZING RED"],[1,"MGV",1,0,1,"DESTINI 125 FI ZX DSSC MYSTIQUE MAGENTA"],[7,"PEB",4,0,4,"DESTINI 125 FI ZX+ DSSC PEARL BLACK"],[0,"MNB",14,0,14,"DESTINI PRIME FI DRS SM METL NEXUS BLUE"],[0,"NRD",13,0,13,"DESTINI PRIME FI DRS SM NOBLE RED"],[0,"PBK",13,0,13,"DESTINI PRIME FI DRS SM PANTHER BLACK ME"],[0,"PSW",14,0,14,"DESTINI PRIME FI DRS SM PEARL SL WH SPM"],[6,"ILG",11,9,2,"DESTINI110FIZX DSSC INDUSTRIAL LIGHT GRY"],[7,"BTB",2,0,2,"DESTINI125 FI ZX+ DSSC BLUISH TEAL BLACK"],[7,"GMM",4,2,2,"DESTINI125FI ZX+ DSSC METLK GUN METAL"],[7,"FWT",2,2,0,"DESTINI125FI ZX+ DSSC PEARL FADLESS WH"],[8,"BRE",12,2,10,"GLAMOUR X ABS BLACK PEARL RED"],[8,"BBT",6,2,4,"GLAMOUR X ABS BLACK TEAL BLUE"],[8,"MAG",12,0,12,"GLAMOUR X ABS DSSC MAT AXIS GREY"],[10,"BRE",31,1,30,"GLAMOUR X DISC BLACK PEARL RED"],[10,"BLB",29,1,28,"GLAMOUR X DISC BLACK TEAL BLUE"],[10,"MMS",3,0,3,"GLAMOUR X DISC MATT METALLIC SILVER"],[9,"BRE",14,1,13,"GLAMOUR X DRUM BLACK PEARL RED"],[9,"BLB",21,1,20,"GLAMOUR X DRUM BLACK TEAL BLUE"],[4,"BLK",299,14,285,"HF DLX 24 BS6 DRS C FI BLACK"],[3,"BKB",8,0,8,"HF DLX 24 BS6 DRS CS FI BLACK NEXUS BLUE"],[3,"BKG",8,0,8,"HF DLX 24 BS6 DRS CS FI BLACK-GREY STR"],[3,"SBK",4,0,4,"HF DLX 24 BS6 DRS CS FI BLACK-RED STRIPE"],[2,"BBG",9,9,0,"HF DLX FLEX 24 DRSC FI BLACK BLUE-GREEN"],[12,"BRB",5,0,5,"PASSION+ i3S DRSC FI BLACK BROWN STRIPES"],[12,"BHG",27,0,27,"PASSION+ i3S DRSC FI BLACK HEAVY GREY"],[12,"SBK",3,0,3,"PASSION+ i3S DRSC FI SPORTS RED BLACK"],[13,"IDG",3,0,3,"PASSION+ i3S DSSCFI INDUSTRIAL DARK GREY"],[11,"MBK",8,0,8,"PLR+ 110 BS6 FI ZX DRSC MAT BLACK"],[11,"MVG",7,0,7,"PLR+ 110 BS6 FI ZX DRSC MAT VERNIER GREY"],[11,"PBE",2,0,2,"PLR+ 110 BS6 FI ZX DRSC PEARL BLUE"],[15,"RPB",2,1,1,"SPL+ DRS C FI BLACK-RED PURPLE STRIPE"],[15,"BBK",9,1,8,"SPL+ DRSC FI BLACK- BLUE STRIPE"],[15,"BHG",174,169,5,"SPL+ DRSC FI BLACK HEAVY GREY"],[15,"SBK",9,1,8,"SPL+ DRSC FI BLACK SPORTS RED STRIPE"],[14,"BLK",7,7,0,"SPL+ Flex i3S Flex DRSC FI BLACK"],[22,"BLA",159,117,42,"SPL+ i3S DRSC FI BLACK AND ACCENT"],[21,"IDG",17,17,0,"SPL+ i3S DRSC FI INDUSTRIAL DARK GREY"],[22,"MAG",12,0,12,"SPL+ i3S DRSC FI MAT AXIS GREY METLK"],[22,"MVG",5,0,5,"SPL+ i3S DRSC FI MAT VERNIER GREY"],[18,"RBK",15,0,15,"SPL+XTEC 2.0 I3S DRSC FI BLACK WITH RED"],[16,"TGB",39,0,39,"SPL+XTEC I3S DRSC FI BLACK TORNADO GREY"],[17,"TGB",30,14,16,"SPL+XTEC I3S DSSC FI BLACK TORNADO GREY"],[17,"BSB",6,2,4,"SPL+XTEC I3S DSSC FI BLACK-SPARKING BLUE"],[18,"BKB",15,0,15,"SPL+XTEC2.0 I3S DRSC FI BLACK NEXUS BLUE"],[18,"BHG",65,62,3,"SPLENDOR+ XTEC 2.0 I3S DRSC FI BLACK HEA"],[18,"MGM",10,0,10,"SPLENDOR+ XTEC 2.0 I3S DRSC FI MAT GUN M"],[18,"NRD",8,0,8,"SPLENDOR+ XTEC 2.0 I3S DRSC FI NOBLE RED"],[19,"GBL",21,0,21,"SUP SPL XTEC 2.0 FI DRSC GLOSSY BLACK"],[20,"GBL",15,0,15,"SUP SPL XTEC 2.0 FI DSSC GLOSSY BLACK"],[29,"MGM",0,53,-53,"VIDA VX2 GO 3.1 FB MAT GUN METAL"],[29,"MIW",0,16,-16,"VIDA VX2 GO 3.1 FB MAT INSPIRED WHITE"],[29,"MNB",0,1,-1,"VIDA VX2 GO 3.1 FB MAT NEXUS BLUE"],[29,"PEB",0,36,-36,"VIDA VX2 GO 3.1 FB PEARL BLACK"],[30,"MGM",0,43,-43,"VIDA VX2 GO 3.4 SC 7P RMV MAT GUN METAL"],[30,"MIW",0,28,-28,"VIDA VX2 GO 3.4 SC 7P RMV MAT INSPIRED W"],[30,"MNB",0,4,-4,"VIDA VX2 GO 3.4 SC 7P RMV MAT NEXUS BLUE"],[30,"PEB",0,28,-28,"VIDA VX2 GO 3.4 SC 7P RMV PEARL BLACK"],[32,"MGM",0,3,-3,"VIDA VX2 PLUS 2X9P RMV MAT GUN METAL"],[32,"PEB",0,6,-6,"VIDA VX2 PLUS 2X9P RMV PEARL BLACK"],[31,"MGM",0,7,-7,"VIDA VX2 PLUS SC 7P RMV MAT GUN METAL"],[31,"MNB",0,2,-2,"VIDA VX2 PLUS SC 7P RMV MAT NEXUS BLUE"],[31,"PEB",0,10,-10,"VIDA VX2 PLUS SC 7P RMV PEARL BLACK"],[31,"MIW",0,3,-3,"VIDA VX2PLUS SC7P RMV MAT INSPIRED WHITE"],[23,"VBU",5,0,5,"XOOM 125 FI DRSC VIBRANT BLUE METALIC"],[24,"BRD",4,4,0,"XOOM 125 FI DSS C CANDY BLAZING RED"],[24,"GLM",4,2,2,"XOOM 125 FI DSSC MATT GIALLO LIME"],[24,"PBE",4,2,2,"XOOM 125 FI DSSC PEARL BLUE"],[25,"BRD",2,0,2,"XTR 1604V FI DDSC BASE CANDY BLAZING RED"],[25,"MBK",2,0,2,"XTR 1604V FI DDSC BASE MAT BLACK"],[26,"ABO",2,0,2,"XTR 1604V FI DDSC PREMIUM ABRAXAS ORANGE"],[26,"MGM",2,0,2,"XTR 1604VFI DDSC PRE MET MATTE GUN METAL"],[28,"BPR",14,14,0,"XTREME 125R DC LCD DSSC BLACK PEARL RED"],[27,"BLK",32,30,2,"XTREME 125R FI ABS SEAT DS SL CS BLACK"],[28,"BGY",7,0,7,"XTREME125R DC LCD DSSC BLK MATSHDOW GREY"],[27,"ABO",6,6,0,"XTREME125RFIABS SEAT DSSC ABRAX ORANGE"]]};
+
+  /* Hero's 11-character model code -> the model name this dashboard uses and
+     the segment it belongs to. Checked against the October sheet: the five
+     segments add to plan 1,361 / dispatched 528 / balance 833, which is the
+     sheet's own ICE total. */
+  var MAP=SEED.map;
+
+  function segOfCode(code){ var m=MAP[code]; return m? m[1] : null; }
+  function modelOfCode(code){ var m=MAP[code]; return m? m[0] : null; }
+  function isVida(code){ return /^V/.test(String(code||'')); }
+
+  /* ------------------------------------------------------------ the record */
+  function fromSeed(){
+    return {cycle:SEED.cycle, ver:SEED.ver, name:'seeded from OCT26_ALLOTMENT',
+            at:0, seeded:1,
+            rows:SEED.rows.map(function(r){
+              var code=SEED.codes[r[0]];
+              return {code:code, sku:code+r[1], desc:r[5], plan:r[2], disp:r[3], bal:r[4]};
+            })};
+  }
+  var ST=null;
+  function load(){
+    var s=null; try{ s=JSON.parse(localStorage.getItem(KEY)); }catch(e){}
+    ST = (s && s.rows && s.rows.length) ? s : fromSeed();
+    return ST;
+  }
+  function save(){
+    try{ localStorage.setItem(KEY, JSON.stringify(ST)); return true; }
+    catch(e){ try{ if(typeof showToast==='function')
+      showToast('The order plan could not be saved — browser storage is full.'); }catch(_){}
+      return false; }
+  }
+  load();
+
+  /* -------------------------------------------------------------- the view */
+  function roll(){
+    var S=load(), seg={}, model={}, sku={}, ice={plan:0,disp:0,bal:0,rows:0},
+        vida={plan:0,disp:0,bal:0,rows:0}, unknown=[];
+    S.rows.forEach(function(r){
+      if(isVida(r.code)){ vida.plan+=r.plan; vida.disp+=r.disp; vida.bal+=r.bal; vida.rows++; return; }
+      var sg=segOfCode(r.code), mo=modelOfCode(r.code);
+      if(!sg){ unknown.push(r.code); sg='Other'; mo=r.code; }
+      ice.plan+=r.plan; ice.disp+=r.disp; ice.bal+=r.bal; ice.rows++;
+      var g=seg[sg]||(seg[sg]={plan:0,disp:0,bal:0});
+      g.plan+=r.plan; g.disp+=r.disp; g.bal+=r.bal;
+      var m=model[mo]||(model[mo]={seg:sg,plan:0,disp:0,bal:0,skus:0});
+      m.plan+=r.plan; m.disp+=r.disp; m.bal+=r.bal; m.skus++;
+      var k=sku[r.sku]||(sku[r.sku]={code:r.code,model:mo,seg:sg,desc:r.desc,plan:0,disp:0,bal:0});
+      k.plan+=r.plan; k.disp+=r.disp; k.bal+=r.bal;
+    });
+    return {cycle:S.cycle, ver:S.ver, name:S.name, at:S.at, seeded:!!S.seeded,
+            seg:seg, model:model, sku:sku, ice:ice, vida:vida,
+            unknown:[].slice.call(new Set? Array.from(new Set(unknown)) : unknown)};
+  }
+
+  /* current stock, by segment, so the plan can be set against the floor */
+  function stockBySeg(){
+    var I=null; try{ I=window.__SKUSTOCK__&&window.__SKUSTOCK__(); }catch(e){}
+    if(!I||!I.by) return null;
+    var out={}, any=false;
+    Object.keys(I.by).forEach(function(k){
+      var e=I.by[k]; if(e.seg==='VIDA') return;
+      any=true;
+      var sg=e.seg||'Other';
+      var g=out[sg]||(out[sg]={s:0,t:0});
+      g.s+=e.net||0; g.t+=e.transit||0;
+    });
+    return any?out:null;
+  }
+
+  /* what Festival 100's phase calculator says is needed, if it is loaded */
+  function phaseNeed(){
+    var F=null; try{ F=window.__F100P2__&&window.__F100P2__(); }catch(e){}
+    if(!F||!F.rows||!F.rows.length) return null;
+    var out={}; F.rows.forEach(function(r){ out[r.seg]=r.need; });
+    return {by:out, label:F.label||'Festival 100 phase', total:F.total||0};
+  }
+
+  var P; try{ P=JSON.parse(localStorage.getItem('hero-mop-prefs-v1'))||{}; }catch(e){ P={}; }
+  if(!P.basis) P.basis='phase';
+  if(P.growth==null) P.growth=0;
+  if(!P.manual) P.manual={};
+  function savePrefs(){ try{ localStorage.setItem('hero-mop-prefs-v1', JSON.stringify(P)); }catch(e){} }
+  window.mopSet=function(k,v){ P[k]=v; savePrefs(); render(); };
+  window.mopGrowth=function(v){ P.growth=Math.max(-100, parseFloat(v)||0); savePrefs(); render(); };
+  window.mopManual=function(sg,v){ P.manual[sg]=Math.max(0,parseInt(v,10)||0); savePrefs(); render(); };
+
+  var SEGS=['Entry','Deluxe','125cc','Scooter','Premium'];
+  function segList(R,S){
+    var s={}; SEGS.forEach(function(x){ s[x]=1; });
+    Object.keys(R.seg).forEach(function(x){ s[x]=1; });
+    if(S) Object.keys(S).forEach(function(x){ s[x]=1; });
+    return SEGS.filter(function(x){ return s[x]; })
+      .concat(Object.keys(s).filter(function(x){ return SEGS.indexOf(x)<0; }));
+  }
+
+  /* the whole point: what to ask for in the next cycle, segment by segment */
+  function requirement(){
+    var R=roll(), S=stockBySeg(), PN=phaseNeed(), segs=segList(R,S), out=[];
+    segs.forEach(function(sg){
+      var mop=R.seg[sg]||{plan:0,disp:0,bal:0};
+      var st=(S&&S[sg])||{s:0,t:0};
+      var base = P.basis==='manual' ? (P.manual[sg]||0)
+               : P.basis==='plan'   ? mop.plan
+               : (PN&&PN.by[sg])||0;
+      var need = Math.round(base*(1+(P.growth||0)/100));
+      var covered = st.s + st.t + mop.bal;
+      out.push({seg:sg, need:need, base:base, s:st.s, t:st.t, bal:mop.bal,
+                plan:mop.plan, disp:mop.disp, covered:covered,
+                ask:Math.max(0, need-covered), spare:Math.max(0, covered-need)});
+    });
+    return {rows:out, R:R, S:S, PN:PN};
+  }
+
+  function basisLabel(PN){
+    if(P.basis==='manual') return 'figures typed in below';
+    if(P.basis==='plan')   return 'this cycle&rsquo;s plan, repeated';
+    return PN? esc(PN.label) : 'Festival 100 phase need (not loaded)';
+  }
+
+  function render(){
+    var root=document.getElementById('mop-root'); if(!root) return;
+    var Q=requirement(), R=Q.R, S=Q.S, PN=Q.PN, rows=Q.rows;
+    var fill=pc(R.ice.disp, R.ice.plan);
+
+    var h='<div class="card" style="margin-bottom:14px;border-left:4px solid var(--accent)">'
+      +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<h3 style="margin:0">Monthly order plan &mdash; cycle '+esc(R.cycle)+' &middot; '+esc(R.ver)+'</h3>'
+      +'<button class="btn btn-sm" style="margin-left:auto" onclick="mopImport()">Load the next cycle&rsquo;s file</button>'
+      +'<button class="btn btn-sm" onclick="mopExport()">Export</button></div>'
+      +'<p class="help-text" style="margin-top:6px">'
+      +'<b>Planned</b> is what was asked for, <b>dispatched</b> is what has come, and <b>still to come</b> is '
+      +'what the company still owes against this cycle. That last figure is stock already bought &mdash; counting it '
+      +'as something to order again is how a month gets ordered twice.'
+      + (R.seeded? ' <b style="color:#ffb02e">This is the October sheet built into the dashboard.</b> Load next month&rsquo;s file to replace it.'
+                 : ' Loaded from <b>'+esc(R.name||'a file')+'</b>'+(R.at? ' on '+esc(new Date(R.at).toLocaleString('en-IN')):'')+'.')
+      +'</p></div>';
+
+    h+='<div class="grid grid-4" style="margin-bottom:14px">'
+      +'<div class="card kpi"><h3>Planned</h3><div class="kpi-value">'+nf(R.ice.plan)+'</div>'
+      +'<div class="kpi-trend">'+R.ice.rows+' SKUs, ICE only</div></div>'
+      +'<div class="card kpi"><h3>Dispatched</h3><div class="kpi-value" style="color:#2bd47d">'+nf(R.ice.disp)+'</div>'
+      +'<div class="kpi-trend">'+fill+'% of the plan</div></div>'
+      +'<div class="card kpi"><h3>Still to come</h3><div class="kpi-value" style="color:#5b9eff">'+nf(R.ice.bal)+'</div>'
+      +'<div class="kpi-trend">already bought, not yet here</div></div>'
+      +'<div class="card kpi"><h3>Fill rate</h3><div class="kpi-value" style="color:'
+      +(fill>=80?'#2bd47d':fill>=50?'#ffb02e':'#ff5c5c')+'">'+fill+'%</div>'
+      +'<div class="kpi-trend">dispatched against planned</div></div></div>';
+
+    /* ---------------- the plan, segment by segment ---------------- */
+    h+='<div class="card" style="margin-bottom:14px"><h3>The plan, segment by segment</h3>'
+      +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Segment</th>'
+      +'<th style="text-align:right">Planned</th><th style="text-align:right">Dispatched</th>'
+      +'<th style="text-align:right">Still to come</th><th style="text-align:right">Fill</th>'
+      +'<th style="text-align:right">Free stock</th><th style="text-align:right">In transit</th>'
+      +'<th style="text-align:right">On the floor + coming</th></tr></thead><tbody>';
+    var t={plan:0,disp:0,bal:0,s:0,tt:0};
+    rows.forEach(function(r){
+      t.plan+=r.plan; t.disp+=r.disp; t.bal+=r.bal; t.s+=r.s; t.tt+=r.t;
+      var f=pc(r.disp,r.plan);
+      h+='<tr><td><b>'+esc(r.seg)+'</b></td>'
+        +'<td style="text-align:right">'+nf(r.plan)+'</td>'
+        +'<td style="text-align:right;color:#2bd47d">'+nf(r.disp)+'</td>'
+        +'<td style="text-align:right;color:#5b9eff"><b>'+nf(r.bal)+'</b></td>'
+        +'<td style="text-align:right;color:'+(f>=80?'#2bd47d':f>=50?'#ffb02e':'#ff5c5c')+'">'
+        +(r.plan?f+'%':'&mdash;')+'</td>'
+        +'<td style="text-align:right">'+(S?nf(r.s):'&mdash;')+'</td>'
+        +'<td style="text-align:right;color:var(--muted)">'+(S?(r.t||'&middot;'):'&mdash;')+'</td>'
+        +'<td style="text-align:right"><b>'+(S?nf(r.covered):nf(r.bal))+'</b></td></tr>';
+    });
+    h+='<tr style="border-top:2px solid var(--line)"><td><b>Total</b></td>'
+      +'<td style="text-align:right"><b>'+nf(t.plan)+'</b></td>'
+      +'<td style="text-align:right;color:#2bd47d"><b>'+nf(t.disp)+'</b></td>'
+      +'<td style="text-align:right;color:#5b9eff"><b>'+nf(t.bal)+'</b></td>'
+      +'<td style="text-align:right"><b>'+pc(t.disp,t.plan)+'%</b></td>'
+      +'<td style="text-align:right"><b>'+(S?nf(t.s):'&mdash;')+'</b></td>'
+      +'<td style="text-align:right"><b>'+(S?nf(t.tt):'&mdash;')+'</b></td>'
+      +'<td style="text-align:right"><b>'+(S?nf(t.s+t.tt+t.bal):nf(t.bal))+'</b></td></tr>'
+      +'</tbody></table></div>';
+    if(R.vida.rows){
+      h+='<p class="help-text" style="margin-top:8px">VIDA is left out of every figure above, as asked. For the record this '
+        +'cycle carries '+R.vida.rows+' VIDA lines with <b>'+nf(R.vida.disp)+'</b> dispatched against a plan of '
+        +nf(R.vida.plan)+' &mdash; they are dispatched outside this plan, which is why their balance reads negative.</p>';
+    }
+    if(R.unknown.length){
+      h+='<p class="help-text" style="margin-top:6px;color:#ffb02e">'+R.unknown.length
+        +' model code(s) in the file are not in the mapping and have been put under <b>Other</b>: '
+        +esc(R.unknown.join(', '))+'. Tell me and I will map them.</p>';
+    }
+    h+='</div>';
+
+    /* ---------------- what to ask for next cycle ---------------- */
+    h+='<div class="card" style="margin-bottom:14px;border-left:4px solid #5b9eff">'
+      +'<h3 style="margin:0">What to ask for in the next cycle</h3>'
+      +'<p class="help-text" style="margin-top:6px">Need, less everything you already hold and everything already on order. '
+      +'<b>Ask for</b> is the figure to put on next month&rsquo;s plan &mdash; it is what is genuinely missing, not the whole need.</p>'
+      +'<div class="filters" style="margin:10px 0">'
+      +'<span style="color:var(--muted);font-size:12px">Base the need on</span>'
+      +['phase','plan','manual'].map(function(k){
+          var lbl = k==='phase'?'Festival 100 phase need' : k==='plan'?'This cycle&rsquo;s plan' : 'Type it in';
+          return '<button class="btn btn-sm" style="'+(P.basis===k?'background:var(--accent);color:#fff;border-color:var(--accent)':'')
+            +'" onclick="mopSet(\'basis\',\''+k+'\')">'+lbl+'</button>';
+        }).join('')
+      +'<span style="margin-left:10px;color:var(--muted);font-size:12px">Growth %</span>'
+      +'<input type="number" step="1" value="'+(P.growth||0)+'" onchange="mopGrowth(this.value)" '
+      +'style="width:70px;text-align:right;background:var(--panel-2);border:1px solid var(--line);'
+      +'color:var(--text);padding:4px 6px;border-radius:6px">'
+      +'</div>';
+
+    if(P.basis==='phase' && !PN){
+      h+='<p class="help-text" style="color:#ffb02e">Festival 100&rsquo;s phase calculator has not been opened yet in this browser, '
+        +'so there is no phase need to read. Open <b>Festival 100</b> once, or switch the basis above.</p>';
+    }
+    h+='<div style="overflow-x:auto"><table class="table"><thead><tr><th>Segment</th>'
+      +'<th style="text-align:right">Need</th><th style="text-align:right">Free stock</th>'
+      +'<th style="text-align:right">In transit</th><th style="text-align:right">Still to come (MOP)</th>'
+      +'<th style="text-align:right">Covered</th><th style="text-align:right">Ask for</th></tr></thead><tbody>';
+    var a={need:0,s:0,t:0,bal:0,cov:0,ask:0};
+    rows.forEach(function(r){
+      a.need+=r.need; a.s+=r.s; a.t+=r.t; a.bal+=r.bal; a.cov+=r.covered; a.ask+=r.ask;
+      h+='<tr><td><b>'+esc(r.seg)+'</b></td>'
+        +'<td style="text-align:right">'
+        +(P.basis==='manual'
+          ? '<input type="number" min="0" value="'+(P.manual[r.seg]||0)+'" onchange="mopManual(\''+esc(r.seg)+'\',this.value)" '
+            +'style="width:72px;text-align:right;background:var(--panel-2);border:1px solid var(--line);'
+            +'color:var(--text);padding:4px 6px;border-radius:6px">'
+          : '<b>'+nf(r.need)+'</b>')
+        +'</td>'
+        +'<td style="text-align:right">'+(S?nf(r.s):'&mdash;')+'</td>'
+        +'<td style="text-align:right;color:var(--muted)">'+(S?(r.t||'&middot;'):'&mdash;')+'</td>'
+        +'<td style="text-align:right;color:#5b9eff">'+nf(r.bal)+'</td>'
+        +'<td style="text-align:right">'+(S?nf(r.covered):nf(r.bal))+'</td>'
+        +'<td style="text-align:right;font-weight:800;color:'+(r.ask?'#ff5c5c':'#2bd47d')+'">'
+        +(r.ask? nf(r.ask) : (r.spare? ('+'+nf(r.spare)+' spare') : 'nil'))+'</td></tr>';
+    });
+    h+='<tr style="border-top:2px solid var(--line)"><td><b>Total</b></td>'
+      +'<td style="text-align:right"><b>'+nf(a.need)+'</b></td>'
+      +'<td style="text-align:right"><b>'+(S?nf(a.s):'&mdash;')+'</b></td>'
+      +'<td style="text-align:right"><b>'+(S?nf(a.t):'&mdash;')+'</b></td>'
+      +'<td style="text-align:right;color:#5b9eff"><b>'+nf(a.bal)+'</b></td>'
+      +'<td style="text-align:right"><b>'+(S?nf(a.cov):nf(a.bal))+'</b></td>'
+      +'<td style="text-align:right;font-weight:800;color:#ff5c5c"><b>'+nf(a.ask)+'</b></td></tr>'
+      +'</tbody></table></div>'
+      +'<p class="help-text" style="margin-top:8px">Need is taken from '+basisLabel(PN)
+      +(P.growth? ', grown by '+P.growth+'%':'')+'. '
+      +(S? '' : '<b style="color:#ffb02e">Stock is not loaded in this browser, so only the MOP balance is counted as covered &mdash; '
+             +'sync Stock to get a true figure.</b>')
+      +'</p></div>';
+
+    /* ---------------- model by model ---------------- */
+    var ms=Object.keys(R.model).sort(function(x,y){ return R.model[y].bal-R.model[x].bal; });
+    h+='<div class="card"><h3>Model by model &mdash; what is still owed</h3>'
+      +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Model</th><th>Segment</th>'
+      +'<th style="text-align:right">SKUs</th><th style="text-align:right">Planned</th>'
+      +'<th style="text-align:right">Dispatched</th><th style="text-align:right">Still to come</th>'
+      +'<th style="text-align:right">Fill</th></tr></thead><tbody>';
+    ms.forEach(function(m){
+      var g=R.model[m], f=pc(g.disp,g.plan);
+      h+='<tr><td><b>'+esc(m)+'</b></td><td style="color:var(--muted)">'+esc(g.seg)+'</td>'
+        +'<td style="text-align:right;color:var(--muted)">'+g.skus+'</td>'
+        +'<td style="text-align:right">'+nf(g.plan)+'</td>'
+        +'<td style="text-align:right;color:#2bd47d">'+nf(g.disp)+'</td>'
+        +'<td style="text-align:right;color:#5b9eff"><b>'+nf(g.bal)+'</b></td>'
+        +'<td style="text-align:right;color:'+(f>=80?'#2bd47d':f>=50?'#ffb02e':'#ff5c5c')+'">'
+        +(g.plan?f+'%':'&mdash;')+'</td></tr>';
+    });
+    h+='</tbody></table></div></div>';
+
+    root.innerHTML=h;
+  }
+
+  /* ------------------------------------------------------------- importing */
+  function readFile(cb){
+    var inp=document.createElement('input'); inp.type='file'; inp.accept='.xlsx,.xls,.csv';
+    inp.onchange=function(){
+      var f=inp.files&&inp.files[0]; if(!f) return;
+      (function loadLib(){
+        if(window.XLSX) return Promise.resolve(window.XLSX);
+        return new Promise(function(res,rej){ var s=document.createElement('script');
+          s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+          s.onload=function(){ res(window.XLSX); };
+          s.onerror=function(){ rej(new Error('Could not load the spreadsheet reader.')); };
+          document.head.appendChild(s); });
+      })().then(function(X){
+        var fr=new FileReader();
+        fr.onload=function(){
+          try{ var wb=X.read(new Uint8Array(fr.result),{type:'array'});
+               cb(X.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:false}), f.name); }
+          catch(e){ alert('Could not read that file: '+e.message); }
+        };
+        fr.readAsArrayBuffer(f);
+      }).catch(function(e){ alert(e.message); });
+    };
+    inp.click();
+  }
+
+  function parse(aoa){
+    var hi=-1;
+    for(var r=0;r<Math.min(aoa.length,20);r++){
+      var row=(aoa[r]||[]).map(function(x){ return String(x==null?'':x).trim().toLowerCase(); });
+      if(row.some(function(v){ return /sku\s*code/.test(v); })
+         && row.some(function(v){ return /plan\s*qty/.test(v); })){ hi=r; break; }
+    }
+    if(hi<0) return {err:'This does not look like the monthly order plan — no row with both a SKU Code and a Plan Qty column.'};
+    var head=(aoa[hi]||[]).map(function(x){ return String(x==null?'':x).trim().toLowerCase(); });
+    function find(re){ for(var i=0;i<head.length;i++) if(re.test(head[i])) return i; return -1; }
+    var c={cycle:find(/plan\s*cycle/), ver:find(/version/), model:find(/^model$/),
+           sku:find(/sku\s*code/), desc:find(/sku\s*desc/),
+           plan:find(/plan\s*qty/), disp:find(/dispatch/), bal:find(/balance/)};
+    if(c.sku<0 || c.plan<0) return {err:'Could not find the SKU Code and Plan Qty columns.'};
+    function q(r,i){ if(i<0) return 0; var v=String(r[i]==null?'':r[i]).replace(/[^0-9.\-]/g,'');
+                     var n=parseFloat(v); return isFinite(n)?Math.round(n):0; }
+    var rows=[], cycle='', ver='';
+    aoa.slice(hi+1).forEach(function(r){
+      if(!r) return;
+      var sku=String(r[c.sku]==null?'':r[c.sku]).trim().toUpperCase();
+      if(!/^[A-Z0-9]{11,}$/.test(sku)) return;           /* skips the total row */
+      var code=String(c.model>=0?(r[c.model]||''):'').trim().toUpperCase() || sku.slice(0,11);
+      if(!cycle && c.cycle>=0) cycle=String(r[c.cycle]||'').trim();
+      if(!ver && c.ver>=0) ver=String(r[c.ver]||'').trim();
+      rows.push({code:code, sku:sku, desc:String(c.desc>=0?(r[c.desc]||''):'').trim(),
+                 plan:q(r,c.plan), disp:q(r,c.disp),
+                 bal: c.bal>=0 ? q(r,c.bal) : (q(r,c.plan)-q(r,c.disp))});
+    });
+    if(!rows.length) return {err:'No SKU rows found in that file.'};
+    return {cycle:cycle||'', ver:ver||'', rows:rows};
+  }
+
+  window.mopImport=function(){
+    readFile(function(aoa,name){
+      var a=parse(aoa);
+      if(a.err){ alert(a.err); return; }
+      var ice=a.rows.filter(function(r){ return !isVida(r.code); });
+      var unmapped=[]; ice.forEach(function(r){ if(!MAP[r.code]) unmapped.push(r.code); });
+      ST={cycle:a.cycle, ver:a.ver, name:name, at:Date.now(), rows:a.rows};
+      var ok=save(); render();
+      var bal=ice.reduce(function(s,r){ return s+r.bal; },0);
+      alert('Loaded cycle '+(a.cycle||'?')+' '+(a.ver||'')+'\n\n'
+        + ice.length+' ICE SKU lines, '+bal+' vehicles still to come.\n'
+        + (a.rows.length-ice.length)+' VIDA lines were read but are excluded from every figure.'
+        + (unmapped.length? ('\n\n'+unmapped.length+' model code(s) are not in the mapping and will show under "Other": '
+                             + Array.from(new Set(unmapped)).join(', ')) : '')
+        + (ok? '' : '\n\nNOT SAVED — browser storage is full.'));
+      try{ window.dispatchEvent(new CustomEvent('hero:mop')); }catch(e){}
+    });
+  };
+
+  window.mopExport=function(){
+    var Q=requirement(), R=Q.R;
+    var head=['Segment','Planned','Dispatched','Still to come','Free stock','In transit','Covered','Ask for next cycle'];
+    var body=Q.rows.map(function(r){ return [r.seg,r.plan,r.disp,r.bal,r.s,r.t,r.covered,r.ask]; });
+    body.push([]); body.push(['Model by model']);
+    body.push(['Model','Segment','SKUs','Planned','Dispatched','Still to come']);
+    Object.keys(R.model).sort(function(a,b){ return R.model[b].bal-R.model[a].bal; })
+      .forEach(function(m){ var g=R.model[m]; body.push([m,g.seg,g.skus,g.plan,g.disp,g.bal]); });
+    try{ downloadCsv('mop_'+(R.cycle||'cycle').replace(/[^0-9A-Za-z]/g,'')+'.csv', head, body); }
+    catch(e){ try{ if(typeof showToast==='function') showToast('Export failed: '+e.message); }catch(_){} }
+  };
+
+  /* -------------------------------------------------------------- mounting
+     Lives inside the Stock view, because the plan is only meaningful beside
+     the floor it is measured against.
+
+     It goes at the TOP of that view, not the bottom. Appended at the end it
+     sat 11,000 pixels down - about twelve screens of scrolling past the stock
+     panels, the SKU matrix and the festive demand - which is the same as not
+     being there. Ordering is the decision the page exists to support, so it
+     leads. A sidebar entry jumps straight to it as well. */
+  function ensure(){
+    var view=document.getElementById('view-stock'); if(!view) return false;
+    var d=document.getElementById('mop-root');
+    if(!d){ d=document.createElement('div'); d.id='mop-root'; d.style.marginBottom='14px'; }
+    var first=document.getElementById('ops-stock-root') || view.firstChild;
+    if(d.parentNode!==view || (first && d.nextSibling!==first && d!==first)){
+      if(first) view.insertBefore(d, first); else view.appendChild(d);
+    }
+    return true;
+  }
+  function show(scroll){
+    try{ window.setView('stock'); }catch(e){}
+    setTimeout(function(){
+      try{ if(ensure()) render();
+           if(scroll){ var d=document.getElementById('mop-root');
+                       if(d) d.scrollIntoView({block:'start'}); }
+      }catch(e){ try{ console.warn('[mop]',e); }catch(_){} }
+    },240);
+  }
+  window.mopShow=function(){ show(true); };
+
+  /* a sidebar entry, so it is reachable without knowing to scroll */
+  function addNav(){
+    if(document.querySelector('.nav-item[data-view="mop"]')) return true;
+    var nav=document.getElementById('nav'); if(!nav) return false;
+    var btn=document.createElement('button');
+    btn.className='nav-item'; btn.setAttribute('data-view','mop');
+    btn.innerHTML='<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+      +'<path d="M9 3h6l1 3h3v15H5V6h3z"/><path d="M9 12h6"/><path d="M9 16h4"/></svg>Order Plan (MOP)';
+    btn.onclick=function(){ window.mopShow(); };
+    var setup=nav.querySelector('.nav-section');
+    if(setup) nav.insertBefore(btn,setup); else nav.appendChild(btn);
+    return true;
+  }
+
+  var prev=window.setView;
+  window.setView=function(n){
+    var r;
+    try{ r=(typeof prev==='function')?prev.apply(this,arguments):undefined; }
+    catch(e){ try{ console.warn('[mop] host setView',e); }catch(_){} }
+    if(n==='stock'){ setTimeout(function(){
+      try{ if(ensure()) render(); }catch(e){ try{ console.warn('[mop]',e); }catch(_){} } },220); }
+    return r;
+  };
+  /* the stock figures beside the plan must follow a sync, like everywhere else */
+  try{ window.addEventListener('hero:stock', function(){
+    try{ var a=document.querySelector('.nav-item.active');
+         if(a && a.dataset.view==='stock' && ensure()) render(); }catch(e){}
+  }); }catch(e){}
+  document.addEventListener('DOMContentLoaded',function(){
+    (function wait(n){
+      try{ addNav(); }catch(e){}
+      if(!document.querySelector('.nav-item[data-view="mop"]') && n<60) return setTimeout(function(){ wait(n+1); },250);
+      try{ var a=document.querySelector('.nav-item.active');
+           if(a&&a.dataset.view==='stock'&&ensure()) render(); }catch(e){}
+    })(0);
+  });
+
+  /* Published for Festival 100, which subtracts the balance already on order
+     from its own gap, and for anything else that needs the pipeline. */
+  window.__MOP__=function(){ return roll(); };
+  window.__MOPREQ__=function(){ return requirement(); };
+})();
+</script>
+
 <!-- ===== NAVRATRI VEHICLE DEMAND ==========================================
      The three counter heads sent their festive demand on WhatsApp. This
      carries those lists verbatim, maps each line to a model the stock
@@ -20491,8 +21022,8 @@ document.addEventListener('DOMContentLoaded', initApp);
     return r;
   };
   document.addEventListener('DOMContentLoaded',function(){ setTimeout(ensure,1000); });
-  /* same reason as the Phase 2 panel: a stock sync that lands while this view
-     is open must move the order list, not wait for a view switch */
+  /* A stock sync that lands while this view is open must move the order list,
+     not wait for a view switch. The stock module announces every change. */
   try{ window.addEventListener('hero:stock', function(){
     try{ var a=document.querySelector('.nav-item.active');
          if(a && a.dataset.view==='navratri' && ensure()) render(); }catch(e){}
@@ -20574,7 +21105,11 @@ document.addEventListener('DOMContentLoaded', initApp);
        them will be corrected by the people who sent them. A correction typed
        at one counter has to reach the other two before the indent is raised,
        which is exactly what this store is for. */
-    {k:'hero-navratri-v1',  n:'Navratri demand — corrected quantities'}
+    {k:'hero-navratri-v1',  n:'Navratri demand — corrected quantities'},
+    /* One person loads the month's allotment file; everybody else should see
+       the same plan without being sent the file. The rows travel as a single
+       array leaf, so this is one row on the sheet rather than six hundred. */
+    {k:'hero-mop-v1',       n:'Monthly order plan — the cycle in force'}
   ];
   var KEYS={}; STORES.forEach(function(s){ KEYS[s.k]=s.n; });
 
