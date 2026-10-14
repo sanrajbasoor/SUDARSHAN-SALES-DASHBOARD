@@ -138,6 +138,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
     'hero-f100p2-v1':1, 'hero-vidaplan-v1':1, 'hero-orderplan-v1':1,
     'hero-navratri-v1':1,       /* corrections to the WhatsApp demand lines */
     'hero-mop-v1':1,            /* the month's allotment file; only copy */
+    'hero-saleimport-v1':1,     /* sale register imported by hand; no sync brings it back */
     'hero-mop-prefs-v1':1,
     'hero-share-meta-v1':1,     /* the outbox - dropping it loses typed figures */
     'hero-iq-files-v1':1,       /* imported call records; only copy */
@@ -265,7 +266,7 @@ body.unlocked .lock-screen{display:none;}body:not(.unlocked) .app{visibility:hid
     <div class="brand" style="flex-direction:column;align-items:flex-start;gap:7px;">
       <img src="data:image/png;base64,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" alt="Sudarshan Hero"
            style="width:100%;max-width:198px;height:auto;display:block;"/>
-      <div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;">build v124 &middot; 13 Oct 2026</div>
+      <div style="font-size:10px;font-weight:400;opacity:.55;letter-spacing:.3px;">build v125 &middot; 13 Oct 2026</div>
     </div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="dashboard">
@@ -20405,8 +20406,30 @@ document.addEventListener('DOMContentLoaded', initApp);
     return side;
   }
 
-  /* colour split for one model, from the dealership's own SKU-level retail
-     history - NOT from the register, which has no colour column */
+  /* Colour split for one model.
+
+     Preferred source is the register itself, once an import has brought a
+     Colour or SKU column in with it - that is live, dated, and covers VIDA as
+     well. Only when the register has no colour does this fall back to the
+     SKU-level retail history, and the caller labels which one it used. */
+  function coloursFromRegister(model, period){
+    var o=OPS(); var rows=(o&&o.salesRows)||[];
+    if(!rows.length||!model) return null;
+    var want=String(model).toUpperCase().trim(), by={}, tot=0;
+    rows.forEach(function(r){
+      if(period && r.m!==period) return;
+      if(String(r.mo||'').toUpperCase().trim()!==want) return;
+      var code=String(r.c||'').trim().toUpperCase();
+      var sku=String(r.sku||'').trim().toUpperCase();
+      if(!code && !sku) return;
+      if(!code && sku.length>11) code=sku.slice(11);
+      var k=sku||code;
+      var e=by[k]||(by[k]={sku:sku||'—', colour:code||sku, code:code, u:0});
+      e.u++; tot++;
+    });
+    var list=Object.keys(by).map(function(k){ return by[k]; }).sort(function(a,b){ return b.u-a.u; });
+    return list.length? {list:list, total:tot, period:'the register itself', live:true} : null;
+  }
   function coloursFor(model){
     var M=null; try{ M=window.__ICE_MIX__; }catch(e){}
     if(!M||!M.r||!model) return null;
@@ -20424,6 +20447,233 @@ document.addEventListener('DOMContentLoaded', initApp);
     return list.length? {list:list, total:tot, period:'the last six months'} : null;
   }
 
+  /* ======================================================================
+     IMPORTING THE SALE REGISTER
+
+     Reconcile already had an "Update from DMS export" box, but it only ever
+     accepted a SEGMENT PIVOT: it hunted for a header row containing vida /
+     scooter / mc100, read the Grand Total line, and wrote segment totals into
+     ops.sales. Paste the actual sale register into it and it answers "could
+     not find a segment header row", because there isn't one. There was no way
+     at all to put row-level invoices in by hand - they could only arrive from
+     the Apps Script feed. That is why importing did not work.
+
+     This reads the register itself, invoice by invoice.
+
+     WHERE IT IS KEPT, AND WHY NOT WITH THE REST OF OPS
+
+     ops lives in hero-ops-v1, which the storage guard is allowed to evict
+     because it "comes back on the next sync". A hand-imported register does
+     not come back on any sync, so putting it there would mean a full disk
+     quietly destroying the only copy. It gets its own key, which the guard
+     keeps, and is merged into ops on every load.
+
+     DUPLICATES
+
+     Exports overlap - that is the normal way to use a date range. Invoices
+     are keyed on their own number, so re-importing a range that is already
+     held adds nothing and says so, instead of double-counting the month.
+     ====================================================================== */
+  var IKEY='hero-saleimport-v1';
+  function istore(){ try{ return JSON.parse(localStorage.getItem(IKEY))||{files:{}}; }catch(e){ return {files:{}}; } }
+  function isave(v){
+    try{ localStorage.setItem(IKEY, JSON.stringify(v)); return true; }
+    catch(e){ try{ if(typeof showToast==='function')
+      showToast('The register was read but NOT saved — browser storage is full.'); }catch(_){} return false; }
+  }
+
+  function headerIdx(head){
+    /* The date column is resolved FIRST and then excluded from every later
+       search. "Invoice Date" and "Invoice No" both begin with "invoice", so a
+       loose pattern for the invoice number matched the date column, every
+       invoice on a given day ended up sharing a key, and 59 rows deduped down
+       to 12 - one per day. Resolve-then-exclude makes that impossible. */
+    var taken={};
+    function find(re){
+      for(var i=0;i<head.length;i++) if(!taken[i] && re.test(head[i])){ taken[i]=1; return i; }
+      return -1;
+    }
+    return {
+      d:   find(/invoice\s*date|bill\s*date|retail\s*date|sale\s*date|^date\b/),
+      inv: find(/invoice\s*(no|num|number|#)|bill\s*(no|num|number)|^invoice$/),
+      mo:  find(/^model\b|model\s*(name|desc)/),
+      sku: find(/^sku\b|sku\s*code/),
+      col: find(/colou?r/),
+      seg: find(/segment|category/),
+      dse: find(/\bdse\b|sales\s*(person|executive|exec)|salesman|employee/),
+      t:   find(/customer\s*type|sale\s*type|channel|\btype\b/),
+      a:   find(/sub.?dealer|dealer\s*name|customer\s*name|party|account/)
+    };
+  }
+  /* the dashboard's own segment rules, so an import lands in the same buckets
+     as everything else rather than inventing new ones */
+  function segGuess(model, seg){
+    var s=String(seg||'').trim();
+    var m=String(model||'').toUpperCase();
+    if(/VIDA|VX2|^V[12]\b/.test(m)) return 'VIDA';
+    if(s) return s;
+    if(/^HF/.test(m)) return 'Entry';
+    if(/SUPER SPLENDOR|GLAMOUR|XTREME 125/.test(m)) return '125cc';
+    if(/SPLENDOR|PASSION/.test(m)) return '100cc';
+    if(/DESTINI|PLEASURE|MAESTRO|XOOM 1[12]/.test(m)) return 'Scooter';
+    if(/XTREME|XPULSE|MAVRICK|KARIZMA|X440|HARLEY|440/.test(m)) return 'Premium';
+    return '';
+  }
+
+  function parseRegister(aoa){
+    var hi=-1, H=null;
+    for(var r=0;r<Math.min(aoa.length,20);r++){
+      var row=(aoa[r]||[]).map(function(x){ return String(x==null?'':x).trim().toLowerCase(); });
+      var h=headerIdx(row);
+      if(h.mo>=0 && (h.d>=0 || h.inv>=0)){ hi=r; H=h; break; }
+    }
+    if(hi<0) return {err:'This does not look like a sale register. It needs a Model column and an Invoice Date or Invoice Number column. '
+                        +'Export the retail/sale register from DMS rather than a summary pivot.'};
+    var out=[], skipped=0, nodate=0;
+    aoa.slice(hi+1).forEach(function(r){
+      if(!r || !r.length) return;
+      function cell(i){ return i<0? '' : String(r[i]==null?'':r[i]).trim(); }
+      var mo=cell(H.mo).toUpperCase();
+      var inv=cell(H.inv);
+      if(!mo && !inv){ return; }
+      if(/^(grand\s*)?total/i.test(mo) || /^(grand\s*)?total/i.test(cell(0))){ skipped++; return; }
+      var d=parseD(cell(H.d));
+      if(!d) nodate++;
+      var seg=segGuess(mo, cell(H.seg));
+      var sku=cell(H.sku).toUpperCase(), col=cell(H.col);
+      var row={ d: d? iso(d) : cell(H.d), m: d? iso(d).slice(0,7) : '',
+                inv: inv, t: cell(H.t) || 'Counter', a: cell(H.a),
+                mo: mo, s: seg, dse: cell(H.dse) };
+      if(sku) row.sku=sku;
+      if(col) row.c=col;
+      out.push(row);
+    });
+    if(!out.length) return {err:'No invoice rows were found under that header.'};
+    return {rows:out, skipped:skipped, nodate:nodate, cols:H};
+  }
+
+  function keyOf(r){
+    var inv=String(r.inv||'').trim().toUpperCase();
+    if(inv) return 'I|'+inv;
+    return 'X|'+[r.d,r.mo,r.dse,r.a].join('|');       /* no invoice number to key on */
+  }
+
+  /* Merge whatever has been imported into the live register.
+
+     "report" names the files just imported. Every held file is re-walked on
+     every call - that is what makes the merge idempotent across reloads - but
+     counting those re-walks as duplicates told the user 79 when they had
+     imported one file with 20 overlapping rows. The count reported is for the
+     files in hand, which is the only one that answers "did my overlap get
+     counted twice?". */
+  function applyImports(report){
+    var o=OPS(); if(!o) return {added:0,dup:0,total:0};
+    var st=istore(), names=Object.keys(st.files||{});
+    if(!names.length) return {added:0,dup:0,total:(o.salesRows||[]).length};
+    var rows=(o.salesRows||[]).slice(), seen={};
+    rows.forEach(function(r){ seen[keyOf(r)]=1; });
+    var added=0, dup=0;
+    names.forEach(function(n){
+      var mine = !report || report.indexOf(n)>=0;
+      (st.files[n].rows||[]).forEach(function(r){
+        var k=keyOf(r);
+        if(seen[k]){ if(mine) dup++; return; }
+        seen[k]=1; rows.push(r); if(mine) added++;
+      });
+    });
+    if(added){
+      o.salesRows=rows;
+      o.salesByMonth={};          /* force the month split to be rebuilt */
+      o.salesAll=null;
+      persistOps(o);
+    }
+    return {added:added, dup:dup, total:rows.length};
+  }
+  function persistOps(o){
+    try{
+      var raw=JSON.parse(localStorage.getItem('hero-ops-v1')||'{}');
+      raw.salesRows=o.salesRows; raw.salesByMonth=o.salesByMonth; raw.salesAll=o.salesAll;
+      raw.salesMonths=o.salesMonths; raw.updatedAt=o.updatedAt; raw.source=o.source;
+      localStorage.setItem('hero-ops-v1', JSON.stringify(raw));
+    }catch(e){ try{ console.warn('[regcov] could not persist ops',e); }catch(_){} }
+  }
+
+  function readFile(cb){
+    var inp=document.createElement('input'); inp.type='file'; inp.accept='.xlsx,.xls,.csv'; inp.multiple=true;
+    inp.onchange=function(){
+      var files=[].slice.call(inp.files||[]); if(!files.length) return;
+      (function lib(){
+        if(window.XLSX) return Promise.resolve(window.XLSX);
+        return new Promise(function(res,rej){ var s=document.createElement('script');
+          s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+          s.onload=function(){ res(window.XLSX); };
+          s.onerror=function(){ rej(new Error('Could not load the spreadsheet reader.')); };
+          document.head.appendChild(s); });
+      })().then(function(X){
+        var done=0, acc=[];
+        files.forEach(function(f){
+          var fr=new FileReader();
+          fr.onload=function(){
+            try{
+              var wb=X.read(new Uint8Array(fr.result),{type:'array'});
+              /* the register is usually the first tab, but take the widest one
+                 so a cover sheet in front of it does not win */
+              var best=null, bestN=0;
+              wb.SheetNames.forEach(function(nm){
+                var a=X.utils.sheet_to_json(wb.Sheets[nm],{header:1,raw:false});
+                if(a.length>bestN){ bestN=a.length; best=a; }
+              });
+              acc.push({name:f.name, aoa:best||[]});
+            }catch(e){ acc.push({name:f.name, err:e.message}); }
+            if(++done===files.length) cb(acc);
+          };
+          fr.readAsArrayBuffer(f);
+        });
+      }).catch(function(e){ alert(e.message); });
+    };
+    inp.click();
+  }
+
+  window.rcImport=function(){
+    readFile(function(files){
+      var st=istore(), msg=[], anyOk=0;
+      files.forEach(function(f){
+        if(f.err){ msg.push(f.name+': '+f.err); return; }
+        var a=parseRegister(f.aoa);
+        if(a.err){ msg.push(f.name+': '+a.err); return; }
+        st.files[f.name]={at:Date.now(), rows:a.rows, n:a.rows.length};
+        var ds=a.rows.map(function(r){ return r.d; }).filter(Boolean).sort();
+        msg.push(f.name+': '+a.rows.length+' invoices'
+          + (ds.length? ', '+ds[0]+' to '+ds[ds.length-1] : '')
+          + (a.nodate? ' ('+a.nodate+' with an unreadable date)' : '')
+          + (a.cols.col>=0||a.cols.sku>=0? ' — colour/SKU found' : ' — no colour column in this export'));
+        anyOk++;
+      });
+      if(!anyOk){ alert('Nothing imported.\n\n'+msg.join('\n\n')); return; }
+      var saved=isave(st);
+      var R=applyImports(files.filter(function(f){ return !f.err; }).map(function(f){ return f.name; }));
+      try{ ensureMonths(); }catch(e){}
+      render();
+      try{ if(typeof rerenderActiveOps==='function') rerenderActiveOps(); }catch(e){}
+      alert('Sale register imported\n\n'+msg.join('\n\n')
+        +'\n\nNew invoices added: '+R.added
+        +'\nAlready held, skipped as duplicates: '+R.dup
+        +'\nRegister now holds: '+R.total+' invoices'
+        +(saved?'':'\n\nNOT SAVED — browser storage is full.'));
+    });
+  };
+  /* nudge the host into rebuilding its month buckets */
+  function ensureMonths(){
+    var o=OPS(); if(!o) return false;
+    o.salesByMonth={}; o.salesAll=null;
+    try{ if(typeof setPeriod==='function') setPeriod(typeof currentPeriod!=='undefined'?currentPeriod:''); }catch(e){}
+    return true;
+  }
+  window.rcForget=function(name){
+    if(!confirm('Remove "'+name+'" from the imported register?\n\nThe invoices it added stay until the next sync replaces the register.')) return;
+    var st=istore(); delete st.files[name]; isave(st); render();
+  };
+
   /* --------------------------------------------------------------- render */
   function card(S, period){
     var h='';
@@ -20431,13 +20681,21 @@ document.addEventListener('DOMContentLoaded', initApp);
       return '<div class="card" style="margin-bottom:14px;border-left:4px solid #ffb02e">'
         +'<h3 style="margin:0">Sale register &mdash; nothing loaded</h3>'
         +'<p class="help-text" style="margin-top:6px">No row-level sale register is in this browser, so there is no '
-        +'last-invoice date to export from. Sync from the sheet, or paste the DMS export, and this card fills in.</p></div>';
+        +'last-invoice date to export from. Sync from the sheet, or import the DMS retail register below.</p>'
+        +'<button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="rcImport()">'
+        +'Import sale register (xlsx / csv)</button>'+importedList()+'</div>';
     }
     var stale = S.ageDays!=null && S.ageDays>2;
     h+='<div class="card" style="margin-bottom:14px;border-left:4px solid '+(stale?'#ffb02e':'#2bd47d')+'">'
+      +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
       +'<h3 style="margin:0">Sale register &mdash; how far the data actually runs</h3>'
+      +'<button class="btn btn-sm btn-primary" style="margin-left:auto" onclick="rcImport()">'
+      +'Import sale register (xlsx / csv)</button></div>'
       +'<p class="help-text" style="margin-top:6px">Everything below covers the <b>whole register</b>, not the month filter &mdash; '
-      +'the point of it is to show where the data stops.</p>'
+      +'the point of it is to show where the data stops. <b>Import</b> takes the retail / sale register straight out of DMS '
+      +'&mdash; invoice rows, not a summary pivot. Overlapping date ranges are safe: invoices already held are skipped '
+      +'on their invoice number rather than counted twice.</p>'
+      + importedList()
       +'<div class="grid grid-4" style="margin-top:10px">'
       +'<div class="card kpi"><h3>Last invoice held</h3>'
       +'<div class="kpi-value" style="color:'+(stale?'#ffb02e':'#2bd47d')+'">'+esc(pretty(S.last))+'</div>'
@@ -20485,6 +20743,21 @@ document.addEventListener('DOMContentLoaded', initApp);
     return h;
   }
 
+  function importedList(){
+    var st=istore(), names=Object.keys(st.files||{});
+    if(!names.length) return '';
+    var h='<div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--panel-2)">'
+      +'<div class="kpi-trend" style="margin-bottom:4px">Imported by hand &mdash; kept even if the browser runs out of room</div>';
+    names.forEach(function(n){
+      var f=st.files[n];
+      h+='<div style="display:flex;gap:10px;align-items:center;font-size:12px;padding:2px 0">'
+        +'<span style="flex:1">'+esc(n)+' &middot; <b>'+nf(f.n||0)+'</b> invoices'
+        +(f.at? ' &middot; loaded '+esc(new Date(f.at).toLocaleString('en-IN')) : '')+'</span>'
+        +'<button class="btn btn-sm" onclick="rcForget(\''+esc(n).replace(/'/g,"\\'")+'\')">Remove</button></div>';
+    });
+    return h+'</div>';
+  }
+
   function sideCard(S, period){
     var sel=selling(period);
     var scope = period? monthLabel(period) : 'all time';
@@ -20518,11 +20791,13 @@ document.addEventListener('DOMContentLoaded', initApp);
         });
         h+='</tbody></table></div>';
 
-        /* colour, where a source for it exists */
-        var C = k==='ICE' ? coloursFor(top) : null;
+        /* colour: the register first, the history only if it has none */
+        var C = coloursFromRegister(top, period) || (k==='ICE' ? coloursFor(top) : null);
         if(C){
           h+='<div style="margin-top:12px"><div class="kpi-trend" style="margin-bottom:4px">'
-            +'Colours of '+esc(top)+' &mdash; from the SKU-level retail history, '+esc(C.period)+'</div>'
+            +'Colours of '+esc(top)+' &mdash; '
+            +(C.live? '<b style="color:#2bd47d">live, from the register</b> ('+esc(scope)+')'
+                    : 'from the SKU-level retail history, '+esc(C.period))+'</div>'
             +'<div style="overflow-x:auto"><table class="table"><thead><tr><th>Colour</th><th>SKU</th>'
             +'<th style="text-align:right">Units</th><th style="text-align:right">Share</th></tr></thead><tbody>';
           C.list.slice(0,8).forEach(function(c){
@@ -20532,12 +20807,15 @@ document.addEventListener('DOMContentLoaded', initApp);
               +'<td style="text-align:right;color:var(--muted)">'+(C.total?Math.round(c.u/C.total*100):0)+'%</td></tr>';
           });
           h+='</tbody></table></div>'
-            +'<p class="help-text" style="margin-top:6px">The model above is from the live register; the colour split is '
-            +'from the retail history, because the register the dashboard receives has no colour column. Add '
-            +'<b>Colour</b> or <b>SKU</b> to the sale-register push and this becomes live too.</p></div>';
+            + (C.live
+                ? '<p class="help-text" style="margin-top:6px">Both the model and the colours come from the register, '
+                  +'because the import carried a Colour or SKU column.</p></div>'
+                : '<p class="help-text" style="margin-top:6px">The model above is from the live register; the colour split is '
+                  +'from the retail history, because this register has no colour column. Import a DMS export that carries '
+                  +'<b>Colour</b> or <b>SKU</b>, or add it to the sale-register push, and this becomes live too.</p></div>');
         } else if(k==='EV'){
-          h+='<p class="help-text" style="margin-top:10px;color:#ffb02e">No colour-level source for VIDA retail is loaded, '
-            +'so the best-selling variant cannot be broken down by colour. The register carries the model only.</p>';
+          h+='<p class="help-text" style="margin-top:10px;color:#ffb02e">No colour for VIDA retail yet. Import a DMS '
+            +'register that carries a <b>Colour</b> or <b>SKU</b> column and the best-selling variant breaks down here too.</p>';
         }
       }
       h+='</div>';
@@ -20586,8 +20864,13 @@ document.addEventListener('DOMContentLoaded', initApp);
     });
   }catch(e){}
   document.addEventListener('DOMContentLoaded',function(){
-    setTimeout(function(){ try{ var a=document.querySelector('.nav-item.active');
-      if(a&&a.dataset.view==='reconcile'&&ensure()) render(); }catch(e){} },1600);
+    setTimeout(function(){
+      /* a hand-imported register has to be merged back in on every load - it
+         lives in its own key precisely so a full disk cannot destroy it */
+      try{ applyImports(); }catch(e){ try{ console.warn('[regcov] merge',e); }catch(_){} }
+      try{ var a=document.querySelector('.nav-item.active');
+           if(a&&a.dataset.view==='reconcile'&&ensure()) render(); }catch(e){}
+    },1700);
   });
 
   window.__REGCOV__=function(){ return {survey:survey(), selling:selling('')}; };
